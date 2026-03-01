@@ -1,3 +1,6 @@
+import 'dart:math' as math;
+
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -125,32 +128,218 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
           ),
           const Divider(height: 1),
           Expanded(
-            child: points.isEmpty
-                ? const Center(child: Text('No route data'))
-                : FlutterMap(
-                    options: MapOptions(
-                      initialCameraFit: bounds != null
-                          ? CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(24))
-                          : null,
-                    ),
-                    children: [
-                      TileLayer(
-                        urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                        userAgentPackageName: 'eu.matmoa.mont',
-                      ),
-                      PolylineLayer(
-                        polylines: [
-                          Polyline(
-                            points: points,
-                            strokeWidth: 4,
-                            color: Colors.blue,
+            child: ListView(
+              children: [
+                SizedBox(
+                  height: 280,
+                  child: points.isEmpty
+                      ? const Center(child: Text('No route data'))
+                      : FlutterMap(
+                          options: MapOptions(
+                            initialCameraFit: bounds != null
+                                ? CameraFit.bounds(
+                                    bounds: bounds,
+                                    padding: const EdgeInsets.all(24))
+                                : null,
                           ),
-                        ],
-                      ),
-                    ],
-                  ),
+                          children: [
+                            TileLayer(
+                              urlTemplate:
+                                  'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                              userAgentPackageName: 'eu.matmoa.mont',
+                            ),
+                            PolylineLayer(polylines: [
+                              Polyline(
+                                  points: points,
+                                  strokeWidth: 4,
+                                  color: Colors.blue),
+                            ]),
+                          ],
+                        ),
+                ),
+                if (_hasHr(run)) _hrChart(context, run),
+                if (_hasPace(run)) _paceChart(context, run),
+                if (_hasEle(run)) _eleChart(context, run),
+                const SizedBox(height: 16),
+              ],
+            ),
           ),
         ],
+      ),
+    );
+  }
+
+  static bool _hasHr(RunDetail run) =>
+      run.route.any((p) => p.hr != null && p.t != null);
+  static bool _hasPace(RunDetail run) =>
+      run.route.length >= 2 && run.route.any((p) => p.t != null);
+  static bool _hasEle(RunDetail run) =>
+      run.route.any((p) => p.ele != null && p.t != null);
+
+  Widget _hrChart(BuildContext context, RunDetail run) {
+    final spots = run.route
+        .where((p) => p.hr != null && p.t != null)
+        .map((p) => FlSpot(p.t!.toDouble(), p.hr!.toDouble()))
+        .toList();
+    return _chartCard(
+      title: 'Heart rate (bpm)',
+      color: Colors.red,
+      spots: spots,
+      leftLabel: (v) => v.round().toString(),
+      bottomLabel: _fmtTime,
+    );
+  }
+
+  Widget _paceChart(BuildContext context, RunDetail run) {
+    // Compute pace in min/km using 30-second rolling windows
+    final pts = run.route.where((p) => p.t != null).toList();
+    if (pts.length < 2) return const SizedBox.shrink();
+
+    final List<FlSpot> spots = [];
+    const windowSecs = 30;
+    for (int i = 0; i < pts.length; i++) {
+      // Find point ~windowSecs ago
+      int j = i;
+      while (j > 0 && (pts[i].t! - pts[j].t!) < windowSecs) { j--; }
+      if (j == i) continue;
+      final dt = (pts[i].t! - pts[j].t!).toDouble();
+      if (dt <= 0) continue;
+      double dm = 0;
+      for (int k = j; k < i; k++) {
+        dm += _haversine(
+          pts[k].lat, pts[k].lon, pts[k + 1].lat, pts[k + 1].lon);
+      }
+      if (dm < 1) continue;
+      final paceMinKm = (dt / dm) * (1000 / 60);
+      if (paceMinKm > 20 || paceMinKm < 2) continue; // filter outliers
+      spots.add(FlSpot(pts[i].t!.toDouble(), paceMinKm));
+    }
+    if (spots.isEmpty) return const SizedBox.shrink();
+
+    return _chartCard(
+      title: 'Pace (min/km)',
+      color: Colors.blue,
+      spots: spots,
+      leftLabel: (v) {
+        final m = v.floor();
+        final s = ((v - m) * 60).round();
+        return "$m:${s.toString().padLeft(2, '0')}";
+      },
+      bottomLabel: _fmtTime,
+      flipY: true, // lower pace = faster
+    );
+  }
+
+  Widget _eleChart(BuildContext context, RunDetail run) {
+    final spots = run.route
+        .where((p) => p.ele != null && p.t != null)
+        .map((p) => FlSpot(p.t!.toDouble(), p.ele!))
+        .toList();
+    return _chartCard(
+      title: 'Elevation (m)',
+      color: Colors.green,
+      spots: spots,
+      leftLabel: (v) => v.round().toString(),
+      bottomLabel: _fmtTime,
+    );
+  }
+
+  static String _fmtTime(double secs) {
+    final m = (secs / 60).round();
+    if (m >= 60) return '${m ~/ 60}h${(m % 60).toString().padLeft(2, '0')}';
+    return '${m}m';
+  }
+
+  static double _haversine(double lat1, double lon1, double lat2, double lon2) {
+    const r = 6371000.0;
+    final dlat = (lat2 - lat1) * math.pi / 180;
+    final dlon = (lon2 - lon1) * math.pi / 180;
+    final a = math.sin(dlat / 2) * math.sin(dlat / 2) +
+        math.cos(lat1 * math.pi / 180) *
+            math.cos(lat2 * math.pi / 180) *
+            math.sin(dlon / 2) *
+            math.sin(dlon / 2);
+    return r * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+  }
+
+  Widget _chartCard({
+    required String title,
+    required Color color,
+    required List<FlSpot> spots,
+    required String Function(double) leftLabel,
+    required String Function(double) bottomLabel,
+    bool flipY = false,
+  }) {
+    final ys = spots.map((s) => s.y).toList();
+    final minY = ys.fold(double.infinity, math.min);
+    final maxY = ys.fold(double.negativeInfinity, math.max);
+    final pad = math.max((maxY - minY) * 0.1, 1.0);
+    final xs = spots.map((s) => s.x).toList();
+    final maxX = xs.fold(0.0, math.max);
+    final interval = math.max(60.0, (maxX / 5).ceilToDouble());
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 12, 16, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(left: 8, bottom: 8),
+                child: Text(title,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 13)),
+              ),
+              SizedBox(
+                height: 160,
+                child: LineChart(LineChartData(
+                  minY: flipY ? minY - pad : minY - pad,
+                  maxY: flipY ? maxY + pad : maxY + pad,
+                  lineBarsData: [
+                    LineChartBarData(
+                      spots: spots,
+                      isCurved: true,
+                      color: color,
+                      dotData: const FlDotData(show: false),
+                      barWidth: 2,
+                      belowBarData: BarAreaData(
+                        show: true,
+                        color: color.withValues(alpha: 0.12),
+                      ),
+                    ),
+                  ],
+                  titlesData: FlTitlesData(
+                    leftTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: 44,
+                        getTitlesWidget: (v, _) => Text(leftLabel(v),
+                            style: const TextStyle(fontSize: 9)),
+                      ),
+                    ),
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: 20,
+                        interval: interval,
+                        getTitlesWidget: (v, _) => Text(bottomLabel(v),
+                            style: const TextStyle(fontSize: 9)),
+                      ),
+                    ),
+                    topTitles: const AxisTitles(
+                        sideTitles: SideTitles(showTitles: false)),
+                    rightTitles: const AxisTitles(
+                        sideTitles: SideTitles(showTitles: false)),
+                  ),
+                  gridData: const FlGridData(show: true),
+                  borderData: FlBorderData(show: false),
+                )),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
