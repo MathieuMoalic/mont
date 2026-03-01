@@ -316,6 +316,16 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                 child: LineChart(LineChartData(
                   minY: flipY ? minY - pad : minY - pad,
                   maxY: flipY ? maxY + pad : maxY + pad,
+                  lineTouchData: LineTouchData(
+                    touchTooltipData: LineTouchTooltipData(
+                      getTooltipItems: (spots) => spots
+                          .map((s) => LineTooltipItem(
+                                leftLabel(s.y),
+                                const TextStyle(fontSize: 12),
+                              ))
+                          .toList(),
+                    ),
+                  ),
                   lineBarsData: [
                     LineChartBarData(
                       spots: spots,
