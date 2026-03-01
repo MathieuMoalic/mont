@@ -1,8 +1,8 @@
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../api.dart' as api;
 import '../models.dart';
+import '../platform/gpx_picker.dart';
 import 'run_detail_screen.dart';
 
 class RunsScreen extends StatefulWidget {
@@ -37,15 +37,11 @@ class _RunsScreenState extends State<RunsScreen> {
   }
 
   Future<void> _importGpx() async {
-    final result = await FilePicker.platform.pickFiles(
-      withData: true,
-    );
-    if (result == null || result.files.isEmpty) return;
-    final file = result.files.first;
-    if (file.bytes == null) return;
+    final picked = await pickGpxFile();
+    if (picked == null) return;
 
     try {
-      await api.importGpx(file.bytes!, file.name);
+      await api.importGpx(picked.bytes, picked.name);
       await _load();
     } catch (e) {
       if (!mounted) return;
