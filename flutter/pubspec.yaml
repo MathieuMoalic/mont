@@ -21,6 +21,9 @@ dependencies:
   package_info_plus: ^8.0.0
   cupertino_icons: ^1.0.8
   fl_chart: ^1.1.1
+  flutter_map: ^8.2.2
+  latlong2: ^0.9.1
+  file_picker: ^8.0.7
 
 dev_dependencies:
   flutter_test:

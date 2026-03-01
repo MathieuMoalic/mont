@@ -1,3 +1,82 @@
+class RunPoint {
+  final double lat;
+  final double lon;
+  final double? ele;
+  final int? hr;
+
+  RunPoint({required this.lat, required this.lon, this.ele, this.hr});
+
+  factory RunPoint.fromJson(Map<String, dynamic> j) => RunPoint(
+        lat: (j['lat'] as num).toDouble(),
+        lon: (j['lon'] as num).toDouble(),
+        ele: (j['ele'] as num?)?.toDouble(),
+        hr: j['hr'] as int?,
+      );
+}
+
+class RunSummary {
+  final int id;
+  final DateTime startedAt;
+  final int durationS;
+  final double distanceM;
+  final double? elevationGainM;
+  final int? avgHr;
+  final int? maxHr;
+  final String? notes;
+
+  RunSummary({
+    required this.id,
+    required this.startedAt,
+    required this.durationS,
+    required this.distanceM,
+    this.elevationGainM,
+    this.avgHr,
+    this.maxHr,
+    this.notes,
+  });
+
+  factory RunSummary.fromJson(Map<String, dynamic> j) => RunSummary(
+        id: j['id'] as int,
+        startedAt: DateTime.parse(j['started_at'] as String),
+        durationS: j['duration_s'] as int,
+        distanceM: (j['distance_m'] as num).toDouble(),
+        elevationGainM: (j['elevation_gain_m'] as num?)?.toDouble(),
+        avgHr: j['avg_hr'] as int?,
+        maxHr: j['max_hr'] as int?,
+        notes: j['notes'] as String?,
+      );
+}
+
+class RunDetail extends RunSummary {
+  final List<RunPoint> route;
+
+  RunDetail({
+    required super.id,
+    required super.startedAt,
+    required super.durationS,
+    required super.distanceM,
+    super.elevationGainM,
+    super.avgHr,
+    super.maxHr,
+    super.notes,
+    required this.route,
+  });
+
+  factory RunDetail.fromJson(Map<String, dynamic> j) => RunDetail(
+        id: j['id'] as int,
+        startedAt: DateTime.parse(j['started_at'] as String),
+        durationS: j['duration_s'] as int,
+        distanceM: (j['distance_m'] as num).toDouble(),
+        elevationGainM: (j['elevation_gain_m'] as num?)?.toDouble(),
+        avgHr: j['avg_hr'] as int?,
+        maxHr: j['max_hr'] as int?,
+        notes: j['notes'] as String?,
+        route: (j['route'] as List)
+            .map((e) => RunPoint.fromJson(e as Map<String, dynamic>))
+            .toList(),
+      );
+}
+
 class WeightEntry {
   final int id;
   final DateTime measuredAt;

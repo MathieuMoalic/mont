@@ -1,0 +1,194 @@
+mod common;
+
+// A minimal valid GPX with 3 track points and heart rate extensions
+const SAMPLE_GPX: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="GadgetBridge"
+     xmlns="http://www.topografix.com/GPX/1/1"
+     xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v1">
+  <trk>
+    <trkseg>
+      <trkpt lat="48.8566" lon="2.3522">
+        <ele>35.0</ele>
+        <time>2026-01-15T09:00:00Z</time>
+        <extensions><gpxtpx:TrackPointExtension><gpxtpx:hr>140</gpxtpx:hr></gpxtpx:TrackPointExtension></extensions>
+      </trkpt>
+      <trkpt lat="48.8576" lon="2.3532">
+        <ele>37.5</ele>
+        <time>2026-01-15T09:05:00Z</time>
+        <extensions><gpxtpx:TrackPointExtension><gpxtpx:hr>155</gpxtpx:hr></gpxtpx:TrackPointExtension></extensions>
+      </trkpt>
+      <trkpt lat="48.8586" lon="2.3542">
+        <ele>36.0</ele>
+        <time>2026-01-15T09:10:00Z</time>
+        <extensions><gpxtpx:TrackPointExtension><gpxtpx:hr>160</gpxtpx:hr></gpxtpx:TrackPointExtension></extensions>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>"#;
+
+async fn import_sample(app: &common::TestApp) -> serde_json::Value {
+    let part = reqwest::multipart::Part::bytes(SAMPLE_GPX.as_bytes().to_vec())
+        .file_name("run.gpx")
+        .mime_str("application/gpx+xml")
+        .unwrap();
+    let form = reqwest::multipart::Form::new().part("file", part);
+
+    app.client
+        .post(app.url("/runs/import"))
+        .bearer_auth(&app.token)
+        .multipart(form)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn import_run_returns_201() {
+    let app = common::TestApp::spawn().await;
+    let part = reqwest::multipart::Part::bytes(SAMPLE_GPX.as_bytes().to_vec())
+        .file_name("run.gpx")
+        .mime_str("application/gpx+xml")
+        .unwrap();
+    let form = reqwest::multipart::Form::new().part("file", part);
+
+    let res = app
+        .client
+        .post(app.url("/runs/import"))
+        .bearer_auth(&app.token)
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 201);
+}
+
+#[tokio::test]
+async fn import_run_extracts_distance_and_duration() {
+    let app = common::TestApp::spawn().await;
+    let body = import_sample(&app).await;
+
+    assert!(body["id"].as_i64().is_some());
+    let distance = body["distance_m"].as_f64().unwrap();
+    assert!(distance > 100.0, "expected distance > 100m, got {distance}");
+    assert_eq!(body["duration_s"], 600); // 10 minutes
+    assert_eq!(body["started_at"], "2026-01-15T09:00:00Z");
+}
+
+#[tokio::test]
+async fn import_run_extracts_heart_rate() {
+    let app = common::TestApp::spawn().await;
+    let body = import_sample(&app).await;
+
+    assert!(body["avg_hr"].as_i64().is_some());
+    assert_eq!(body["max_hr"], 160);
+}
+
+#[tokio::test]
+async fn import_run_extracts_elevation_gain() {
+    let app = common::TestApp::spawn().await;
+    let body = import_sample(&app).await;
+
+    // ele goes 35 → 37.5 → 36 so gain should be 2.5m
+    let gain = body["elevation_gain_m"].as_f64().unwrap();
+    assert!((gain - 2.5).abs() < 0.01, "expected ~2.5m gain, got {gain}");
+}
+
+#[tokio::test]
+async fn list_runs_initially_empty() {
+    let app = common::TestApp::spawn().await;
+    let body: serde_json::Value = app.get("/runs").await.json().await.unwrap();
+    assert_eq!(body, serde_json::json!([]));
+}
+
+#[tokio::test]
+async fn list_runs_shows_imported_run() {
+    let app = common::TestApp::spawn().await;
+    import_sample(&app).await;
+    import_sample(&app).await;
+
+    let runs: Vec<serde_json::Value> = app.get("/runs").await.json().await.unwrap();
+    assert_eq!(runs.len(), 2);
+}
+
+#[tokio::test]
+async fn get_run_returns_detail_with_route() {
+    let app = common::TestApp::spawn().await;
+    let run = import_sample(&app).await;
+    let id = run["id"].as_i64().unwrap();
+
+    let detail: serde_json::Value = app.get(&format!("/runs/{id}")).await.json().await.unwrap();
+    let route = detail["route"].as_array().unwrap();
+    assert_eq!(route.len(), 3);
+    assert!(route[0]["lat"].as_f64().is_some());
+    assert!(route[0]["lon"].as_f64().is_some());
+}
+
+#[tokio::test]
+async fn get_nonexistent_run_returns_404() {
+    let app = common::TestApp::spawn().await;
+    let res = app.get("/runs/9999").await;
+    assert_eq!(res.status(), 404);
+}
+
+#[tokio::test]
+async fn delete_run_returns_204() {
+    let app = common::TestApp::spawn().await;
+    let run = import_sample(&app).await;
+    let id = run["id"].as_i64().unwrap();
+
+    let res = app.delete(&format!("/runs/{id}")).await;
+    assert_eq!(res.status(), 204);
+}
+
+#[tokio::test]
+async fn delete_run_removes_it_from_list() {
+    let app = common::TestApp::spawn().await;
+    let run = import_sample(&app).await;
+    let id = run["id"].as_i64().unwrap();
+    app.delete(&format!("/runs/{id}")).await;
+
+    let runs: Vec<serde_json::Value> = app.get("/runs").await.json().await.unwrap();
+    assert!(runs.is_empty());
+}
+
+#[tokio::test]
+async fn delete_nonexistent_run_returns_404() {
+    let app = common::TestApp::spawn().await;
+    let res = app.delete("/runs/9999").await;
+    assert_eq!(res.status(), 404);
+}
+
+#[tokio::test]
+async fn import_without_file_field_returns_400() {
+    let app = common::TestApp::spawn().await;
+    let form = reqwest::multipart::Form::new();
+    let res = app
+        .client
+        .post(app.url("/runs/import"))
+        .bearer_auth(&app.token)
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 400);
+}
+
+#[tokio::test]
+async fn import_invalid_gpx_returns_422() {
+    let app = common::TestApp::spawn().await;
+    let part = reqwest::multipart::Part::bytes(b"this is not gpx".to_vec())
+        .file_name("bad.gpx");
+    let form = reqwest::multipart::Form::new().part("file", part);
+    let res = app
+        .client
+        .post(app.url("/runs/import"))
+        .bearer_auth(&app.token)
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 422);
+}

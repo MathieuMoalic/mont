@@ -187,3 +187,40 @@ Future<void> deleteWeightEntry(int id) async {
   final res = await http.delete(_u('/weight/$id'), headers: _headers());
   if (res.statusCode != 204) throw Exception('HTTP ${res.statusCode}');
 }
+
+// ── Runs ──────────────────────────────────────────────────────────────────────
+
+Future<List<RunSummary>> listRuns() async {
+  final res = await http.get(_u('/runs'), headers: _headers());
+  if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
+  return (jsonDecode(res.body) as List)
+      .map((e) => RunSummary.fromJson(e as Map<String, dynamic>))
+      .toList();
+}
+
+Future<RunDetail> getRun(int id) async {
+  final res = await http.get(_u('/runs/$id'), headers: _headers());
+  if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
+  return RunDetail.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+}
+
+Future<RunSummary> importGpx(List<int> bytes, String filename) async {
+  final token = _authToken;
+  if (token == null) throw Exception('Not authenticated');
+  final req = http.MultipartRequest('POST', _u('/runs/import'))
+    ..headers['Authorization'] = 'Bearer $token'
+    ..files.add(http.MultipartFile.fromBytes(
+      'file',
+      bytes,
+      filename: filename,
+    ));
+  final streamed = await req.send();
+  final body = await streamed.stream.bytesToString();
+  if (streamed.statusCode != 201) throw Exception('HTTP ${streamed.statusCode}');
+  return RunSummary.fromJson(jsonDecode(body) as Map<String, dynamic>);
+}
+
+Future<void> deleteRun(int id) async {
+  final res = await http.delete(_u('/runs/$id'), headers: _headers());
+  if (res.statusCode != 204) throw Exception('HTTP ${res.statusCode}');
+}
