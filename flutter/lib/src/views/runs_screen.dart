@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../api.dart' as api;
 import '../models.dart';
+import 'run_calendar_screen.dart';
 import 'run_detail_screen.dart';
 import 'run_stats_screen.dart';
 
@@ -77,6 +78,18 @@ class _RunsScreenState extends State<RunsScreen> {
       appBar: AppBar(
         title: const Text('Runs'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.calendar_month),
+            tooltip: 'Calendar',
+            onPressed: _runs.isEmpty
+                ? null
+                : () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => RunCalendarScreen(runs: _runs),
+                      ),
+                    ),
+          ),
           IconButton(
             icon: const Icon(Icons.bar_chart),
             tooltip: 'Stats',
