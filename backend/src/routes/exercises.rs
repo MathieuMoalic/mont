@@ -16,6 +16,8 @@ pub struct CreateExercise {
     pub notes: Option<String>,
 }
 
+/// # Errors
+/// Returns an error if the database query fails.
 pub async fn list_exercises(State(state): State<AppState>) -> AppResult<Json<Vec<Exercise>>> {
     let exercises = sqlx::query_as::<_, Exercise>(
         "SELECT id, name, notes FROM exercises ORDER BY name COLLATE NOCASE",
@@ -25,6 +27,8 @@ pub async fn list_exercises(State(state): State<AppState>) -> AppResult<Json<Vec
     Ok(Json(exercises))
 }
 
+/// # Errors
+/// Returns an error if the database query fails or the name is a duplicate.
 pub async fn create_exercise(
     State(state): State<AppState>,
     Json(body): Json<CreateExercise>,

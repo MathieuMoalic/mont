@@ -7,20 +7,10 @@
 )]
 #![allow(clippy::multiple_crate_versions)]
 
-mod app;
-mod auth_middleware;
-mod config;
-mod db;
-mod embedded_web;
-mod error;
-mod logging;
-mod models;
-mod routes;
-
 use clap::Parser;
 use tokio::net::TcpListener;
 
-use crate::{
+use mont::{
     app::build_app,
     config::{Cli, Commands},
     db::make_pool,

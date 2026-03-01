@@ -51,6 +51,8 @@ pub struct AddSet {
     pub weight_kg: f64,
 }
 
+/// # Errors
+/// Returns an error if the database query fails.
 pub async fn list_workouts(State(state): State<AppState>) -> AppResult<Json<Vec<WorkoutSummary>>> {
     let workouts = sqlx::query_as::<_, WorkoutSummary>(
         r"SELECT w.id, w.started_at, w.finished_at, w.notes,
@@ -65,6 +67,8 @@ pub async fn list_workouts(State(state): State<AppState>) -> AppResult<Json<Vec<
     Ok(Json(workouts))
 }
 
+/// # Errors
+/// Returns an error if the database insert fails.
 pub async fn create_workout(
     State(state): State<AppState>,
 ) -> AppResult<(StatusCode, Json<WorkoutSummary>)> {
@@ -77,6 +81,8 @@ pub async fn create_workout(
     Ok((StatusCode::CREATED, Json(workout)))
 }
 
+/// # Errors
+/// Returns `NOT_FOUND` if the workout doesn't exist, or an error if the query fails.
 pub async fn get_workout(
     State(state): State<AppState>,
     Path(id): Path<i64>,
@@ -110,6 +116,8 @@ pub async fn get_workout(
     }))
 }
 
+/// # Errors
+/// Returns `NOT_FOUND` if the workout doesn't exist or is already finished.
 pub async fn finish_workout(
     State(state): State<AppState>,
     Path(id): Path<i64>,
@@ -127,6 +135,8 @@ pub async fn finish_workout(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// # Errors
+/// Returns an error if the database insert fails (e.g. invalid workout or exercise id).
 pub async fn add_set(
     State(state): State<AppState>,
     Path(workout_id): Path<i64>,
@@ -149,6 +159,8 @@ pub async fn add_set(
     Ok((StatusCode::CREATED, Json(set)))
 }
 
+/// # Errors
+/// Returns `NOT_FOUND` if the set doesn't exist in that workout.
 pub async fn delete_set(
     State(state): State<AppState>,
     Path((workout_id, set_id)): Path<(i64, i64)>,
