@@ -67,10 +67,37 @@ class _RunsScreenState extends State<RunsScreen> {
     return "$m'${s.toString().padLeft(2, '0')}\"/km";
   }
 
+  Future<void> _syncGadgetbridge() async {
+    try {
+      final result = await api.syncGadgetbridge();
+      await _load();
+      if (!mounted) return;
+      final imported = result['imported'] as int;
+      final skipped = result['skipped'] as int;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Synced: $imported imported, $skipped skipped')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Sync failed: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Runs')),
+      appBar: AppBar(
+        title: const Text('Runs'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.sync),
+            tooltip: 'Sync Gadgetbridge',
+            onPressed: _syncGadgetbridge,
+          ),
+        ],
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _runs.isEmpty

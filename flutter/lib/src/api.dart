@@ -224,3 +224,9 @@ Future<void> deleteRun(int id) async {
   final res = await http.delete(_u('/runs/$id'), headers: _headers());
   if (res.statusCode != 204) throw Exception('HTTP ${res.statusCode}');
 }
+
+Future<Map<String, dynamic>> syncGadgetbridge() async {
+  final res = await http.post(_u('/runs/sync'), headers: _headers());
+  if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
+  return jsonDecode(res.body) as Map<String, dynamic>;
+}
