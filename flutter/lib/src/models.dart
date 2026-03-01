@@ -191,3 +191,28 @@ class WorkoutDetail {
             .toList(),
       );
 }
+
+class ExerciseHistoryPoint {
+  final DateTime workoutDate;
+  final double maxWeightKg;
+  final int totalSets;
+  final int totalReps;
+  final double totalVolume;
+
+  ExerciseHistoryPoint({
+    required this.workoutDate,
+    required this.maxWeightKg,
+    required this.totalSets,
+    required this.totalReps,
+    required this.totalVolume,
+  });
+
+  factory ExerciseHistoryPoint.fromJson(Map<String, dynamic> j) =>
+      ExerciseHistoryPoint(
+        workoutDate: DateTime.parse(j['workout_date'] as String),
+        maxWeightKg: (j['max_weight_kg'] as num).toDouble(),
+        totalSets: j['total_sets'] as int,
+        totalReps: j['total_reps'] as int,
+        totalVolume: (j['total_volume'] as num).toDouble(),
+      );
+}
