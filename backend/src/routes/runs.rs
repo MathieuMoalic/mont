@@ -362,6 +362,7 @@ pub async fn sync_gadgetbridge(
 
     for (name, bytes) in gpx_files {
         match parse_gpx(&bytes) {
+            Err(e) if e.to_string().contains("no track points") => {} // not a run, skip silently
             Err(e) => {
                 errors.push(format!("{name}: {e}"));
             }
