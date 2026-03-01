@@ -7,6 +7,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api.dart' as api;
+import '../lap_splits.dart';
 import '../models.dart';
 import 'settings_screen.dart';
 
@@ -165,6 +166,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                 if (_hasHr(run)) _hrChart(context, run),
                 if (_hasPace(run)) _paceChart(context, run),
                 if (_hasEle(run)) _eleChart(context, run),
+                _lapSplitsTable(context, run),
                 const SizedBox(height: 16),
               ],
             ),
@@ -385,4 +387,81 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
       ),
     );
   }
+
+  Widget _lapSplitsTable(BuildContext context, RunDetail run) {
+    // Use raw route points (not FlSpots) for lap split computation
+    final pts = run.route;
+    final km = _cumKm(pts);
+    final splits = computeLapSplits(pts, km);
+    if (splits.isEmpty) return const SizedBox.shrink();
+
+    final hasHr = splits.any((s) => s.avgHr != null);
+    final hasEle = splits.any((s) => s.elevationDelta != null);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Lap splits',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+              const SizedBox(height: 8),
+              Table(
+                columnWidths: {
+                  0: const FlexColumnWidth(1),
+                  1: const FlexColumnWidth(2),
+                  if (hasHr) 2: const FlexColumnWidth(2),
+                  if (hasEle) (hasHr ? 3 : 2): const FlexColumnWidth(2),
+                },
+                children: [
+                  TableRow(
+                    decoration: BoxDecoration(
+                      border: Border(
+                          bottom: BorderSide(
+                              color: Colors.grey.withValues(alpha: 0.3))),
+                    ),
+                    children: [
+                      _th('Km'),
+                      _th('Pace'),
+                      if (hasHr) _th('Avg HR'),
+                      if (hasEle) _th('Elev.'),
+                    ],
+                  ),
+                  ...splits.map((s) => TableRow(
+                        children: [
+                          _td('${s.lapNumber}'),
+                          _td(s.paceSeconds != null
+                              ? '${fmtPaceFromSeconds(s.paceSeconds!)}/km'
+                              : '—'),
+                          if (hasHr)
+                            _td(s.avgHr != null ? '${s.avgHr!.round()} bpm' : '—'),
+                          if (hasEle)
+                            _td(s.elevationDelta != null
+                                ? '${s.elevationDelta! >= 0 ? '+' : ''}${s.elevationDelta!.round()} m'
+                                : '—'),
+                        ],
+                      )),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _th(String text) => Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: Text(text,
+            style: const TextStyle(
+                fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey)),
+      );
+
+  Widget _td(String text) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Text(text, style: const TextStyle(fontSize: 12)),
+      );
 }
