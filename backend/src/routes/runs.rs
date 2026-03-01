@@ -42,6 +42,8 @@ pub struct RoutePoint {
     pub ele: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hr: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub t: Option<i64>, // seconds since run start
 }
 
 // ── GPX parsing ───────────────────────────────────────────────────────────────
@@ -172,10 +174,19 @@ fn parse_gpx(data: &[u8]) -> anyhow::Result<ParsedRun> {
     };
     let max_hr = hr_values.into_iter().max();
 
-    let route = points
-        .into_iter()
-        .map(|p| RoutePoint { lat: p.lat, lon: p.lon, ele: p.ele, hr: p.hr })
-        .collect();
+    let route = {
+        let t0 = points.first().and_then(|p| p.time_secs);
+        points
+            .into_iter()
+            .map(|p| RoutePoint {
+                lat: p.lat,
+                lon: p.lon,
+                ele: p.ele,
+                hr: p.hr,
+                t: p.time_secs.and_then(|ts| t0.map(|t0| ts - t0)),
+            })
+            .collect()
+    };
 
     Ok(ParsedRun { started_at, duration_s, distance_m, elevation_gain_m, avg_hr, max_hr, route })
 }

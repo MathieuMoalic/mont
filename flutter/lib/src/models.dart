@@ -3,14 +3,16 @@ class RunPoint {
   final double lon;
   final double? ele;
   final int? hr;
+  final int? t; // seconds since run start
 
-  RunPoint({required this.lat, required this.lon, this.ele, this.hr});
+  RunPoint({required this.lat, required this.lon, this.ele, this.hr, this.t});
 
   factory RunPoint.fromJson(Map<String, dynamic> j) => RunPoint(
         lat: (j['lat'] as num).toDouble(),
         lon: (j['lon'] as num).toDouble(),
         ele: (j['ele'] as num?)?.toDouble(),
         hr: j['hr'] as int?,
+        t: j['t'] as int?,
       );
 }
 
