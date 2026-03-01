@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'views/runs_screen.dart';
+import 'views/settings_screen.dart';
 import 'views/weight_screen.dart';
 import 'views/workouts_screen.dart';
 
@@ -17,6 +18,7 @@ class _HomeShellState extends State<HomeShell> {
     WorkoutsScreen(),
     WeightScreen(),
     RunsScreen(),
+    SettingsScreen(),
   ];
 
   @override
@@ -38,6 +40,10 @@ class _HomeShellState extends State<HomeShell> {
           NavigationDestination(
             icon: Icon(Icons.directions_run),
             label: 'Runs',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.settings_outlined),
+            label: 'Settings',
           ),
         ],
       ),

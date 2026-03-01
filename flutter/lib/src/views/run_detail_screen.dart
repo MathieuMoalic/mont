@@ -4,9 +4,11 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api.dart' as api;
 import '../models.dart';
+import 'settings_screen.dart';
 
 class RunDetailScreen extends StatefulWidget {
   const RunDetailScreen({super.key, required this.runId});
@@ -21,6 +23,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
   RunDetail? _run;
   bool _loading = true;
   String? _error;
+  int _smoothing = kSmoothingDefault;
 
   @override
   void initState() {
@@ -29,11 +32,13 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
   }
 
   Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
     try {
       final run = await api.getRun(widget.runId);
       if (!mounted) return;
       setState(() {
         _run = run;
+        _smoothing = prefs.getInt(kSmoothingKey) ?? kSmoothingDefault;
         _loading = false;
       });
     } catch (e) {
@@ -184,7 +189,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
     return _chartCard(
       title: 'Heart rate (bpm)',
       color: Colors.red,
-      spots: spots,
+      spots: _smooth(spots, _smoothing),
       leftLabel: (v) => v.round().toString(),
       bottomLabel: _fmtTime,
     );
@@ -219,7 +224,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
     return _chartCard(
       title: 'Pace (min/km)',
       color: Colors.blue,
-      spots: spots,
+      spots: _smooth(spots, _smoothing),
       leftLabel: (v) {
         final m = v.floor();
         final s = ((v - m) * 60).round();
@@ -238,7 +243,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
     return _chartCard(
       title: 'Elevation (m)',
       color: Colors.green,
-      spots: spots,
+      spots: _smooth(spots, _smoothing),
       leftLabel: (v) => v.round().toString(),
       bottomLabel: _fmtTime,
     );
@@ -260,6 +265,20 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
             math.sin(dlon / 2) *
             math.sin(dlon / 2);
     return r * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+  }
+
+  // Simple centred moving average over k points
+  static List<FlSpot> _smooth(List<FlSpot> spots, int k) {
+    if (k <= 1 || spots.length < k) return spots;
+    final half = k ~/ 2;
+    final out = <FlSpot>[];
+    for (int i = 0; i < spots.length; i++) {
+      final lo = math.max(0, i - half);
+      final hi = math.min(spots.length - 1, i + half);
+      final avg = spots.sublist(lo, hi + 1).map((s) => s.y).reduce((a, b) => a + b) / (hi - lo + 1);
+      out.add(FlSpot(spots[i].x, avg));
+    }
+    return out;
   }
 
   Widget _chartCard({
