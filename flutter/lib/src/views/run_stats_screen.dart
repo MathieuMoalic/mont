@@ -47,6 +47,13 @@ class RunStatsScreen extends StatelessWidget {
       child: BarChart(
         BarChartData(
           maxY: (maxKm * 1.2).clamp(5, double.infinity),
+          barTouchData: BarTouchData(
+            touchTooltipData: BarTouchTooltipData(
+              getTooltipItem: (group, groupIndex, rod, rodIndex) =>
+                  BarTooltipItem('${rod.toY.toStringAsFixed(1)} km',
+                      const TextStyle(fontSize: 11)),
+            ),
+          ),
           barGroups: List.generate(
             weeks.length,
             (i) => BarChartGroupData(
@@ -116,6 +123,16 @@ class RunStatsScreen extends StatelessWidget {
         LineChartData(
           minY: minY - pad,
           maxY: maxY + pad,
+          lineTouchData: LineTouchData(
+            touchTooltipData: LineTouchTooltipData(
+              getTooltipItems: (spots) => spots
+                  .map((s) => LineTooltipItem(
+                        '${_fmtPace(s.y)}/km',
+                        const TextStyle(fontSize: 11),
+                      ))
+                  .toList(),
+            ),
+          ),
           lineBarsData: [
             LineChartBarData(
               spots: spots,
@@ -238,6 +255,98 @@ class RunStatsScreen extends StatelessWidget {
     );
   }
 
+  // ── Personal records ─────────────────────────────────────────────────────────
+  Widget _personalRecords(BuildContext context) {
+    if (runs.isEmpty) return const SizedBox.shrink();
+
+    final longest = runs.reduce((a, b) => a.distanceM > b.distanceM ? a : b);
+
+    final fastRuns = runs.where((r) => r.distanceM > 3000).toList();
+    final bestPaceRun = fastRuns.isEmpty
+        ? null
+        : fastRuns.reduce((a, b) =>
+            (a.durationS / a.distanceM) < (b.durationS / b.distanceM) ? a : b);
+
+    final eleRuns = runs.where((r) => r.elevationGainM != null).toList();
+    final mostEle = eleRuns.isEmpty
+        ? null
+        : eleRuns.reduce(
+            (a, b) => a.elevationGainM! > b.elevationGainM! ? a : b);
+
+    // Best week km
+    final kmMap = <String, double>{};
+    for (final r in runs) {
+      final k = _weekKey(r.startedAt.toLocal());
+      kmMap[k] = (kmMap[k] ?? 0) + r.distanceM / 1000;
+    }
+    final bestWeekKm =
+        kmMap.isEmpty ? 0.0 : kmMap.values.fold(0.0, math.max);
+
+    String fmtDist(double m) => '${(m / 1000).toStringAsFixed(2)} km';
+    String fmtDate(DateTime d) => d.toLocal().toString().substring(0, 10);
+
+    final records = <(String, String, String, DateTime)>[
+      ('🏅', 'Longest run', fmtDist(longest.distanceM), longest.startedAt),
+      if (bestPaceRun != null)
+        (
+          '⚡',
+          'Best avg pace',
+          '${_fmtPace(bestPaceRun.durationS / (bestPaceRun.distanceM / 1000))}/km',
+          bestPaceRun.startedAt
+        ),
+      if (mostEle != null)
+        (
+          '⛰️',
+          'Most elevation',
+          '+${mostEle.elevationGainM!.round()} m',
+          mostEle.startedAt
+        ),
+      ('📅', 'Best week', '${bestWeekKm.toStringAsFixed(1)} km', DateTime.now()),
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Personal records',
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleSmall
+                      ?.copyWith(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              ...records.map((r) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
+                      children: [
+                        Text(r.$1, style: const TextStyle(fontSize: 18)),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(r.$2,
+                              style: const TextStyle(color: Colors.grey)),
+                        ),
+                        Text(r.$3,
+                            style: const TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 15)),
+                        if (r.$2 != 'Best week') ...[
+                          const SizedBox(width: 8),
+                          Text(fmtDate(r.$4),
+                              style: const TextStyle(
+                                  fontSize: 11, color: Colors.grey)),
+                        ],
+                      ],
+                    ),
+                  )),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   // ── Summary stats row ────────────────────────────────────────────────────────
   Widget _summaryRow() {
     final totalKm = runs.fold(0.0, (s, r) => s + r.distanceM) / 1000;
@@ -272,6 +381,7 @@ class RunStatsScreen extends StatelessWidget {
         padding: const EdgeInsets.only(bottom: 24),
         children: [
           _summaryRow(),
+          _personalRecords(context),
           const Divider(),
           _kmPerWeek(context),
           _paceTrend(context),
