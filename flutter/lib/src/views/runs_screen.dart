@@ -58,9 +58,8 @@ class _RunsScreenState extends State<RunsScreen> {
       await _load();
       if (!mounted) return;
       final imported = result['imported'] as int;
-      final skipped = result['skipped'] as int;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Synced: $imported imported, $skipped skipped')),
+        SnackBar(content: Text('Synced: $imported runs updated')),
       );
     } catch (e) {
       if (!mounted) return;
