@@ -51,6 +51,7 @@ pub async fn create_exercise(
 pub struct ExerciseHistoryPoint {
     pub workout_date: String,
     pub max_weight_kg: f64,
+    pub reps_at_max: i64,
     pub total_sets: i64,
     pub total_reps: i64,
     pub total_volume: f64,
@@ -75,6 +76,11 @@ pub async fn exercise_history(
         r"SELECT
               w.started_at                    AS workout_date,
               MAX(s.weight_kg)                AS max_weight_kg,
+              (SELECT s2.reps
+               FROM workout_sets s2
+               WHERE s2.workout_id = w.id AND s2.exercise_id = ?
+               ORDER BY s2.weight_kg DESC, s2.reps DESC
+               LIMIT 1)                       AS reps_at_max,
               COUNT(*)                        AS total_sets,
               SUM(s.reps)                     AS total_reps,
               SUM(CAST(s.reps AS REAL) * s.weight_kg) AS total_volume
@@ -84,6 +90,7 @@ pub async fn exercise_history(
           GROUP BY w.id
           ORDER BY w.started_at ASC",
     )
+    .bind(id)
     .bind(id)
     .fetch_all(&state.pool)
     .await?;

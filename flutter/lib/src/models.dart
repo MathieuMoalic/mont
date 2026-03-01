@@ -195,6 +195,7 @@ class WorkoutDetail {
 class ExerciseHistoryPoint {
   final DateTime workoutDate;
   final double maxWeightKg;
+  final int repsAtMax;
   final int totalSets;
   final int totalReps;
   final double totalVolume;
@@ -202,6 +203,7 @@ class ExerciseHistoryPoint {
   ExerciseHistoryPoint({
     required this.workoutDate,
     required this.maxWeightKg,
+    required this.repsAtMax,
     required this.totalSets,
     required this.totalReps,
     required this.totalVolume,
@@ -211,8 +213,13 @@ class ExerciseHistoryPoint {
       ExerciseHistoryPoint(
         workoutDate: DateTime.parse(j['workout_date'] as String),
         maxWeightKg: (j['max_weight_kg'] as num).toDouble(),
+        repsAtMax: j['reps_at_max'] as int,
         totalSets: j['total_sets'] as int,
         totalReps: j['total_reps'] as int,
         totalVolume: (j['total_volume'] as num).toDouble(),
       );
+
+  /// Epley estimated 1-rep max: weight × (1 + reps / 30).
+  double get estimated1RM =>
+      repsAtMax <= 1 ? maxWeightKg : maxWeightKg * (1 + repsAtMax / 30.0);
 }

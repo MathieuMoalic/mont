@@ -218,6 +218,7 @@ class _ExerciseHistoryScreenState extends State<ExerciseHistoryScreen> {
             children: [
               _statCard('🏋️ Current max', '${lastMaxWeight.toStringAsFixed(1)} kg'),
               _statCard('🏅 All-time PR', '${pr.maxWeightKg.toStringAsFixed(1)} kg\n${_fmtDate(pr.workoutDate)}'),
+              _statCard('💪 Est. 1RM', _fmt1RM(history)),
               _statCard('📅 Sessions', '${history.length}'),
               _statCard('🔁 Total sets', '${history.fold(0, (s, p) => s + p.totalSets)}'),
             ],
@@ -230,6 +231,11 @@ class _ExerciseHistoryScreenState extends State<ExerciseHistoryScreen> {
         ],
       ),
     );
+  }
+
+  String _fmt1RM(List<ExerciseHistoryPoint> history) {
+    final best = history.map((p) => p.estimated1RM).reduce((a, b) => a > b ? a : b);
+    return '${best.toStringAsFixed(1)} kg';
   }
 
   double _xInterval(int n) {

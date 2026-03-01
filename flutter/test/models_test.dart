@@ -116,4 +116,55 @@ void main() {
       expect(d.isActive, isFalse);
     });
   });
+
+  group('ExerciseHistoryPoint', () {
+    Map<String, dynamic> _json({
+      String date = '2025-01-01T10:00:00Z',
+      double maxWeight = 100.0,
+      int repsAtMax = 5,
+      int totalSets = 3,
+      int totalReps = 15,
+      double totalVolume = 1500.0,
+    }) =>
+        {
+          'workout_date': date,
+          'max_weight_kg': maxWeight,
+          'reps_at_max': repsAtMax,
+          'total_sets': totalSets,
+          'total_reps': totalReps,
+          'total_volume': totalVolume,
+        };
+
+    test('fromJson parses all fields', () {
+      final p = ExerciseHistoryPoint.fromJson(_json());
+      expect(p.maxWeightKg, 100.0);
+      expect(p.repsAtMax, 5);
+      expect(p.totalSets, 3);
+      expect(p.totalReps, 15);
+      expect(p.totalVolume, 1500.0);
+    });
+
+    test('estimated1RM uses Epley formula: weight * (1 + reps/30)', () {
+      final p = ExerciseHistoryPoint.fromJson(_json(maxWeight: 100.0, repsAtMax: 10));
+      // 100 * (1 + 10/30) = 100 * 1.333... ≈ 133.33
+      expect(p.estimated1RM, closeTo(133.33, 0.01));
+    });
+
+    test('estimated1RM with 1 rep returns raw weight', () {
+      final p = ExerciseHistoryPoint.fromJson(_json(maxWeight: 120.0, repsAtMax: 1));
+      expect(p.estimated1RM, 120.0);
+    });
+
+    test('estimated1RM with 5 reps', () {
+      final p = ExerciseHistoryPoint.fromJson(_json(maxWeight: 100.0, repsAtMax: 5));
+      // 100 * (1 + 5/30) = 100 * 1.1666... ≈ 116.67
+      expect(p.estimated1RM, closeTo(116.67, 0.01));
+    });
+
+    test('estimated1RM with 30 reps doubles the weight', () {
+      final p = ExerciseHistoryPoint.fromJson(_json(maxWeight: 50.0, repsAtMax: 30));
+      // 50 * (1 + 30/30) = 50 * 2 = 100
+      expect(p.estimated1RM, closeTo(100.0, 0.01));
+    });
+  });
 }
