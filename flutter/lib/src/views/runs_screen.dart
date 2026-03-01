@@ -58,9 +58,11 @@ class _RunsScreenState extends State<RunsScreen> {
       await _load();
       if (!mounted) return;
       final imported = result['imported'] as int;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Synced: $imported runs updated')),
-      );
+      final errs = (result['errors'] as List?)?.length ?? 0;
+      final msg = errs > 0
+          ? 'Synced: $imported runs, $errs errors'
+          : 'Synced: $imported runs updated';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

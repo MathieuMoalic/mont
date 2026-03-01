@@ -374,7 +374,7 @@ pub async fn sync_gadgetbridge(
                     "INSERT INTO runs \
                      (started_at, duration_s, distance_m, elevation_gain_m, avg_hr, max_hr, route_json, source_file) \
                      VALUES (?, ?, ?, ?, ?, ?, ?, ?) \
-                     ON CONFLICT(source_file) DO UPDATE SET \
+                     ON CONFLICT(source_file) WHERE source_file IS NOT NULL DO UPDATE SET \
                        started_at = excluded.started_at, \
                        duration_s = excluded.duration_s, \
                        distance_m = excluded.distance_m, \
