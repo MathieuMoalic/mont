@@ -17,6 +17,8 @@ struct Claims {
     exp: u64,
 }
 
+/// # Errors
+/// Returns `UNAUTHORIZED` if the token is missing or invalid, `INTERNAL_SERVER_ERROR` if the JWT secret is not configured.
 pub async fn require_auth(
     State(state): State<AppState>,
     request: Request<Body>,
