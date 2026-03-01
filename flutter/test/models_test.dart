@@ -117,6 +117,65 @@ void main() {
     });
   });
 
+  group('TemplateSummary', () {
+    test('fromJson parses all fields', () {
+      final t = TemplateSummary.fromJson(
+          {'id': 1, 'name': 'Push Day', 'notes': 'chest + shoulders', 'set_count': 6});
+      expect(t.id, 1);
+      expect(t.name, 'Push Day');
+      expect(t.notes, 'chest + shoulders');
+      expect(t.setCount, 6);
+    });
+
+    test('fromJson handles null notes', () {
+      final t = TemplateSummary.fromJson(
+          {'id': 2, 'name': 'Leg Day', 'notes': null, 'set_count': 0});
+      expect(t.notes, isNull);
+      expect(t.setCount, 0);
+    });
+  });
+
+  group('TemplateSet', () {
+    test('fromJson parses integer weight', () {
+      final s = TemplateSet.fromJson({
+        'id': 1, 'exercise_id': 5, 'exercise_name': 'Squat',
+        'set_number': 1, 'target_reps': 5, 'target_weight_kg': 100,
+      });
+      expect(s.targetWeightKg, 100.0);
+      expect(s.targetReps, 5);
+      expect(s.exerciseName, 'Squat');
+    });
+
+    test('fromJson parses fractional weight', () {
+      final s = TemplateSet.fromJson({
+        'id': 1, 'exercise_id': 1, 'exercise_name': 'OHP',
+        'set_number': 1, 'target_reps': 8, 'target_weight_kg': 52.5,
+      });
+      expect(s.targetWeightKg, 52.5);
+    });
+  });
+
+  group('TemplateDetail', () {
+    test('fromJson parses detail with sets', () {
+      final d = TemplateDetail.fromJson({
+        'id': 3, 'name': 'Full Body', 'notes': null,
+        'sets': [
+          {'id': 1, 'exercise_id': 1, 'exercise_name': 'Squat', 'set_number': 1, 'target_reps': 5, 'target_weight_kg': 100.0},
+          {'id': 2, 'exercise_id': 2, 'exercise_name': 'Bench', 'set_number': 1, 'target_reps': 8, 'target_weight_kg': 80.0},
+        ],
+      });
+      expect(d.id, 3);
+      expect(d.sets.length, 2);
+      expect(d.sets[0].exerciseName, 'Squat');
+      expect(d.sets[1].targetWeightKg, 80.0);
+    });
+
+    test('fromJson parses empty sets', () {
+      final d = TemplateDetail.fromJson({'id': 1, 'name': 'Empty', 'notes': null, 'sets': []});
+      expect(d.sets, isEmpty);
+    });
+  });
+
   group('ExerciseHistoryPoint', () {
     Map<String, dynamic> _json({
       String date = '2025-01-01T10:00:00Z',

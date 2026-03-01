@@ -7,6 +7,7 @@ import '../api.dart' as api;
 import '../models.dart';
 import 'exercise_picker_screen.dart';
 import 'settings_screen.dart' show kRestTimerKey, kRestTimerDefault;
+import 'templates_screen.dart';
 
 class ActiveWorkoutScreen extends StatefulWidget {
   final int workoutId;
@@ -70,6 +71,28 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       if (mounted) setState(() { _workout = w; _error = null; });
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
+    }
+  }
+
+  Future<void> _applyTemplate() async {
+    final template = await Navigator.push<TemplateSummary>(
+      context,
+      MaterialPageRoute(builder: (_) => const TemplatesScreen(selectMode: true)),
+    );
+    if (template == null || !mounted) return;
+    try {
+      await api.applyTemplate(templateId: template.id, workoutId: widget.workoutId);
+      _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Applied "${template.name}"')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.toString())));
+      }
     }
   }
 
@@ -243,7 +266,12 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           _workout == null ? 'Workout' : _formatDate(_workout!.startedAt),
         ),
         actions: [
-          if (isActive && _workout != null)
+          if (isActive && _workout != null) ...[
+            IconButton(
+              icon: const Icon(Icons.content_copy_outlined),
+              tooltip: 'Apply template',
+              onPressed: _applyTemplate,
+            ),
             Padding(
               padding: const EdgeInsets.only(right: 8),
               child: FilledButton(
@@ -251,6 +279,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                 child: const Text('Finish'),
               ),
             ),
+          ],
         ],
       ),
       body: Column(

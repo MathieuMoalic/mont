@@ -6,6 +6,7 @@ import '../models.dart';
 import 'active_workout_screen.dart';
 import 'exercise_history_screen.dart';
 import 'login_page.dart';
+import 'templates_screen.dart';
 
 class WorkoutsScreen extends StatefulWidget {
   const WorkoutsScreen({super.key});
@@ -90,6 +91,14 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
       appBar: AppBar(
         title: const Text('Mont'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.content_copy_outlined),
+            tooltip: 'Templates',
+            onPressed: () => Navigator.push<void>(
+              context,
+              MaterialPageRoute(builder: (_) => const TemplatesScreen()),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.bar_chart),
             tooltip: 'Exercise history',
