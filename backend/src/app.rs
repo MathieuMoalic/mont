@@ -67,6 +67,7 @@ pub fn build_app(state: AppState) -> Router {
         .route("/weight/{id}", delete(weight::delete_weight_entry))
         .route("/runs", get(runs::list_runs))
         .route("/runs/import", post(runs::import_run))
+        .route("/runs/sync", post(runs::sync_gadgetbridge))
         .route("/runs/{id}", get(runs::get_run).delete(runs::delete_run))
         .route_layer(from_fn_with_state(state.clone(), require_auth));
 

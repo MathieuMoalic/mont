@@ -306,3 +306,96 @@ pub async fn delete_run(
     }
     Ok(StatusCode::NO_CONTENT)
 }
+
+#[derive(Serialize)]
+pub struct SyncResult {
+    pub imported: usize,
+    pub skipped: usize,
+    pub errors: Vec<String>,
+}
+
+/// # Errors
+/// Returns `SERVICE_UNAVAILABLE` if no zip path is configured,
+/// `NOT_FOUND` if the zip file doesn't exist, or a database error.
+pub async fn sync_gadgetbridge(
+    State(state): State<AppState>,
+) -> AppResult<Json<SyncResult>> {
+    let zip_path = state
+        .config
+        .gadgetbridge_zip
+        .clone()
+        .ok_or_else(|| (StatusCode::SERVICE_UNAVAILABLE, "MONT_GADGETBRIDGE_ZIP not configured".to_string()))?;
+
+    // Read all GPX files from zip in a blocking thread (zip::ZipArchive is not Send)
+    let gpx_files: Vec<(String, Vec<u8>)> = tokio::task::spawn_blocking(move || {
+        let file = std::fs::File::open(&zip_path)
+            .map_err(|e| format!("Cannot open zip: {e}"))?;
+        let mut archive = zip::ZipArchive::new(file)
+            .map_err(|e| format!("Invalid zip: {e}"))?;
+        let mut out = Vec::new();
+        for i in 0..archive.len() {
+            let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
+            let name = entry.name().to_owned();
+            if !name.to_ascii_lowercase().ends_with(".gpx") { continue; }
+            let mut bytes = Vec::new();
+            std::io::Read::read_to_end(&mut entry, &mut bytes).map_err(|e| e.to_string())?;
+            out.push((name, bytes));
+        }
+        Ok::<_, String>(out)
+    })
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+
+    let mut imported = 0usize;
+    let mut skipped = 0usize;
+    let mut errors: Vec<String> = Vec::new();
+
+    for (name, bytes) in gpx_files {
+        let exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM runs WHERE source_file = ?)",
+        )
+        .bind(&name)
+        .fetch_one(&state.pool)
+        .await?;
+
+        if exists {
+            skipped += 1;
+            continue;
+        }
+
+        match parse_gpx(&bytes) {
+            Err(e) => {
+                errors.push(format!("{name}: {e}"));
+            }
+            Ok(parsed) => {
+                let route_json = match serde_json::to_string(&parsed.route) {
+                    Ok(j) => j,
+                    Err(e) => { errors.push(format!("{name}: {e}")); continue; }
+                };
+                let result = sqlx::query(
+                    "INSERT OR IGNORE INTO runs \
+                     (started_at, duration_s, distance_m, elevation_gain_m, avg_hr, max_hr, route_json, source_file) \
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                )
+                .bind(&parsed.started_at)
+                .bind(parsed.duration_s)
+                .bind(parsed.distance_m)
+                .bind(parsed.elevation_gain_m)
+                .bind(parsed.avg_hr)
+                .bind(parsed.max_hr)
+                .bind(&route_json)
+                .bind(&name)
+                .execute(&state.pool)
+                .await;
+                match result {
+                    Ok(r) if r.rows_affected() > 0 => imported += 1,
+                    Ok(_) => skipped += 1,
+                    Err(e) => errors.push(format!("{name}: {e}")),
+                }
+            }
+        }
+    }
+
+    Ok(Json(SyncResult { imported, skipped, errors }))
+}
