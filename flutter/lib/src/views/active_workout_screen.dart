@@ -1,8 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api.dart' as api;
 import '../models.dart';
 import 'exercise_picker_screen.dart';
+import 'settings_screen.dart' show kRestTimerKey, kRestTimerDefault;
 
 class ActiveWorkoutScreen extends StatefulWidget {
   final int workoutId;
@@ -16,10 +20,48 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   WorkoutDetail? _workout;
   String? _error;
 
+  // Rest timer
+  int _restDuration = kRestTimerDefault;
+  int _restRemaining = 0;
+  Timer? _restTimer;
+
   @override
   void initState() {
     super.initState();
+    _loadRestDuration();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _restTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _loadRestDuration() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() => _restDuration = prefs.getInt(kRestTimerKey) ?? kRestTimerDefault);
+  }
+
+  void _startRestTimer() {
+    _restTimer?.cancel();
+    setState(() => _restRemaining = _restDuration);
+    _restTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) { t.cancel(); return; }
+      setState(() {
+        if (_restRemaining > 0) {
+          _restRemaining--;
+        } else {
+          t.cancel();
+        }
+      });
+    });
+  }
+
+  void _dismissRestTimer() {
+    _restTimer?.cancel();
+    setState(() => _restRemaining = 0);
   }
 
   Future<void> _load() async {
@@ -53,6 +95,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         weightKg: result.$2,
       );
       _load();
+      if (mounted) _startRestTimer();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
@@ -210,13 +253,63 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
             ),
         ],
       ),
-      body: _buildBody(),
+      body: Column(
+        children: [
+          Expanded(child: _buildBody()),
+          if (_restRemaining > 0) _buildRestBanner(),
+        ],
+      ),
       floatingActionButton: isActive
           ? FloatingActionButton(
               onPressed: _addSet,
               child: const Icon(Icons.add),
             )
           : null,
+    );
+  }
+
+  String _fmtRest(int s) {
+    final m = s ~/ 60;
+    final sec = (s % 60).toString().padLeft(2, '0');
+    return '$m:$sec';
+  }
+
+  Widget _buildRestBanner() {
+    final frac = _restRemaining / _restDuration;
+    final isLow = _restRemaining <= 10;
+    final color = isLow
+        ? Theme.of(context).colorScheme.error
+        : Theme.of(context).colorScheme.primaryContainer;
+    return Container(
+      color: color,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: Row(
+        children: [
+          const Icon(Icons.timer_outlined),
+          const SizedBox(width: 8),
+          Text(
+            'Rest  ${_fmtRest(_restRemaining)}',
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: LinearProgressIndicator(
+              value: frac,
+              backgroundColor: Colors.white24,
+            ),
+          ),
+          const SizedBox(width: 8),
+          TextButton(
+            onPressed: _startRestTimer,
+            child: const Text('Reset'),
+          ),
+          IconButton(
+            icon: const Icon(Icons.close),
+            tooltip: 'Skip rest',
+            onPressed: _dismissRestTimer,
+          ),
+        ],
+      ),
     );
   }
 
