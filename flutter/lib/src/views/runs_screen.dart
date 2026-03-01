@@ -38,8 +38,6 @@ class _RunsScreenState extends State<RunsScreen> {
 
   Future<void> _importGpx() async {
     final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['gpx'],
       withData: true,
     );
     if (result == null || result.files.isEmpty) return;
