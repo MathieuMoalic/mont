@@ -159,3 +159,31 @@ Future<void> deleteSet({required int workoutId, required int setId}) async {
   );
   if (res.statusCode != 204) throw Exception('HTTP ${res.statusCode}');
 }
+
+// ── Weight ────────────────────────────────────────────────────────────────────
+
+Future<List<WeightEntry>> listWeight() async {
+  final res = await http.get(_u('/weight'), headers: _headers());
+  if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
+  return (jsonDecode(res.body) as List)
+      .map((e) => WeightEntry.fromJson(e as Map<String, dynamic>))
+      .toList();
+}
+
+Future<WeightEntry> createWeightEntry({required double weightKg, String? measuredAt}) async {
+  final res = await http.post(
+    _u('/weight'),
+    headers: _headers(),
+    body: jsonEncode({
+      'weight_kg': weightKg,
+      if (measuredAt != null) 'measured_at': measuredAt,
+    }),
+  );
+  if (res.statusCode != 201) throw Exception('HTTP ${res.statusCode}');
+  return WeightEntry.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+}
+
+Future<void> deleteWeightEntry(int id) async {
+  final res = await http.delete(_u('/weight/$id'), headers: _headers());
+  if (res.statusCode != 204) throw Exception('HTTP ${res.statusCode}');
+}
