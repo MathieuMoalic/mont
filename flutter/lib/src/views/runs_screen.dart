@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../api.dart' as api;
 import '../models.dart';
-import '../platform/gpx_picker.dart';
 import 'run_detail_screen.dart';
+import 'run_stats_screen.dart';
 
 class RunsScreen extends StatefulWidget {
   const RunsScreen({super.key});
@@ -33,21 +33,6 @@ class _RunsScreenState extends State<RunsScreen> {
     } catch (_) {
       if (!mounted) return;
       setState(() => _loading = false);
-    }
-  }
-
-  Future<void> _importGpx() async {
-    final picked = await pickGpxFile();
-    if (picked == null) return;
-
-    try {
-      await api.importGpx(picked.bytes, picked.name);
-      await _load();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Import failed: $e')),
-      );
     }
   }
 
@@ -92,6 +77,18 @@ class _RunsScreenState extends State<RunsScreen> {
         title: const Text('Runs'),
         actions: [
           IconButton(
+            icon: const Icon(Icons.bar_chart),
+            tooltip: 'Stats',
+            onPressed: _runs.isEmpty
+                ? null
+                : () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => RunStatsScreen(runs: _runs),
+                      ),
+                    ),
+          ),
+          IconButton(
             icon: const Icon(Icons.sync),
             tooltip: 'Sync Gadgetbridge',
             onPressed: _syncGadgetbridge,
@@ -101,7 +98,7 @@ class _RunsScreenState extends State<RunsScreen> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _runs.isEmpty
-              ? const Center(child: Text('No runs yet. Import a GPX file!'))
+              ? const Center(child: Text('No runs yet. Tap ↻ to sync from Gadgetbridge.'))
               : RefreshIndicator(
                   onRefresh: _load,
                   child: ListView.builder(
@@ -130,11 +127,6 @@ class _RunsScreenState extends State<RunsScreen> {
                     },
                   ),
                 ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _importGpx,
-        icon: const Icon(Icons.upload_file),
-        label: const Text('Import GPX'),
-      ),
     );
   }
 }
