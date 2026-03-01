@@ -175,35 +175,47 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
   }
 
   static bool _hasHr(RunDetail run) =>
-      run.route.any((p) => p.hr != null && p.t != null);
+      run.route.any((p) => p.hr != null);
   static bool _hasPace(RunDetail run) =>
       run.route.length >= 2 && run.route.any((p) => p.t != null);
   static bool _hasEle(RunDetail run) =>
-      run.route.any((p) => p.ele != null && p.t != null);
+      run.route.any((p) => p.ele != null);
+
+  // Cumulative distance in km for each point in the route
+  static List<double> _cumKm(List<RunPoint> pts) {
+    final out = <double>[0.0];
+    for (int i = 1; i < pts.length; i++) {
+      out.add(out.last +
+          _haversine(pts[i - 1].lat, pts[i - 1].lon, pts[i].lat, pts[i].lon) /
+              1000.0);
+    }
+    return out;
+  }
+
+  static String _fmtKm(double km) => '${km.toStringAsFixed(1)} km';
 
   Widget _hrChart(BuildContext context, RunDetail run) {
-    final spots = run.route
-        .where((p) => p.hr != null && p.t != null)
-        .map((p) => FlSpot(p.t!.toDouble(), p.hr!.toDouble()))
-        .toList();
+    final pts = run.route.where((p) => p.hr != null).toList();
+    final km = _cumKm(pts);
+    final spots = List.generate(pts.length,
+        (i) => FlSpot(km[i], pts[i].hr!.toDouble()));
     return _chartCard(
       title: 'Heart rate (bpm)',
       color: Colors.red,
       spots: _smooth(spots, _smoothing),
       leftLabel: (v) => v.round().toString(),
-      bottomLabel: _fmtTime,
+      bottomLabel: _fmtKm,
     );
   }
 
   Widget _paceChart(BuildContext context, RunDetail run) {
-    // Compute pace in min/km using 30-second rolling windows
     final pts = run.route.where((p) => p.t != null).toList();
     if (pts.length < 2) return const SizedBox.shrink();
+    final km = _cumKm(pts);
 
     final List<FlSpot> spots = [];
     const windowSecs = 30;
     for (int i = 0; i < pts.length; i++) {
-      // Find point ~windowSecs ago
       int j = i;
       while (j > 0 && (pts[i].t! - pts[j].t!) < windowSecs) { j--; }
       if (j == i) continue;
@@ -216,8 +228,8 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
       }
       if (dm < 1) continue;
       final paceMinKm = (dt / dm) * (1000 / 60);
-      if (paceMinKm > 20 || paceMinKm < 2) continue; // filter outliers
-      spots.add(FlSpot(pts[i].t!.toDouble(), paceMinKm));
+      if (paceMinKm > 20 || paceMinKm < 2) continue;
+      spots.add(FlSpot(km[i], paceMinKm));
     }
     if (spots.isEmpty) return const SizedBox.shrink();
 
@@ -230,30 +242,25 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
         final s = ((v - m) * 60).round();
         return "$m:${s.toString().padLeft(2, '0')}";
       },
-      bottomLabel: _fmtTime,
-      flipY: true, // lower pace = faster
+      bottomLabel: _fmtKm,
+      flipY: true,
     );
   }
 
   Widget _eleChart(BuildContext context, RunDetail run) {
-    final spots = run.route
-        .where((p) => p.ele != null && p.t != null)
-        .map((p) => FlSpot(p.t!.toDouble(), p.ele!))
-        .toList();
+    final pts = run.route.where((p) => p.ele != null).toList();
+    final km = _cumKm(pts);
+    final spots = List.generate(pts.length,
+        (i) => FlSpot(km[i], pts[i].ele!));
     return _chartCard(
       title: 'Elevation (m)',
       color: Colors.green,
       spots: _smooth(spots, _smoothing),
       leftLabel: (v) => v.round().toString(),
-      bottomLabel: _fmtTime,
+      bottomLabel: _fmtKm,
     );
   }
 
-  static String _fmtTime(double secs) {
-    final m = (secs / 60).round();
-    if (m >= 60) return '${m ~/ 60}h${(m % 60).toString().padLeft(2, '0')}';
-    return '${m}m';
-  }
 
   static double _haversine(double lat1, double lon1, double lat2, double lon2) {
     const r = 6371000.0;
