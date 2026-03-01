@@ -321,7 +321,6 @@ pub async fn delete_run(
 #[derive(Serialize)]
 pub struct SyncResult {
     pub imported: usize,
-    pub skipped: usize,
     pub errors: Vec<String>,
 }
 
@@ -359,22 +358,9 @@ pub async fn sync_gadgetbridge(
     .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
 
     let mut imported = 0usize;
-    let mut skipped = 0usize;
     let mut errors: Vec<String> = Vec::new();
 
     for (name, bytes) in gpx_files {
-        let exists: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM runs WHERE source_file = ?)",
-        )
-        .bind(&name)
-        .fetch_one(&state.pool)
-        .await?;
-
-        if exists {
-            skipped += 1;
-            continue;
-        }
-
         match parse_gpx(&bytes) {
             Err(e) => {
                 errors.push(format!("{name}: {e}"));
@@ -385,9 +371,17 @@ pub async fn sync_gadgetbridge(
                     Err(e) => { errors.push(format!("{name}: {e}")); continue; }
                 };
                 let result = sqlx::query(
-                    "INSERT OR IGNORE INTO runs \
+                    "INSERT INTO runs \
                      (started_at, duration_s, distance_m, elevation_gain_m, avg_hr, max_hr, route_json, source_file) \
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?) \
+                     ON CONFLICT(source_file) DO UPDATE SET \
+                       started_at = excluded.started_at, \
+                       duration_s = excluded.duration_s, \
+                       distance_m = excluded.distance_m, \
+                       elevation_gain_m = excluded.elevation_gain_m, \
+                       avg_hr = excluded.avg_hr, \
+                       max_hr = excluded.max_hr, \
+                       route_json = excluded.route_json",
                 )
                 .bind(&parsed.started_at)
                 .bind(parsed.duration_s)
@@ -400,13 +394,12 @@ pub async fn sync_gadgetbridge(
                 .execute(&state.pool)
                 .await;
                 match result {
-                    Ok(r) if r.rows_affected() > 0 => imported += 1,
-                    Ok(_) => skipped += 1,
+                    Ok(_) => imported += 1,
                     Err(e) => errors.push(format!("{name}: {e}")),
                 }
             }
         }
     }
 
-    Ok(Json(SyncResult { imported, skipped, errors }))
+    Ok(Json(SyncResult { imported, errors }))
 }
