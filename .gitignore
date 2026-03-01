@@ -1,0 +1,13 @@
+.direnv
+backend/mont.sqlite*
+backend/media
+.env
+mont.sqlite
+mont.sqlite-shm
+mont.sqlite-wal
+dist
+flutter/**/build/
+flutter/android/.gradle/
+flutter/android/.cxx/
+result
+target/rust-analyzer/
