@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 
 import './platform/kv_store.dart' as kv;
+import './models.dart';
 
 const String _defaultBaseUrl = String.fromEnvironment(
   'API_BASE_URL',
@@ -81,4 +82,80 @@ Future<String> login({required String password}) async {
   if (res.statusCode != 200) throw Exception('Login failed: ${res.body}');
   final data = jsonDecode(res.body) as Map<String, dynamic>;
   return data['token'] as String;
+}
+
+// ── Exercises ────────────────────────────────────────────────────────────────
+
+Future<List<Exercise>> listExercises() async {
+  final res = await http.get(_u('/exercises'), headers: _headers());
+  if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
+  return (jsonDecode(res.body) as List)
+      .map((e) => Exercise.fromJson(e as Map<String, dynamic>))
+      .toList();
+}
+
+Future<Exercise> createExercise({required String name, String? notes}) async {
+  final res = await http.post(
+    _u('/exercises'),
+    headers: _headers(),
+    body: jsonEncode({'name': name, if (notes != null) 'notes': notes}),
+  );
+  if (res.statusCode != 201) throw Exception('HTTP ${res.statusCode}');
+  return Exercise.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+}
+
+// ── Workouts ─────────────────────────────────────────────────────────────────
+
+Future<List<WorkoutSummary>> listWorkouts() async {
+  final res = await http.get(_u('/workouts'), headers: _headers());
+  if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
+  return (jsonDecode(res.body) as List)
+      .map((w) => WorkoutSummary.fromJson(w as Map<String, dynamic>))
+      .toList();
+}
+
+Future<WorkoutSummary> createWorkout() async {
+  final res = await http.post(_u('/workouts'), headers: _headers());
+  if (res.statusCode != 201) throw Exception('HTTP ${res.statusCode}');
+  return WorkoutSummary.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+}
+
+Future<WorkoutDetail> getWorkout(int id) async {
+  final res = await http.get(_u('/workouts/$id'), headers: _headers());
+  if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
+  return WorkoutDetail.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+}
+
+Future<void> finishWorkout(int id) async {
+  final res = await http.patch(_u('/workouts/$id/finish'), headers: _headers());
+  if (res.statusCode != 204) throw Exception('HTTP ${res.statusCode}');
+}
+
+Future<WorkoutSet> addSet({
+  required int workoutId,
+  required int exerciseId,
+  required int setNumber,
+  required int reps,
+  required double weightKg,
+}) async {
+  final res = await http.post(
+    _u('/workouts/$workoutId/sets'),
+    headers: _headers(),
+    body: jsonEncode({
+      'exercise_id': exerciseId,
+      'set_number': setNumber,
+      'reps': reps,
+      'weight_kg': weightKg,
+    }),
+  );
+  if (res.statusCode != 201) throw Exception('HTTP ${res.statusCode}');
+  return WorkoutSet.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+}
+
+Future<void> deleteSet({required int workoutId, required int setId}) async {
+  final res = await http.delete(
+    _u('/workouts/$workoutId/sets/$setId'),
+    headers: _headers(),
+  );
+  if (res.statusCode != 204) throw Exception('HTTP ${res.statusCode}');
 }
