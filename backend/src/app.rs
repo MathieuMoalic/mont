@@ -1,4 +1,4 @@
-use crate::routes::{auth, exercises, weight, workouts};
+use crate::routes::{auth, exercises, runs, weight, workouts};
 use crate::{
     auth_middleware::require_auth,
     config::Config,
@@ -65,6 +65,9 @@ pub fn build_app(state: AppState) -> Router {
         .route("/workouts/{id}/sets/{set_id}", delete(workouts::delete_set))
         .route("/weight", get(weight::list_weight).post(weight::create_weight_entry))
         .route("/weight/{id}", delete(weight::delete_weight_entry))
+        .route("/runs", get(runs::list_runs))
+        .route("/runs/import", post(runs::import_run))
+        .route("/runs/{id}", get(runs::get_run).delete(runs::delete_run))
         .route_layer(from_fn_with_state(state.clone(), require_auth));
 
     Router::new()
