@@ -1,4 +1,4 @@
-use crate::routes::auth;
+use crate::routes::{auth, exercises, workouts};
 use crate::{
     auth_middleware::require_auth,
     config::Config,
@@ -8,7 +8,7 @@ use crate::{
 };
 
 use axum::middleware::{from_fn, from_fn_with_state};
-use axum::routing::{get, post};
+use axum::routing::{delete, get, patch, post};
 use axum::{Json, Router};
 use serde::Serialize;
 
@@ -56,8 +56,13 @@ pub fn build_app(state: AppState) -> Router {
         .route("/version", get(version))
         .route("/auth/login", post(auth::login));
 
-    // Protected routes — add feature routes here as the app grows
     let protected_routes = Router::new()
+        .route("/exercises", get(exercises::list_exercises).post(exercises::create_exercise))
+        .route("/workouts", get(workouts::list_workouts).post(workouts::create_workout))
+        .route("/workouts/{id}", get(workouts::get_workout))
+        .route("/workouts/{id}/finish", patch(workouts::finish_workout))
+        .route("/workouts/{id}/sets", post(workouts::add_set))
+        .route("/workouts/{id}/sets/{set_id}", delete(workouts::delete_set))
         .route_layer(from_fn_with_state(state.clone(), require_auth));
 
     Router::new()
