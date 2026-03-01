@@ -24,7 +24,7 @@ fn split_path(path: &Path) -> (PathBuf, String) {
         .to_path_buf();
     let file = path
         .file_name()
-        .unwrap_or_else(|| OsStr::new("blaz.log"))
+        .unwrap_or_else(|| OsStr::new("mont.log"))
         .to_string_lossy()
         .to_string();
     (dir, file)
