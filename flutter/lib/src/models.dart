@@ -1,3 +1,17 @@
+class WeightEntry {
+  final int id;
+  final DateTime measuredAt;
+  final double weightKg;
+
+  WeightEntry({required this.id, required this.measuredAt, required this.weightKg});
+
+  factory WeightEntry.fromJson(Map<String, dynamic> j) => WeightEntry(
+        id: j['id'] as int,
+        measuredAt: DateTime.parse(j['measured_at'] as String),
+        weightKg: (j['weight_kg'] as num).toDouble(),
+      );
+}
+
 class Exercise {
   final int id;
   final String name;
