@@ -302,7 +302,13 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
     final pad = math.max((maxY - minY) * 0.1, 1.0);
     final xs = spots.map((s) => s.x).toList();
     final maxX = xs.fold(0.0, math.max);
-    final interval = math.max(60.0, (maxX / 5).ceilToDouble());
+    // Pick a round interval so we get ~5 ticks
+    final rawInterval = maxX / 5;
+    final interval = rawInterval <= 0.5 ? 0.5
+        : rawInterval <= 1.0 ? 1.0
+        : rawInterval <= 2.0 ? 2.0
+        : rawInterval <= 5.0 ? 5.0
+        : 10.0;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
