@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../api.dart' as api;
 import '../models.dart';
+import 'run_detail_screen.dart';
 
 class RunStatsScreen extends StatefulWidget {
   const RunStatsScreen({super.key, required this.runs});
@@ -310,27 +311,29 @@ class _RunStatsScreenState extends State<RunStatsScreen> {
     String fmtDist(double m) => '${(m / 1000).toStringAsFixed(2)} km';
     String fmtDate(DateTime d) => d.toLocal().toString().substring(0, 10);
 
-    // (icon, label, value, dateStr or null)
-    final records = <(String, String, String, String?)>[
+    // (icon, label, value, dateStr or null, runId or null)
+    final records = <(String, String, String, String?, int?)>[
       // Distance PRs from API
-      ..._prs.map((pr) => ('🏆', pr.distanceLabel, pr.formattedTime, fmtDate(pr.runDate))),
+      ..._prs.map((pr) => ('🏆', pr.distanceLabel, pr.formattedTime, fmtDate(pr.runDate), pr.runId)),
       // Local record stats
-      ('🏅', 'Longest run', fmtDist(longest.distanceM), fmtDate(longest.startedAt)),
+      ('🏅', 'Longest run', fmtDist(longest.distanceM), fmtDate(longest.startedAt), longest.id),
       if (bestPaceRun != null)
         (
           '⚡',
           'Best avg pace',
           '${_fmtPace(bestPaceRun.durationS / (bestPaceRun.distanceM / 1000))}/km',
-          fmtDate(bestPaceRun.startedAt)
+          fmtDate(bestPaceRun.startedAt),
+          bestPaceRun.id,
         ),
       if (mostEle != null)
         (
           '⛰️',
           'Most elevation',
           '+${mostEle.elevationGainM!.round()} m',
-          fmtDate(mostEle.startedAt)
+          fmtDate(mostEle.startedAt),
+          mostEle.id,
         ),
-      ('📅', 'Best week', '${bestWeekKm.toStringAsFixed(1)} km', null),
+      ('📅', 'Best week', '${bestWeekKm.toStringAsFixed(1)} km', null, null),
     ];
 
     return Padding(
@@ -347,26 +350,43 @@ class _RunStatsScreenState extends State<RunStatsScreen> {
                       .titleSmall
                       ?.copyWith(fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
-              ...records.map((r) => Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    child: Row(
-                      children: [
-                        Text(r.$1, style: const TextStyle(fontSize: 18)),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(r.$2,
-                              style: const TextStyle(color: Colors.grey)),
-                        ),
-                        Text(r.$3,
-                            style: const TextStyle(
-                                fontWeight: FontWeight.bold, fontSize: 15)),
-                        if (r.$4 != null) ...[
-                          const SizedBox(width: 8),
-                          Text(r.$4!,
+              ...records.map((r) => InkWell(
+                    onTap: r.$5 != null
+                        ? () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    RunDetailScreen(runId: r.$5!),
+                              ),
+                            )
+                        : null,
+                    borderRadius: BorderRadius.circular(6),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        children: [
+                          Text(r.$1, style: const TextStyle(fontSize: 18)),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(r.$2,
+                                style: const TextStyle(color: Colors.grey)),
+                          ),
+                          Text(r.$3,
                               style: const TextStyle(
-                                  fontSize: 11, color: Colors.grey)),
+                                  fontWeight: FontWeight.bold, fontSize: 15)),
+                          if (r.$4 != null) ...[
+                            const SizedBox(width: 8),
+                            Text(r.$4!,
+                                style: const TextStyle(
+                                    fontSize: 11, color: Colors.grey)),
+                          ],
+                          if (r.$5 != null) ...[
+                            const SizedBox(width: 4),
+                            const Icon(Icons.chevron_right,
+                                size: 16, color: Colors.grey),
+                          ],
                         ],
-                      ],
+                      ),
                     ),
                   )),
             ],
