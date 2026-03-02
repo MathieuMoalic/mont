@@ -59,12 +59,90 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
     return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
 
-  Widget _stat(String label, String value) => Column(
-        children: [
-          Text(value, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-          Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-        ],
+  Widget _statCard(String label, String value) => Card(
+        margin: const EdgeInsets.all(4),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(value,
+                  style: const TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.bold)),
+              Text(label,
+                  style: const TextStyle(fontSize: 11, color: Colors.grey)),
+            ],
+          ),
+        ),
       );
+
+  Widget _statsWrap(RunDetail run) {
+    final pace = run.distanceM > 0
+        ? () {
+            final sPerKm = run.durationS / (run.distanceM / 1000);
+            final m = sPerKm ~/ 60;
+            final s = (sPerKm % 60).round();
+            return "$m'${s.toString().padLeft(2, '0')}\"";
+          }()
+        : '--';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+      child: Wrap(
+        alignment: WrapAlignment.center,
+        children: [
+          _statCard('Distance', '${(run.distanceM / 1000).toStringAsFixed(2)} km'),
+          _statCard('Duration', _formatDuration(run.durationS)),
+          _statCard('Pace', pace),
+          if (run.elevationGainM != null)
+            _statCard('Elevation', '+${run.elevationGainM!.round()} m'),
+          if (run.avgHr != null) _statCard('Avg HR', '${run.avgHr} bpm'),
+        ],
+      ),
+    );
+  }
+
+  Widget _mapWidget({bool interactive = true}) {
+    final run = _run!;
+    final points = run.route.map((p) => LatLng(p.lat, p.lon)).toList();
+    final lats = points.map((p) => p.latitude).toList();
+    final lons = points.map((p) => p.longitude).toList();
+    final bounds = points.isEmpty
+        ? null
+        : LatLngBounds(
+            LatLng(lats.reduce((a, b) => a < b ? a : b),
+                lons.reduce((a, b) => a < b ? a : b)),
+            LatLng(lats.reduce((a, b) => a > b ? a : b),
+                lons.reduce((a, b) => a > b ? a : b)),
+          );
+    return points.isEmpty
+        ? const Center(child: Text('No route data'))
+        : FlutterMap(
+            options: MapOptions(
+              initialCameraFit: bounds != null
+                  ? CameraFit.bounds(
+                      bounds: bounds, padding: const EdgeInsets.all(24))
+                  : null,
+              interactionOptions: InteractionOptions(
+                flags: interactive
+                    ? InteractiveFlag.all
+                    : InteractiveFlag.none,
+              ),
+            ),
+            children: [
+              TileLayer(
+                urlTemplate:
+                    'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                userAgentPackageName: 'eu.matmoa.mont',
+              ),
+              PolylineLayer(polylines: [
+                Polyline(
+                    points: points,
+                    strokeWidth: 4,
+                    color: Colors.blue),
+              ]),
+            ],
+          );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -79,28 +157,6 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
     }
 
     final run = _run!;
-    final points = run.route.map((p) => LatLng(p.lat, p.lon)).toList();
-
-    // Compute map bounds
-    final lats = points.map((p) => p.latitude).toList();
-    final lons = points.map((p) => p.longitude).toList();
-    final bounds = points.isEmpty
-        ? null
-        : LatLngBounds(
-            LatLng(lats.reduce((a, b) => a < b ? a : b),
-                lons.reduce((a, b) => a < b ? a : b)),
-            LatLng(lats.reduce((a, b) => a > b ? a : b),
-                lons.reduce((a, b) => a > b ? a : b)),
-          );
-
-    final pace = run.distanceM > 0
-        ? () {
-            final sPerKm = run.durationS / (run.distanceM / 1000);
-            final m = sPerKm ~/ 60;
-            final s = (sPerKm % 60).round();
-            return "$m'${s.toString().padLeft(2, '0')}\"";
-          }()
-        : '--';
 
     return Scaffold(
       appBar: AppBar(
@@ -115,63 +171,53 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _stat('Distance', '${(run.distanceM / 1000).toStringAsFixed(2)} km'),
-                _stat('Duration', _formatDuration(run.durationS)),
-                _stat('Pace', pace),
-                if (run.elevationGainM != null)
-                  _stat('Elev.', '+${run.elevationGainM!.round()} m'),
-                if (run.avgHr != null)
-                  _stat('Avg HR', '${run.avgHr} bpm'),
-              ],
-            ),
-          ),
-          const Divider(height: 1),
-          Expanded(
-            child: ListView(
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          // Wide layout: map on left, scrollable details on right
+          if (constraints.maxWidth >= 700) {
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 SizedBox(
-                  height: 280,
-                  child: points.isEmpty
-                      ? const Center(child: Text('No route data'))
-                      : FlutterMap(
-                          options: MapOptions(
-                            initialCameraFit: bounds != null
-                                ? CameraFit.bounds(
-                                    bounds: bounds,
-                                    padding: const EdgeInsets.all(24))
-                                : null,
-                          ),
-                          children: [
-                            TileLayer(
-                              urlTemplate:
-                                  'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                              userAgentPackageName: 'eu.matmoa.mont',
-                            ),
-                            PolylineLayer(polylines: [
-                              Polyline(
-                                  points: points,
-                                  strokeWidth: 4,
-                                  color: Colors.blue),
-                            ]),
-                          ],
-                        ),
+                  width: constraints.maxWidth * 0.42,
+                  child: _mapWidget(interactive: true),
                 ),
-                if (_hasHr(run)) _hrChart(context, run),
-                if (_hasPace(run)) _paceChart(context, run),
-                if (_hasEle(run)) _eleChart(context, run),
-                _lapSplitsTable(context, run),
-                const SizedBox(height: 16),
+                const VerticalDivider(width: 1),
+                Expanded(
+                  child: ListView(
+                    padding: EdgeInsets.zero,
+                    children: [
+                      _statsWrap(run),
+                      const Divider(height: 8),
+                      if (_hasHr(run)) _hrChart(context, run),
+                      if (_hasPace(run)) _paceChart(context, run),
+                      if (_hasEle(run)) _eleChart(context, run),
+                      _lapSplitsTable(context, run),
+                      const SizedBox(height: 16),
+                    ],
+                  ),
+                ),
               ],
-            ),
-          ),
-        ],
+            );
+          }
+
+          // Narrow (phone) layout: all stacked, map is non-interactive
+          return ListView(
+            children: [
+              _statsWrap(run),
+              const Divider(height: 8),
+              SizedBox(
+                height: 240,
+                child: _mapWidget(interactive: false),
+              ),
+              if (_hasHr(run)) _hrChart(context, run),
+              if (_hasPace(run)) _paceChart(context, run),
+              if (_hasEle(run)) _eleChart(context, run),
+              _lapSplitsTable(context, run),
+              const SizedBox(height: 16),
+            ],
+          );
+        },
       ),
     );
   }
