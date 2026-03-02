@@ -372,42 +372,40 @@ fn load_running_filenames(db_path: &std::path::Path) -> Result<std::collections:
 }
 
 /// # Errors
-/// Returns `SERVICE_UNAVAILABLE` if no zip path is configured,
-/// `NOT_FOUND` if the zip file doesn't exist, or a database error.
+/// Returns `SERVICE_UNAVAILABLE` if `MONT_GADGETBRIDGE_PATH` is not configured,
+/// or a database error.
 pub async fn sync_gadgetbridge(
     State(state): State<AppState>,
 ) -> AppResult<Json<SyncResult>> {
-    let zip_path = state
+    let gb_path = state
         .config
-        .gadgetbridge_zip
+        .gadgetbridge_path
         .clone()
-        .ok_or_else(|| (StatusCode::SERVICE_UNAVAILABLE, "MONT_GADGETBRIDGE_ZIP not configured".to_string()))?;
+        .ok_or_else(|| (StatusCode::SERVICE_UNAVAILABLE, "MONT_GADGETBRIDGE_PATH not configured".to_string()))?;
 
-    // Optionally load running GPX filenames from the Gadgetbridge DB to filter by activity kind.
-    let running_filenames: Option<std::collections::HashSet<String>> =
-        if let Some(db_path) = state.config.gadgetbridge_db.clone() {
-            let set = tokio::task::spawn_blocking(move || load_running_filenames(&db_path))
-                .await
-                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-                .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
-            Some(set)
-        } else {
-            None
-        };
+    let db_path = gb_path.join("database").join("Gadgetbridge");
+    let files_dir = gb_path.join("files");
 
-    // Read all GPX files from zip in a blocking thread (zip::ZipArchive is not Send)
+    // Load running GPX filenames from the Gadgetbridge DB to filter by activity kind.
+    let running_filenames = tokio::task::spawn_blocking(move || load_running_filenames(&db_path))
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+
+    // Read all GPX files from the files/ subdirectory.
     let gpx_files: Vec<(String, Vec<u8>)> = tokio::task::spawn_blocking(move || {
-        let file = std::fs::File::open(&zip_path)
-            .map_err(|e| format!("Cannot open zip: {e}"))?;
-        let mut archive = zip::ZipArchive::new(file)
-            .map_err(|e| format!("Invalid zip: {e}"))?;
         let mut out = Vec::new();
-        for i in 0..archive.len() {
-            let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
-            let name = entry.name().to_owned();
+        let entries = std::fs::read_dir(&files_dir)
+            .map_err(|e| format!("Cannot read {}: {e}", files_dir.display()))?;
+        for entry in entries {
+            let entry = entry.map_err(|e| e.to_string())?;
+            let path = entry.path();
+            let name = path.file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("")
+                .to_owned();
             if !name.to_ascii_lowercase().ends_with(".gpx") { continue; }
-            let mut bytes = Vec::new();
-            std::io::Read::read_to_end(&mut entry, &mut bytes).map_err(|e| e.to_string())?;
+            let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
             out.push((name, bytes));
         }
         Ok::<_, String>(out)
@@ -420,10 +418,8 @@ pub async fn sync_gadgetbridge(
     let mut errors: Vec<String> = Vec::new();
 
     for (name, bytes) in gpx_files {
-        // If we have the Gadgetbridge DB, skip any file not listed as a running activity.
-        // Extract just the filename part for comparison (zip entries may have path prefixes).
-        let fname_only = name.rsplit('/').next().unwrap_or(&name);
-        if running_filenames.as_ref().is_some_and(|allowed| !allowed.contains(fname_only)) {
+        // Skip any file not listed as a running activity in the Gadgetbridge DB.
+        if !running_filenames.contains(&name) {
             continue;
         }
 
