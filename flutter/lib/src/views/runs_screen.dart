@@ -15,6 +15,7 @@ class RunsScreen extends StatefulWidget {
 
 class _RunsScreenState extends State<RunsScreen> {
   List<RunSummary> _runs = [];
+  List<PersonalRecord> _prs = [];
   bool _loading = true;
 
   @override
@@ -25,10 +26,14 @@ class _RunsScreenState extends State<RunsScreen> {
 
   Future<void> _load() async {
     try {
-      final runs = await api.listRuns();
+      final results = await Future.wait([
+        api.listRuns(),
+        api.getPersonalRecords(),
+      ]);
       if (!mounted) return;
       setState(() {
-        _runs = runs;
+        _runs = results[0] as List<RunSummary>;
+        _prs = results[1] as List<PersonalRecord>;
         _loading = false;
       });
     } catch (_) {
@@ -70,6 +75,46 @@ class _RunsScreenState extends State<RunsScreen> {
         SnackBar(content: Text('Sync failed: $e')),
       );
     }
+  }
+
+  Set<int> get _prRunIds => _prs.map((p) => p.runId).toSet();
+
+  Widget _buildPrSection() {
+    if (_prs.isEmpty) return const SizedBox.shrink();
+    return Card(
+      margin: const EdgeInsets.all(12),
+      child: ExpansionTile(
+        leading: const Icon(Icons.emoji_events, color: Colors.amber),
+        title: const Text('Personal Records',
+            style: TextStyle(fontWeight: FontWeight.bold)),
+        initiallyExpanded: true,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: _prs.map((pr) {
+                final date =
+                    '${pr.runDate.toLocal().day}/${pr.runDate.toLocal().month}/${pr.runDate.toLocal().year.toString().substring(2)}';
+                return ActionChip(
+                  avatar: const Icon(Icons.emoji_events, size: 16, color: Colors.amber),
+                  label: Text(
+                    '${pr.distanceLabel}: ${pr.formattedTime}\n$date',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => RunDetailScreen(runId: pr.runId)),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -116,11 +161,15 @@ class _RunsScreenState extends State<RunsScreen> {
               : RefreshIndicator(
                   onRefresh: _load,
                   child: ListView.builder(
-                    itemCount: _runs.length,
+                    itemCount: _runs.length + 1,
                     itemBuilder: (context, i) {
-                      final run = _runs[i];
+                      if (i == 0) return _buildPrSection();
+                      final run = _runs[i - 1];
+                      final isPr = _prRunIds.contains(run.id);
                       return ListTile(
-                        leading: const Icon(Icons.directions_run),
+                        leading: isPr
+                            ? const Icon(Icons.emoji_events, color: Colors.amber)
+                            : const Icon(Icons.directions_run),
                         title: Text(
                           '${(run.distanceM / 1000).toStringAsFixed(2)} km  ·  ${_formatDuration(run.durationS)}',
                         ),
