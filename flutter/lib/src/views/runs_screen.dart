@@ -79,44 +79,6 @@ class _RunsScreenState extends State<RunsScreen> {
 
   Set<int> get _prRunIds => _prs.map((p) => p.runId).toSet();
 
-  Widget _buildPrSection() {
-    if (_prs.isEmpty) return const SizedBox.shrink();
-    return Card(
-      margin: const EdgeInsets.all(12),
-      child: ExpansionTile(
-        leading: const Icon(Icons.emoji_events, color: Colors.amber),
-        title: const Text('Personal Records',
-            style: TextStyle(fontWeight: FontWeight.bold)),
-        initiallyExpanded: true,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: _prs.map((pr) {
-                final date =
-                    '${pr.runDate.toLocal().day}/${pr.runDate.toLocal().month}/${pr.runDate.toLocal().year.toString().substring(2)}';
-                return ActionChip(
-                  avatar: const Icon(Icons.emoji_events, size: 16, color: Colors.amber),
-                  label: Text(
-                    '${pr.distanceLabel}: ${pr.formattedTime}\n$date',
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                  onPressed: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => RunDetailScreen(runId: pr.runId)),
-                  ),
-                );
-              }).toList(),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -161,20 +123,30 @@ class _RunsScreenState extends State<RunsScreen> {
               : RefreshIndicator(
                   onRefresh: _load,
                   child: ListView.builder(
-                    itemCount: _runs.length + 1,
+                    itemCount: _runs.length,
                     itemBuilder: (context, i) {
-                      if (i == 0) return _buildPrSection();
-                      final run = _runs[i - 1];
+                      final run = _runs[i];
                       final isPr = _prRunIds.contains(run.id);
                       return ListTile(
-                        leading: isPr
-                            ? const Icon(Icons.emoji_events, color: Colors.amber)
-                            : const Icon(Icons.directions_run),
+                        leading: run.isInvalid
+                            ? const Icon(Icons.not_interested, color: Colors.grey)
+                            : isPr
+                                ? const Icon(Icons.emoji_events, color: Colors.amber)
+                                : const Icon(Icons.directions_run),
                         title: Text(
                           '${(run.distanceM / 1000).toStringAsFixed(2)} km  ·  ${_formatDuration(run.durationS)}',
+                          style: run.isInvalid
+                              ? const TextStyle(
+                                  color: Colors.grey,
+                                  decoration: TextDecoration.lineThrough,
+                                )
+                              : null,
                         ),
                         subtitle: Text(
-                          '${run.startedAt.toLocal().toString().substring(0, 16)}  ·  ${_formatPace(run)}',
+                          '${run.startedAt.toLocal().toString().substring(0, 16)}  ·  ${_formatPace(run)}${run.isInvalid ? '  · ⚠ invalid' : ''}',
+                          style: run.isInvalid
+                              ? const TextStyle(color: Colors.grey)
+                              : null,
                         ),
                         trailing: Text(
                           run.avgHr != null ? '♥ ${run.avgHr}' : '',

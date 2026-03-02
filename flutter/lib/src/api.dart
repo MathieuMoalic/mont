@@ -241,6 +241,15 @@ Future<void> deleteRun(int id) async {
   if (res.statusCode != 204) throw Exception('HTTP ${res.statusCode}');
 }
 
+Future<void> markRunInvalid(int id, {required bool isInvalid}) async {
+  final res = await http.patch(
+    _u('/runs/$id'),
+    headers: _headers(),
+    body: jsonEncode({'is_invalid': isInvalid}),
+  );
+  if (res.statusCode != 204) throw Exception('HTTP ${res.statusCode}');
+}
+
 Future<Map<String, dynamic>> syncGadgetbridge() async {
   final res = await http.post(_u('/runs/sync'), headers: _headers());
   if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');

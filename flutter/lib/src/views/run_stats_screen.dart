@@ -3,12 +3,37 @@ import 'dart:math' as math;
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
+import '../api.dart' as api;
 import '../models.dart';
 
-class RunStatsScreen extends StatelessWidget {
+class RunStatsScreen extends StatefulWidget {
   const RunStatsScreen({super.key, required this.runs});
 
   final List<RunSummary> runs;
+
+  @override
+  State<RunStatsScreen> createState() => _RunStatsScreenState();
+}
+
+class _RunStatsScreenState extends State<RunStatsScreen> {
+  List<PersonalRecord> _prs = [];
+
+  // Only include valid runs in stats computations
+  List<RunSummary> get _validRuns =>
+      widget.runs.where((r) => !r.isInvalid).toList();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPrs();
+  }
+
+  Future<void> _loadPrs() async {
+    try {
+      final prs = await api.getPersonalRecords();
+      if (mounted) setState(() => _prs = prs);
+    } catch (_) {}
+  }
 
   // seconds/km → "M:SS /km"
   static String _fmtPace(double secPerKm) {
@@ -35,7 +60,7 @@ class RunStatsScreen extends StatelessWidget {
       weeks.add(_weekKey(now.subtract(Duration(days: i * 7))));
     }
     final kmMap = <String, double>{for (final w in weeks) w: 0};
-    for (final run in runs) {
+    for (final run in _validRuns) {
       final k = _weekKey(run.startedAt.toLocal());
       if (kmMap.containsKey(k)) kmMap[k] = kmMap[k]! + run.distanceM / 1000;
     }
@@ -102,7 +127,7 @@ class RunStatsScreen extends StatelessWidget {
 
   // ── Pace trend line ──────────────────────────────────────────────────────────
   Widget _paceTrend(BuildContext context) {
-    final sorted = runs
+    final sorted = _validRuns
         .where((r) => r.distanceM > 100)
         .toList()
       ..sort((a, b) => a.startedAt.compareTo(b.startedAt));
@@ -182,7 +207,7 @@ class RunStatsScreen extends StatelessWidget {
 
   // ── HR vs Pace scatter ───────────────────────────────────────────────────────
   Widget _hrVsPace(BuildContext context) {
-    final valid = runs
+    final valid = _validRuns
         .where((r) => r.avgHr != null && r.distanceM > 100)
         .toList()
       ..sort((a, b) => a.startedAt.compareTo(b.startedAt));
@@ -257,17 +282,17 @@ class RunStatsScreen extends StatelessWidget {
 
   // ── Personal records ─────────────────────────────────────────────────────────
   Widget _personalRecords(BuildContext context) {
-    if (runs.isEmpty) return const SizedBox.shrink();
+    if (_validRuns.isEmpty) return const SizedBox.shrink();
 
-    final longest = runs.reduce((a, b) => a.distanceM > b.distanceM ? a : b);
+    final longest = _validRuns.reduce((a, b) => a.distanceM > b.distanceM ? a : b);
 
-    final fastRuns = runs.where((r) => r.distanceM > 3000).toList();
+    final fastRuns = _validRuns.where((r) => r.distanceM > 3000).toList();
     final bestPaceRun = fastRuns.isEmpty
         ? null
         : fastRuns.reduce((a, b) =>
             (a.durationS / a.distanceM) < (b.durationS / b.distanceM) ? a : b);
 
-    final eleRuns = runs.where((r) => r.elevationGainM != null).toList();
+    final eleRuns = _validRuns.where((r) => r.elevationGainM != null).toList();
     final mostEle = eleRuns.isEmpty
         ? null
         : eleRuns.reduce(
@@ -275,7 +300,7 @@ class RunStatsScreen extends StatelessWidget {
 
     // Best week km
     final kmMap = <String, double>{};
-    for (final r in runs) {
+    for (final r in _validRuns) {
       final k = _weekKey(r.startedAt.toLocal());
       kmMap[k] = (kmMap[k] ?? 0) + r.distanceM / 1000;
     }
@@ -285,23 +310,27 @@ class RunStatsScreen extends StatelessWidget {
     String fmtDist(double m) => '${(m / 1000).toStringAsFixed(2)} km';
     String fmtDate(DateTime d) => d.toLocal().toString().substring(0, 10);
 
-    final records = <(String, String, String, DateTime)>[
-      ('🏅', 'Longest run', fmtDist(longest.distanceM), longest.startedAt),
+    // (icon, label, value, dateStr or null)
+    final records = <(String, String, String, String?)>[
+      // Distance PRs from API
+      ..._prs.map((pr) => ('🏆', pr.distanceLabel, pr.formattedTime, fmtDate(pr.runDate))),
+      // Local record stats
+      ('🏅', 'Longest run', fmtDist(longest.distanceM), fmtDate(longest.startedAt)),
       if (bestPaceRun != null)
         (
           '⚡',
           'Best avg pace',
           '${_fmtPace(bestPaceRun.durationS / (bestPaceRun.distanceM / 1000))}/km',
-          bestPaceRun.startedAt
+          fmtDate(bestPaceRun.startedAt)
         ),
       if (mostEle != null)
         (
           '⛰️',
           'Most elevation',
           '+${mostEle.elevationGainM!.round()} m',
-          mostEle.startedAt
+          fmtDate(mostEle.startedAt)
         ),
-      ('📅', 'Best week', '${bestWeekKm.toStringAsFixed(1)} km', DateTime.now()),
+      ('📅', 'Best week', '${bestWeekKm.toStringAsFixed(1)} km', null),
     ];
 
     return Padding(
@@ -331,9 +360,9 @@ class RunStatsScreen extends StatelessWidget {
                         Text(r.$3,
                             style: const TextStyle(
                                 fontWeight: FontWeight.bold, fontSize: 15)),
-                        if (r.$2 != 'Best week') ...[
+                        if (r.$4 != null) ...[
                           const SizedBox(width: 8),
-                          Text(fmtDate(r.$4),
+                          Text(r.$4!,
                               style: const TextStyle(
                                   fontSize: 11, color: Colors.grey)),
                         ],
@@ -349,9 +378,9 @@ class RunStatsScreen extends StatelessWidget {
 
   // ── Summary stats row ────────────────────────────────────────────────────────
   Widget _summaryRow() {
-    final totalKm = runs.fold(0.0, (s, r) => s + r.distanceM) / 1000;
-    final totalH = runs.fold(0, (s, r) => s + r.durationS) / 3600;
-    final hrsWithHr = runs.where((r) => r.avgHr != null).toList();
+    final totalKm = _validRuns.fold(0.0, (s, r) => s + r.distanceM) / 1000;
+    final totalH = _validRuns.fold(0, (s, r) => s + r.durationS) / 3600;
+    final hrsWithHr = _validRuns.where((r) => r.avgHr != null).toList();
     final avgHr = hrsWithHr.isEmpty
         ? null
         : hrsWithHr.fold(0, (s, r) => s + r.avgHr!) ~/ hrsWithHr.length;
@@ -361,7 +390,7 @@ class RunStatsScreen extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _StatChip(label: 'Total runs', value: '${runs.length}'),
+          _StatChip(label: 'Total runs', value: '${_validRuns.length}'),
           _StatChip(label: 'Total km', value: totalKm.toStringAsFixed(1)),
           _StatChip(label: 'Total hours', value: totalH.toStringAsFixed(1)),
           if (avgHr != null) _StatChip(label: 'Avg HR', value: '$avgHr bpm'),
@@ -372,7 +401,7 @@ class RunStatsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (runs.isEmpty) {
+    if (_validRuns.isEmpty) {
       return const Scaffold(body: Center(child: Text('No run data yet')));
     }
     return Scaffold(

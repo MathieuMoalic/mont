@@ -77,6 +77,35 @@ void main() {
     });
   });
 
+  group('RunSummary', () {
+    Map<String, dynamic> _runJson({bool? isInvalid}) => {
+          'id': 1,
+          'started_at': '2024-03-15T09:00:00Z',
+          'duration_s': 1800,
+          'distance_m': 5000.0,
+          'elevation_gain_m': null,
+          'avg_hr': null,
+          'max_hr': null,
+          'notes': null,
+          if (isInvalid != null) 'is_invalid': isInvalid,
+        };
+
+    test('isInvalid defaults to false when field missing', () {
+      final r = RunSummary.fromJson(_runJson());
+      expect(r.isInvalid, false);
+    });
+
+    test('isInvalid is true when field is true', () {
+      final r = RunSummary.fromJson(_runJson(isInvalid: true));
+      expect(r.isInvalid, true);
+    });
+
+    test('isInvalid is false when field is false', () {
+      final r = RunSummary.fromJson(_runJson(isInvalid: false));
+      expect(r.isInvalid, false);
+    });
+  });
+
   group('WorkoutSummary', () {
     test('fromJson parses active workout', () {
       final w = WorkoutSummary.fromJson({
