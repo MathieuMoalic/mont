@@ -94,14 +94,30 @@ Future<List<Exercise>> listExercises() async {
       .toList();
 }
 
-Future<Exercise> createExercise({required String name, String? notes}) async {
+Future<Exercise> createExercise({
+  required String name,
+  String? notes,
+  String? muscleGroup,
+}) async {
   final res = await http.post(
     _u('/exercises'),
     headers: _headers(),
-    body: jsonEncode({'name': name, if (notes != null) 'notes': notes}),
+    body: jsonEncode({
+      'name': name,
+      if (notes != null) 'notes': notes,
+      if (muscleGroup != null) 'muscle_group': muscleGroup,
+    }),
   );
   if (res.statusCode != 201) throw Exception('HTTP ${res.statusCode}');
   return Exercise.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+}
+
+Future<List<PersonalRecord>> getPersonalRecords() async {
+  final res = await http.get(_u('/runs/prs'), headers: _headers());
+  if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
+  return (jsonDecode(res.body) as List)
+      .map((e) => PersonalRecord.fromJson(e as Map<String, dynamic>))
+      .toList();
 }
 
 // ── Workouts ─────────────────────────────────────────────────────────────────

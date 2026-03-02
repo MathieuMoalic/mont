@@ -90,6 +90,7 @@ class _ExerciseHistoryScreenState extends State<ExerciseHistoryScreen> {
         final ex = _exercises![i];
         return ListTile(
           title: Text(ex.name),
+          subtitle: ex.muscleGroup != null ? Text(ex.muscleGroup!) : null,
           trailing: const Icon(Icons.chevron_right),
           onTap: () => _selectExercise(ex),
         );
