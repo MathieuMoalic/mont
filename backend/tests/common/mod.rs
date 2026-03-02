@@ -50,8 +50,7 @@ impl TestApp {
             cors_origin: None,
             jwt_secret: Some(TEST_JWT_SECRET.to_string()),
             password_hash,
-            gadgetbridge_zip: None,
-            gadgetbridge_db: None,
+            gadgetbridge_path: None,
         };
 
         let pool2 = pool.clone();

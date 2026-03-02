@@ -43,14 +43,8 @@ pub struct Config {
     #[arg(long, env = "MONT_PASSWORD_HASH")]
     pub password_hash: Option<String>,
 
-    #[arg(long, env = "MONT_GADGETBRIDGE_ZIP")]
-    pub gadgetbridge_zip: Option<PathBuf>,
-
-    /// Path to the Gadgetbridge `SQLite` database (used to filter activities by kind,
-    /// e.g. skip cycling). When provided, only activities with a running activity kind
-    /// are imported during sync.
-    #[arg(long, env = "MONT_GADGETBRIDGE_DB")]
-    pub gadgetbridge_db: Option<PathBuf>,
+    #[arg(long, env = "MONT_GADGETBRIDGE_PATH")]
+    pub gadgetbridge_path: Option<PathBuf>,
 }
 
 impl Config {
