@@ -25,6 +25,7 @@ class RunSummary {
   final int? avgHr;
   final int? maxHr;
   final String? notes;
+  final bool isInvalid;
 
   RunSummary({
     required this.id,
@@ -35,6 +36,7 @@ class RunSummary {
     this.avgHr,
     this.maxHr,
     this.notes,
+    this.isInvalid = false,
   });
 
   factory RunSummary.fromJson(Map<String, dynamic> j) => RunSummary(
@@ -46,6 +48,7 @@ class RunSummary {
         avgHr: j['avg_hr'] as int?,
         maxHr: j['max_hr'] as int?,
         notes: j['notes'] as String?,
+        isInvalid: (j['is_invalid'] as bool?) ?? false,
       );
 }
 
@@ -61,6 +64,7 @@ class RunDetail extends RunSummary {
     super.avgHr,
     super.maxHr,
     super.notes,
+    super.isInvalid,
     required this.route,
   });
 
@@ -73,6 +77,7 @@ class RunDetail extends RunSummary {
         avgHr: j['avg_hr'] as int?,
         maxHr: j['max_hr'] as int?,
         notes: j['notes'] as String?,
+        isInvalid: (j['is_invalid'] as bool?) ?? false,
         route: (j['route'] as List)
             .map((e) => RunPoint.fromJson(e as Map<String, dynamic>))
             .toList(),

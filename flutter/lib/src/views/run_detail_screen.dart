@@ -160,14 +160,65 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(run.startedAt.toLocal().toString().substring(0, 10)),
+        title: Row(
+          children: [
+            Text(run.startedAt.toLocal().toString().substring(0, 10)),
+            if (run.isInvalid) ...[
+              const SizedBox(width: 8),
+              const Chip(
+                label: Text('Invalid', style: TextStyle(fontSize: 11)),
+                backgroundColor: Colors.orange,
+                padding: EdgeInsets.zero,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ],
+          ],
+        ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.delete_outline),
-            onPressed: () async {
-              await api.deleteRun(run.id);
-              if (context.mounted) Navigator.pop(context);
+          PopupMenuButton<String>(
+            onSelected: (value) async {
+              if (value == 'toggle_invalid') {
+                final newValue = !run.isInvalid;
+                try {
+                  await api.markRunInvalid(run.id, isInvalid: newValue);
+                  await _load();
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Error: $e')),
+                    );
+                  }
+                }
+              } else if (value == 'delete') {
+                await api.deleteRun(run.id);
+                if (context.mounted) Navigator.pop(context);
+              }
             },
+            itemBuilder: (_) => [
+              PopupMenuItem(
+                value: 'toggle_invalid',
+                child: Row(
+                  children: [
+                    Icon(
+                      run.isInvalid ? Icons.check_circle_outline : Icons.not_interested,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(run.isInvalid ? 'Mark as valid' : 'Mark as invalid'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'delete',
+                child: Row(
+                  children: [
+                    Icon(Icons.delete_outline, size: 18),
+                    SizedBox(width: 8),
+                    Text('Delete'),
+                  ],
+                ),
+              ),
+            ],
           ),
         ],
       ),
