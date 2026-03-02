@@ -95,6 +95,30 @@
       };
     };
 
+    prebuilt = pkgs.stdenvNoCC.mkDerivation {
+      pname = "mont";
+      version = "0.1.0";
+
+      src = pkgs.fetchurl {
+        url = "https://github.com/MathieuMoalic/mont/releases/download/v0.1.0/mont-v0.1.0-x86_64-linux.tar.gz";
+        hash = "sha256-us13jlJpWntqVNnJnehkPcsWeoxc1KpWy2SLPXtK7go=";
+      };
+
+      sourceRoot = ".";
+
+      installPhase = ''
+        install -Dm755 mont-v0.1.0-x86_64-linux $out/bin/mont
+      '';
+
+      meta = with lib; {
+        description = "Workout and run tracker backend (prebuilt)";
+        homepage = "https://github.com/MathieuMoalic/mont";
+        license = licenses.gpl3;
+        platforms = ["x86_64-linux"];
+        maintainers = [];
+      };
+    };
+
     service = {
       lib,
       config,
@@ -214,18 +238,22 @@
             // lib.optionalAttrs (cfg.jwtSecret != null) {MONT_JWT_SECRET = cfg.jwtSecret;};
 
           script = let
-            passwordHashLoader = if cfg.passwordHashFile != null
-              then ''export MONT_PASSWORD_HASH="$(cat ${cfg.passwordHashFile})"'' else "";
-            jwtSecretLoader = if cfg.jwtSecretFile != null
-              then ''export MONT_JWT_SECRET="$(cat ${cfg.jwtSecretFile})"'' else "";
+            passwordHashLoader =
+              if cfg.passwordHashFile != null
+              then ''export MONT_PASSWORD_HASH="$(cat ${cfg.passwordHashFile})"''
+              else "";
+            jwtSecretLoader =
+              if cfg.jwtSecretFile != null
+              then ''export MONT_JWT_SECRET="$(cat ${cfg.jwtSecretFile})"''
+              else "";
           in ''
             ${passwordHashLoader}
             ${jwtSecretLoader}
             exec ${cfg.package}/bin/mont \
               ${lib.concatStringsSep " " (
-                lib.optionals (cfg.verbosity > 0) (lib.genList (_: "-v") cfg.verbosity)
-                ++ lib.optionals (cfg.verbosity < 0) (lib.genList (_: "-q") (- cfg.verbosity))
-              )}
+              lib.optionals (cfg.verbosity > 0) (lib.genList (_: "-v") cfg.verbosity)
+              ++ lib.optionals (cfg.verbosity < 0) (lib.genList (_: "-q") (- cfg.verbosity))
+            )}
           '';
 
           serviceConfig = {
@@ -253,6 +281,7 @@
     packages.${system} = {
       default = package;
       backend = package;
+      prebuilt = prebuilt;
       web = webBuild;
     };
   };
