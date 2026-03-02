@@ -70,9 +70,10 @@ pub fn build_app(state: AppState) -> Router {
         .route("/weight", get(weight::list_weight).post(weight::create_weight_entry))
         .route("/weight/{id}", delete(weight::delete_weight_entry))
         .route("/runs", get(runs::list_runs))
+        .route("/runs/prs", get(runs::personal_records))
         .route("/runs/import", post(runs::import_run))
         .route("/runs/sync", post(runs::sync_gadgetbridge))
-        .route("/runs/{id}", get(runs::get_run).delete(runs::delete_run))
+        .route("/runs/{id}", get(runs::get_run).delete(runs::delete_run).patch(runs::set_invalid))
         .route_layer(from_fn_with_state(state.clone(), require_auth));
 
     Router::new()
