@@ -79,6 +79,38 @@ class RunDetail extends RunSummary {
       );
 }
 
+class PersonalRecord {
+  final String distanceLabel;
+  final int runId;
+  final DateTime runDate;
+  final double estimatedSeconds;
+
+  PersonalRecord({
+    required this.distanceLabel,
+    required this.runId,
+    required this.runDate,
+    required this.estimatedSeconds,
+  });
+
+  factory PersonalRecord.fromJson(Map<String, dynamic> j) => PersonalRecord(
+        distanceLabel: j['distance_label'] as String,
+        runId: j['run_id'] as int,
+        runDate: DateTime.parse(j['run_date'] as String),
+        estimatedSeconds: (j['estimated_seconds'] as num).toDouble(),
+      );
+
+  String get formattedTime {
+    final total = estimatedSeconds.round();
+    final h = total ~/ 3600;
+    final m = (total % 3600) ~/ 60;
+    final s = total % 60;
+    if (h > 0) {
+      return '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+    }
+    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+  }
+}
+
 class WeightEntry {
   final int id;
   final DateTime measuredAt;
@@ -97,13 +129,15 @@ class Exercise {
   final int id;
   final String name;
   final String? notes;
+  final String? muscleGroup;
 
-  Exercise({required this.id, required this.name, this.notes});
+  Exercise({required this.id, required this.name, this.notes, this.muscleGroup});
 
   factory Exercise.fromJson(Map<String, dynamic> j) => Exercise(
         id: j['id'] as int,
         name: j['name'] as String,
         notes: j['notes'] as String?,
+        muscleGroup: j['muscle_group'] as String?,
       );
 }
 

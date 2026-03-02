@@ -14,6 +14,67 @@ void main() {
       final e = Exercise.fromJson({'id': 2, 'name': 'Squat', 'notes': null});
       expect(e.notes, isNull);
     });
+
+    test('fromJson parses muscle_group', () {
+      final e = Exercise.fromJson({
+        'id': 3,
+        'name': 'Bench Press',
+        'notes': null,
+        'muscle_group': 'Chest',
+      });
+      expect(e.muscleGroup, 'Chest');
+    });
+
+    test('fromJson handles null muscle_group', () {
+      final e = Exercise.fromJson({'id': 4, 'name': 'Unknown', 'notes': null});
+      expect(e.muscleGroup, isNull);
+    });
+  });
+
+  group('PersonalRecord', () {
+    Map<String, dynamic> _prJson({
+      String label = '5k',
+      int runId = 42,
+      String runDate = '2024-03-15T09:00:00Z',
+      double estimatedSeconds = 1200.0,
+    }) =>
+        {
+          'distance_label': label,
+          'run_id': runId,
+          'run_date': runDate,
+          'estimated_seconds': estimatedSeconds,
+        };
+
+    test('fromJson parses all fields', () {
+      final pr = PersonalRecord.fromJson(_prJson());
+      expect(pr.distanceLabel, '5k');
+      expect(pr.runId, 42);
+      expect(pr.estimatedSeconds, 1200.0);
+    });
+
+    test('formattedTime formats minutes:seconds under 1 hour', () {
+      // 1200s = 20:00
+      final pr = PersonalRecord.fromJson(_prJson(estimatedSeconds: 1200.0));
+      expect(pr.formattedTime, '20:00');
+    });
+
+    test('formattedTime formats h:mm:ss over 1 hour', () {
+      // 3661s = 1:01:01
+      final pr = PersonalRecord.fromJson(_prJson(estimatedSeconds: 3661.0));
+      expect(pr.formattedTime, '1:01:01');
+    });
+
+    test('formattedTime pads seconds', () {
+      // 605s = 10:05
+      final pr = PersonalRecord.fromJson(_prJson(estimatedSeconds: 605.0));
+      expect(pr.formattedTime, '10:05');
+    });
+
+    test('formattedTime handles marathon-length time', () {
+      // 14400s = 4:00:00
+      final pr = PersonalRecord.fromJson(_prJson(estimatedSeconds: 14400.0));
+      expect(pr.formattedTime, '4:00:00');
+    });
   });
 
   group('WorkoutSummary', () {
