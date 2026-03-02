@@ -192,3 +192,117 @@ async fn import_invalid_gpx_returns_422() {
         .unwrap();
     assert_eq!(res.status(), 422);
 }
+
+// ── Personal records tests ───────────────────────────────────────────────────
+
+async fn insert_run(app: &common::TestApp, started_at: &str, duration_s: i64, distance_m: f64) -> i64 {
+    let row: (i64,) = sqlx::query_as(
+        "INSERT INTO runs (started_at, duration_s, distance_m, route_json) VALUES (?, ?, ?, '[]') RETURNING id",
+    )
+    .bind(started_at)
+    .bind(duration_s)
+    .bind(distance_m)
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+    row.0
+}
+
+#[tokio::test]
+async fn prs_empty_when_no_runs() {
+    let app = common::TestApp::spawn().await;
+    let res = app.get("/runs/prs").await;
+    assert_eq!(res.status(), 200);
+    let body: serde_json::Value = res.json().await.unwrap();
+    assert_eq!(body, serde_json::json!([]));
+}
+
+#[tokio::test]
+async fn prs_returns_5k_record() {
+    let app = common::TestApp::spawn().await;
+    // 5 km in 25 min = 5:00/km pace
+    insert_run(&app, "2026-01-01T08:00:00Z", 1500, 5000.0).await;
+    let prs: Vec<serde_json::Value> = app.get("/runs/prs").await.json().await.unwrap();
+    let five_k = prs.iter().find(|p| p["distance_label"] == "5 km").unwrap();
+    assert_eq!(five_k["estimated_seconds"].as_f64().unwrap(), 1500.0);
+}
+
+#[tokio::test]
+async fn prs_picks_fastest_run_for_distance() {
+    let app = common::TestApp::spawn().await;
+    // Two 5k-qualifying runs; second is faster
+    insert_run(&app, "2026-01-01T08:00:00Z", 1800, 5200.0).await; // ~28 min for 5k pace
+    insert_run(&app, "2026-01-02T08:00:00Z", 1500, 5100.0).await; // ~24.5 min for 5k pace
+    let prs: Vec<serde_json::Value> = app.get("/runs/prs").await.json().await.unwrap();
+    let five_k = prs.iter().find(|p| p["distance_label"] == "5 km").unwrap();
+    // Second run is faster — estimated_seconds should be ~1470
+    assert!(five_k["estimated_seconds"].as_f64().unwrap() < 1600.0);
+}
+
+#[tokio::test]
+async fn prs_does_not_include_distance_without_qualifying_run() {
+    let app = common::TestApp::spawn().await;
+    // Only a 3 km run — should not appear for 5k/10k/etc
+    insert_run(&app, "2026-01-01T08:00:00Z", 900, 3000.0).await;
+    let prs: Vec<serde_json::Value> = app.get("/runs/prs").await.json().await.unwrap();
+    assert!(prs.iter().find(|p| p["distance_label"] == "5 km").is_none());
+    // But 1k should appear (3k > 1k * 0.95)
+    assert!(prs.iter().find(|p| p["distance_label"] == "1 km").is_some());
+}
+
+#[tokio::test]
+async fn mark_run_invalid_returns_204() {
+    let app = common::TestApp::spawn().await;
+    insert_run(&app, "2026-01-01T08:00:00Z", 1500, 5000.0).await;
+    let runs: Vec<serde_json::Value> = app.get("/runs").await.json().await.unwrap();
+    let id = runs[0]["id"].as_i64().unwrap();
+    let res = app.patch(&format!("/runs/{id}"), serde_json::json!({"is_invalid": true})).await;
+    assert_eq!(res.status(), 204);
+}
+
+#[tokio::test]
+async fn invalid_run_is_excluded_from_prs() {
+    let app = common::TestApp::spawn().await;
+    insert_run(&app, "2026-01-01T08:00:00Z", 1500, 5000.0).await;
+    let runs: Vec<serde_json::Value> = app.get("/runs").await.json().await.unwrap();
+    let id = runs[0]["id"].as_i64().unwrap();
+    // Mark as invalid
+    app.patch(&format!("/runs/{id}"), serde_json::json!({"is_invalid": true})).await;
+    // Should not appear in PRs
+    let prs: Vec<serde_json::Value> = app.get("/runs/prs").await.json().await.unwrap();
+    assert!(prs.iter().find(|p| p["distance_label"] == "5 km").is_none());
+}
+
+#[tokio::test]
+async fn invalid_run_still_appears_in_list() {
+    let app = common::TestApp::spawn().await;
+    insert_run(&app, "2026-01-01T08:00:00Z", 1500, 5000.0).await;
+    let runs: Vec<serde_json::Value> = app.get("/runs").await.json().await.unwrap();
+    let id = runs[0]["id"].as_i64().unwrap();
+    app.patch(&format!("/runs/{id}"), serde_json::json!({"is_invalid": true})).await;
+    let runs: Vec<serde_json::Value> = app.get("/runs").await.json().await.unwrap();
+    assert_eq!(runs.len(), 1);
+    assert_eq!(runs[0]["is_invalid"], true);
+}
+
+#[tokio::test]
+async fn can_unmark_invalid_run() {
+    let app = common::TestApp::spawn().await;
+    insert_run(&app, "2026-01-01T08:00:00Z", 1500, 5000.0).await;
+    let runs: Vec<serde_json::Value> = app.get("/runs").await.json().await.unwrap();
+    let id = runs[0]["id"].as_i64().unwrap();
+    app.patch(&format!("/runs/{id}"), serde_json::json!({"is_invalid": true})).await;
+    app.patch(&format!("/runs/{id}"), serde_json::json!({"is_invalid": false})).await;
+    let runs: Vec<serde_json::Value> = app.get("/runs").await.json().await.unwrap();
+    assert_eq!(runs[0]["is_invalid"], false);
+    // Should be back in PRs
+    let prs: Vec<serde_json::Value> = app.get("/runs/prs").await.json().await.unwrap();
+    assert!(prs.iter().find(|p| p["distance_label"] == "5 km").is_some());
+}
+
+#[tokio::test]
+async fn mark_nonexistent_run_invalid_returns_404() {
+    let app = common::TestApp::spawn().await;
+    let res = app.patch("/runs/9999", serde_json::json!({"is_invalid": true})).await;
+    assert_eq!(res.status(), 404);
+}

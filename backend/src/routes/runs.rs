@@ -19,6 +19,7 @@ pub struct RunSummary {
     pub avg_hr: Option<i64>,
     pub max_hr: Option<i64>,
     pub notes: Option<String>,
+    pub is_invalid: bool,
 }
 
 #[derive(Serialize)]
@@ -231,7 +232,7 @@ pub async fn import_run(
         "INSERT INTO runs \
          (started_at, duration_s, distance_m, elevation_gain_m, avg_hr, max_hr, route_json) \
          VALUES (?, ?, ?, ?, ?, ?, ?) \
-         RETURNING id, started_at, duration_s, distance_m, elevation_gain_m, avg_hr, max_hr, notes",
+         RETURNING id, started_at, duration_s, distance_m, elevation_gain_m, avg_hr, max_hr, notes, is_invalid",
     )
     .bind(&parsed.started_at)
     .bind(parsed.duration_s)
@@ -250,7 +251,7 @@ pub async fn import_run(
 /// Returns an error if the database query fails.
 pub async fn list_runs(State(state): State<AppState>) -> AppResult<Json<Vec<RunSummary>>> {
     let runs = sqlx::query_as::<_, RunSummary>(
-        "SELECT id, started_at, duration_s, distance_m, elevation_gain_m, avg_hr, max_hr, notes \
+        "SELECT id, started_at, duration_s, distance_m, elevation_gain_m, avg_hr, max_hr, notes, is_invalid \
          FROM runs ORDER BY started_at DESC",
     )
     .fetch_all(&state.pool)
@@ -403,4 +404,93 @@ pub async fn sync_gadgetbridge(
     }
 
     Ok(Json(SyncResult { imported, errors }))
+}
+
+// ── Personal records ─────────────────────────────────────────────────────────
+
+#[derive(Serialize)]
+pub struct PersonalRecord {
+    pub distance_label: String,
+    pub run_id: i64,
+    pub run_date: String,
+    pub estimated_seconds: f64,
+}
+
+/// Returns the best run (by estimated time at pace) for each standard distance.
+/// A run qualifies if its distance is >= 95% of the target distance.
+///
+/// # Errors
+/// Returns an error if the database query fails.
+pub async fn personal_records(
+    State(state): State<AppState>,
+) -> AppResult<Json<Vec<PersonalRecord>>> {
+    #[derive(sqlx::FromRow)]
+    struct RunRow {
+        id: i64,
+        started_at: String,
+        duration_s: i64,
+        distance_m: f64,
+    }
+
+    let runs = sqlx::query_as::<_, RunRow>(
+        "SELECT id, started_at, duration_s, distance_m FROM runs WHERE is_invalid = 0 ORDER BY started_at",
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    let targets: &[(&str, f64)] = &[
+        ("1 km", 1_000.0),
+        ("5 km", 5_000.0),
+        ("10 km", 10_000.0),
+        ("Half marathon", 21_097.5),
+        ("Marathon", 42_195.0),
+    ];
+
+    let mut prs = Vec::new();
+    for (label, target_m) in targets {
+        let best = runs
+            .iter()
+            .filter(|r| r.distance_m >= target_m * 0.95)
+            .min_by(|a, b| {
+                let pace_a = f64::from(i32::try_from(a.duration_s).unwrap_or(i32::MAX)) * target_m / a.distance_m;
+                let pace_b = f64::from(i32::try_from(b.duration_s).unwrap_or(i32::MAX)) * target_m / b.distance_m;
+                pace_a.partial_cmp(&pace_b).unwrap_or(std::cmp::Ordering::Equal)
+            });
+        if let Some(run) = best {
+            prs.push(PersonalRecord {
+                distance_label: (*label).to_string(),
+                run_id: run.id,
+                run_date: run.started_at.clone(),
+                estimated_seconds: f64::from(i32::try_from(run.duration_s).unwrap_or(i32::MAX)) * target_m / run.distance_m,
+            });
+        }
+    }
+
+    Ok(Json(prs))
+}
+
+#[derive(Deserialize)]
+pub struct SetInvalidBody {
+    pub is_invalid: bool,
+}
+
+/// Toggle the `is_invalid` flag on a run (keeps it in the DB so re-import won't duplicate it).
+///
+/// # Errors
+/// Returns `NOT_FOUND` if the run doesn't exist, or a database error.
+pub async fn set_invalid(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Json(body): Json<SetInvalidBody>,
+) -> AppResult<StatusCode> {
+    let rows = sqlx::query("UPDATE runs SET is_invalid = ? WHERE id = ?")
+        .bind(body.is_invalid)
+        .bind(id)
+        .execute(&state.pool)
+        .await?
+        .rows_affected();
+    if rows == 0 {
+        return Err((StatusCode::NOT_FOUND, "Run not found".to_string()).into());
+    }
+    Ok(StatusCode::NO_CONTENT)
 }

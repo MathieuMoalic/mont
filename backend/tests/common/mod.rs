@@ -15,10 +15,13 @@ struct Claims {
     exp: u64,
 }
 
+use sqlx::SqlitePool;
+
 pub struct TestApp {
     pub client: reqwest::Client,
     pub base_url: String,
     pub token: String,
+    pub pool: SqlitePool,
     // Kept alive so the temp file isn't deleted while the server is running.
     _db: tempfile::NamedTempFile,
 }
@@ -50,6 +53,7 @@ impl TestApp {
             gadgetbridge_zip: None,
         };
 
+        let pool2 = pool.clone();
         let state = AppState {
             pool,
             jwt_encoding: EncodingKey::from_secret(TEST_JWT_SECRET.as_bytes()),
@@ -76,6 +80,7 @@ impl TestApp {
             client: reqwest::Client::new(),
             base_url: format!("http://{addr}"),
             token,
+            pool: pool2,
             _db: db,
         }
     }
@@ -120,6 +125,16 @@ impl TestApp {
             .patch(self.url(path))
             .bearer_auth(&self.token)
             .header(reqwest::header::CONTENT_LENGTH, "0")
+            .send()
+            .await
+            .unwrap()
+    }
+
+    pub async fn patch(&self, path: &str, body: serde_json::Value) -> reqwest::Response {
+        self.client
+            .patch(self.url(path))
+            .bearer_auth(&self.token)
+            .json(&body)
             .send()
             .await
             .unwrap()
