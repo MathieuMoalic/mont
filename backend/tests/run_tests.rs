@@ -306,3 +306,53 @@ async fn mark_nonexistent_run_invalid_returns_404() {
     let res = app.patch("/runs/9999", serde_json::json!({"is_invalid": true})).await;
     assert_eq!(res.status(), 404);
 }
+
+// ── Activity type filter tests ────────────────────────────────────────────────
+
+fn make_gpx_with_type(activity_type: &str) -> Vec<u8> {
+    format!(r#"<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="GadgetBridge"
+     xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <type>{activity_type}</type>
+    <trkseg>
+      <trkpt lat="48.8566" lon="2.3522"><ele>35.0</ele><time>2026-02-01T09:00:00Z</time></trkpt>
+      <trkpt lat="48.8576" lon="2.3532"><ele>37.5</ele><time>2026-02-01T09:05:00Z</time></trkpt>
+    </trkseg>
+  </trk>
+</gpx>"#).into_bytes()
+}
+
+#[tokio::test]
+async fn cycling_gpx_is_rejected_on_import() {
+    let app = common::TestApp::spawn().await;
+    let part = reqwest::multipart::Part::bytes(make_gpx_with_type("cycling"))
+        .file_name("cycling.gpx");
+    let form = reqwest::multipart::Form::new().part("file", part);
+    let res = app.client.post(app.url("/runs/import"))
+        .bearer_auth(&app.token).multipart(form).send().await.unwrap();
+    assert_eq!(res.status(), 422);
+}
+
+#[tokio::test]
+async fn running_gpx_with_type_is_accepted() {
+    let app = common::TestApp::spawn().await;
+    let part = reqwest::multipart::Part::bytes(make_gpx_with_type("running"))
+        .file_name("run.gpx");
+    let form = reqwest::multipart::Form::new().part("file", part);
+    let res = app.client.post(app.url("/runs/import"))
+        .bearer_auth(&app.token).multipart(form).send().await.unwrap();
+    assert_eq!(res.status(), 201);
+}
+
+#[tokio::test]
+async fn gpx_without_type_field_is_accepted() {
+    let app = common::TestApp::spawn().await;
+    // SAMPLE_GPX has no <type> element — should still be accepted
+    let part = reqwest::multipart::Part::bytes(SAMPLE_GPX.as_bytes().to_vec())
+        .file_name("run.gpx");
+    let form = reqwest::multipart::Form::new().part("file", part);
+    let res = app.client.post(app.url("/runs/import"))
+        .bearer_auth(&app.token).multipart(form).send().await.unwrap();
+    assert_eq!(res.status(), 201);
+}
