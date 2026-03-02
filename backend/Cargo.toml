@@ -36,6 +36,7 @@ chrono = "0.4"
 mime_guess = "2"
 roxmltree = "0.19"
 zip = { version = "2", default-features = false, features = ["deflate"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
 uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
