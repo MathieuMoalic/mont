@@ -65,6 +65,12 @@ struct ParsedRun {
     avg_hr: Option<i64>,
     max_hr: Option<i64>,
     route: Vec<RoutePoint>,
+    activity_type: Option<String>,
+}
+
+fn is_running_activity(activity_type: Option<&str>) -> bool {
+    // No type field → assume running (e.g. manually-created GPX files)
+    activity_type.is_none_or(|t| matches!(t, "running" | "trail_running" | "run"))
 }
 
 fn parse_timestamp(s: &str) -> anyhow::Result<i64> {
@@ -87,6 +93,14 @@ fn haversine_m(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
 fn parse_gpx(data: &[u8]) -> anyhow::Result<ParsedRun> {
     let text = std::str::from_utf8(data)?;
     let doc = roxmltree::Document::parse(text)?;
+
+    // Extract activity type from <trk><type> (e.g. "running", "cycling")
+    let activity_type = doc
+        .descendants()
+        .find(|n| n.tag_name().name() == "trk")
+        .and_then(|trk| trk.children().find(|n| n.tag_name().name() == "type"))
+        .and_then(|n| n.text())
+        .map(|t| t.trim().to_lowercase());
 
     let mut points: Vec<TrackPoint> = Vec::new();
 
@@ -189,7 +203,7 @@ fn parse_gpx(data: &[u8]) -> anyhow::Result<ParsedRun> {
             .collect()
     };
 
-    Ok(ParsedRun { started_at, duration_s, distance_m, elevation_gain_m, avg_hr, max_hr, route })
+    Ok(ParsedRun { started_at, duration_s, distance_m, elevation_gain_m, avg_hr, max_hr, route, activity_type })
 }
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
@@ -224,6 +238,16 @@ pub async fn import_run(
 
     let parsed = parse_gpx(&bytes)
         .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, e.to_string()))?;
+
+    if !is_running_activity(parsed.activity_type.as_deref()) {
+        return Err((
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!(
+                "Activity type '{}' is not a running activity",
+                parsed.activity_type.as_deref().unwrap_or("unknown")
+            ),
+        ).into());
+    }
 
     let route_json = serde_json::to_string(&parsed.route)
         .map_err(anyhow::Error::from)?;
@@ -368,6 +392,10 @@ pub async fn sync_gadgetbridge(
                 errors.push(format!("{name}: {e}"));
             }
             Ok(parsed) => {
+                // Skip non-running activities (e.g. cycling) silently
+                if !is_running_activity(parsed.activity_type.as_deref()) {
+                    continue;
+                }
                 let route_json = match serde_json::to_string(&parsed.route) {
                     Ok(j) => j,
                     Err(e) => { errors.push(format!("{name}: {e}")); continue; }
