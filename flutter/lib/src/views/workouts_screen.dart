@@ -7,6 +7,7 @@ import 'active_workout_screen.dart';
 import 'exercise_history_screen.dart';
 import 'login_page.dart';
 import 'templates_screen.dart';
+import 'workout_heatmap_screen.dart';
 
 class WorkoutsScreen extends StatefulWidget {
   const WorkoutsScreen({super.key});
@@ -105,6 +106,14 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
             onPressed: () => Navigator.push<void>(
               context,
               MaterialPageRoute(builder: (_) => const ExerciseHistoryScreen()),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.grid_view),
+            tooltip: 'Workout heatmap',
+            onPressed: () => Navigator.push<void>(
+              context,
+              MaterialPageRoute(builder: (_) => const WorkoutHeatmapScreen()),
             ),
           ),
           IconButton(
