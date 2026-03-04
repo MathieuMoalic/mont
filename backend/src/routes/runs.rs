@@ -372,43 +372,56 @@ fn load_running_filenames(db_path: &std::path::Path) -> Result<std::collections:
 }
 
 /// # Errors
-/// Returns `SERVICE_UNAVAILABLE` if `MONT_GADGETBRIDGE_PATH` is not configured,
+/// Returns `SERVICE_UNAVAILABLE` if `MONT_GADGETBRIDGE_ZIP` is not configured,
 /// or a database error.
 pub async fn sync_gadgetbridge(
     State(state): State<AppState>,
 ) -> AppResult<Json<SyncResult>> {
-    let gb_path = state
+    let zip_path = state
         .config
-        .gadgetbridge_path
+        .gadgetbridge_zip
         .clone()
-        .ok_or_else(|| (StatusCode::SERVICE_UNAVAILABLE, "MONT_GADGETBRIDGE_PATH not configured".to_string()))?;
+        .ok_or_else(|| (StatusCode::SERVICE_UNAVAILABLE, "MONT_GADGETBRIDGE_ZIP not configured".to_string()))?;
 
-    let db_path = gb_path.join("database").join("Gadgetbridge");
-    let files_dir = gb_path.join("files");
+    let (running_filenames, gpx_files) = tokio::task::spawn_blocking(move || -> Result<_, String> {
+        let file = std::fs::File::open(&zip_path)
+            .map_err(|e| format!("Cannot open zip {}: {e}", zip_path.display()))?;
+        let mut archive = zip::ZipArchive::new(file)
+            .map_err(|e| format!("Invalid zip: {e}"))?;
 
-    // Load running GPX filenames from the Gadgetbridge DB to filter by activity kind.
-    let running_filenames = tokio::task::spawn_blocking(move || load_running_filenames(&db_path))
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+        // Extract the Gadgetbridge SQLite DB bytes from the zip.
+        let db_bytes = {
+            use std::io::Read;
+            let mut entry = archive.by_name("database/Gadgetbridge")
+                .map_err(|e| format!("Cannot find database/Gadgetbridge in zip: {e}"))?;
+            let mut buf = Vec::new();
+            entry.read_to_end(&mut buf).map_err(|e| e.to_string())?;
+            buf
+        };
 
-    // Read all GPX files from the files/ subdirectory.
-    let gpx_files: Vec<(String, Vec<u8>)> = tokio::task::spawn_blocking(move || {
-        let mut out = Vec::new();
-        let entries = std::fs::read_dir(&files_dir)
-            .map_err(|e| format!("Cannot read {}: {e}", files_dir.display()))?;
-        for entry in entries {
-            let entry = entry.map_err(|e| e.to_string())?;
-            let path = entry.path();
-            let name = path.file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("")
-                .to_owned();
-            if !name.to_ascii_lowercase().ends_with(".gpx") { continue; }
-            let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
-            out.push((name, bytes));
+        // Write to a temp file so rusqlite can open it.
+        let tmp_path = std::env::temp_dir()
+            .join(format!("gadgetbridge_{}.sqlite", uuid::Uuid::new_v4()));
+        std::fs::write(&tmp_path, &db_bytes).map_err(|e| e.to_string())?;
+        let running_filenames = load_running_filenames(&tmp_path);
+        let _ = std::fs::remove_file(&tmp_path);
+        let running_filenames = running_filenames?;
+
+        // Extract GPX files from the files/ directory in the zip.
+        let mut gpx_files: Vec<(String, Vec<u8>)> = Vec::new();
+        for i in 0..archive.len() {
+            use std::io::Read;
+            let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
+            let name = entry.name().to_owned();
+            if !name.starts_with("files/") { continue; }
+            let basename = name.rsplit('/').next().unwrap_or(&name).to_owned();
+            if !basename.to_ascii_lowercase().ends_with(".gpx") { continue; }
+            let mut buf = Vec::new();
+            entry.read_to_end(&mut buf).map_err(|e| e.to_string())?;
+            gpx_files.push((basename, buf));
         }
-        Ok::<_, String>(out)
+
+        Ok((running_filenames, gpx_files))
     })
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?

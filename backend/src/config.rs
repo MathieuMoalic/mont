@@ -43,8 +43,8 @@ pub struct Config {
     #[arg(long, env = "MONT_PASSWORD_HASH")]
     pub password_hash: Option<String>,
 
-    #[arg(long, env = "MONT_GADGETBRIDGE_PATH")]
-    pub gadgetbridge_path: Option<PathBuf>,
+    #[arg(long, env = "MONT_GADGETBRIDGE_ZIP")]
+    pub gadgetbridge_zip: Option<PathBuf>,
 }
 
 impl Config {

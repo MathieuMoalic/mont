@@ -191,10 +191,10 @@
           description = "Path to file containing JWT secret (for sops-nix)";
         };
 
-        gadgetbridgePath = lib.mkOption {
+        gadgetbridgeZip = lib.mkOption {
           type = lib.types.nullOr lib.types.str;
           default = null;
-          description = "Path to Gadgetbridge data directory (expects files/ and database/Gadgetbridge inside)";
+          description = "Path to GadgetBridge zip export file on the filesystem";
         };
       };
 
@@ -242,7 +242,7 @@
             // lib.optionalAttrs (cfg.corsOrigin != null) {MONT_CORS_ORIGIN = cfg.corsOrigin;}
             // lib.optionalAttrs (cfg.passwordHash != null) {MONT_PASSWORD_HASH = cfg.passwordHash;}
             // lib.optionalAttrs (cfg.jwtSecret != null) {MONT_JWT_SECRET = cfg.jwtSecret;}
-            // lib.optionalAttrs (cfg.gadgetbridgePath != null) {MONT_GADGETBRIDGE_PATH = cfg.gadgetbridgePath;};
+            // lib.optionalAttrs (cfg.gadgetbridgeZip != null) {MONT_GADGETBRIDGE_ZIP = cfg.gadgetbridgeZip;};
 
           script = let
             passwordHashLoader =
