@@ -236,6 +236,17 @@ Future<RunSummary> importGpx(List<int> bytes, String filename) async {
   return RunSummary.fromJson(jsonDecode(body) as Map<String, dynamic>);
 }
 
+Future<List<List<List<double>>>> fetchHeatmap() async {
+  final res = await http.get(_u('/runs/heatmap'), headers: _headers());
+  if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
+  return (jsonDecode(res.body) as List)
+      .map((route) => (route as List)
+          .map((pt) => (pt as List).map((v) => (v as num).toDouble()).toList())
+          .toList())
+      .toList();
+}
+
+
 Future<void> deleteRun(int id) async {
   final res = await http.delete(_u('/runs/$id'), headers: _headers());
   if (res.statusCode != 204) throw Exception('HTTP ${res.statusCode}');

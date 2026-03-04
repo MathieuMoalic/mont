@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../api.dart' as api;
 import '../models.dart';
+import 'run_heatmap_screen.dart';
 import 'run_calendar_screen.dart';
 import 'run_detail_screen.dart';
 import 'run_stats_screen.dart';
@@ -85,6 +86,18 @@ class _RunsScreenState extends State<RunsScreen> {
       appBar: AppBar(
         title: const Text('Runs'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.map_outlined),
+            tooltip: 'Heatmap',
+            onPressed: _runs.isEmpty
+                ? null
+                : () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const RunHeatmapScreen(),
+                      ),
+                    ),
+          ),
           IconButton(
             icon: const Icon(Icons.calendar_month),
             tooltip: 'Calendar',
