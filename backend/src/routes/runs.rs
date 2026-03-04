@@ -484,6 +484,40 @@ pub async fn sync_gadgetbridge(
     Ok(Json(SyncResult { imported, errors }))
 }
 
+// ── Heatmap ───────────────────────────────────────────────────────────────────
+
+/// Returns all valid run routes as arrays of `[lat, lon]` pairs for map overlay.
+///
+/// # Errors
+/// Returns an error if the database query fails.
+pub async fn heatmap(
+    State(state): State<AppState>,
+) -> AppResult<Json<Vec<Vec<[f64; 2]>>>> {
+    #[derive(sqlx::FromRow)]
+    struct Row { route_json: String }
+
+    #[derive(serde::Deserialize)]
+    struct Pt { lat: f64, lon: f64 }
+
+    let rows: Vec<Row> = sqlx::query_as(
+        "SELECT route_json FROM runs WHERE is_invalid = 0 AND route_json != '[]'",
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    let routes = rows
+        .iter()
+        .filter_map(|r| {
+            serde_json::from_str::<Vec<Pt>>(&r.route_json)
+                .ok()
+                .map(|pts| pts.iter().map(|p| [p.lat, p.lon]).collect::<Vec<_>>())
+        })
+        .filter(|pts| !pts.is_empty())
+        .collect();
+
+    Ok(Json(routes))
+}
+
 // ── Personal records ─────────────────────────────────────────────────────────
 
 #[derive(Serialize)]
