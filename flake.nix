@@ -101,7 +101,7 @@
 
       src = pkgs.fetchurl {
         url = "https://github.com/MathieuMoalic/mont/releases/download/v0.2.0/mont-v0.2.0-x86_64-linux.tar.gz";
-        hash = "sha256-SKYdnYIatdSjws+7k9/G+mauoVYz/YB7Bi8oDidlt1Q=";
+        hash = "sha256-kwKKzVnhIeqUu8KvH3lLE+tyIP4gJzPWF9jiDHjfmoo=";
       };
 
       sourceRoot = ".";
