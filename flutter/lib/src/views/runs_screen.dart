@@ -78,6 +78,35 @@ class _RunsScreenState extends State<RunsScreen> {
     }
   }
 
+  Future<void> _resetAndResync() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Reset all runs?'),
+        content: const Text(
+            'This will delete every run and reimport them from Gadgetbridge. Continue?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Reset & Reimport'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await api.deleteAllRuns();
+      await _syncGadgetbridge();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Reset failed: $e')),
+      );
+    }
+  }
+
   Set<int> get _prRunIds => _prs.map((p) => p.runId).toSet();
 
   @override
@@ -126,6 +155,11 @@ class _RunsScreenState extends State<RunsScreen> {
             icon: const Icon(Icons.sync),
             tooltip: 'Sync Gadgetbridge',
             onPressed: _syncGadgetbridge,
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete_sweep_outlined),
+            tooltip: 'Reset & Reimport',
+            onPressed: _resetAndResync,
           ),
         ],
       ),

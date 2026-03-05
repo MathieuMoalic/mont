@@ -69,7 +69,7 @@ pub fn build_app(state: AppState) -> Router {
         .route("/workouts/{id}/sets/{set_id}", delete(workouts::delete_set))
         .route("/weight", get(weight::list_weight).post(weight::create_weight_entry))
         .route("/weight/{id}", delete(weight::delete_weight_entry))
-        .route("/runs", get(runs::list_runs))
+        .route("/runs", get(runs::list_runs).delete(runs::delete_all_runs))
         .route("/runs/prs", get(runs::personal_records))
         .route("/runs/heatmap", get(runs::heatmap))
         .route("/runs/import", post(runs::import_run))
