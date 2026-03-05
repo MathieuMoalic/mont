@@ -252,6 +252,11 @@ Future<void> deleteRun(int id) async {
   if (res.statusCode != 204) throw Exception('HTTP ${res.statusCode}');
 }
 
+Future<void> deleteAllRuns() async {
+  final res = await http.delete(_u('/runs'), headers: _headers());
+  if (res.statusCode != 204) throw Exception('HTTP ${res.statusCode}');
+}
+
 Future<void> markRunInvalid(int id, {required bool isInvalid}) async {
   final res = await http.patch(
     _u('/runs/$id'),

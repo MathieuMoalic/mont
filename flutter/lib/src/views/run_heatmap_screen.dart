@@ -1,100 +1,20 @@
 import 'dart:async';
-import 'dart:math' as math;
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../api.dart' as api;
 
-// ── Heatmap computation (top-level so it can run in a compute isolate) ────────
-
-const int _kCellSize = 4; // pixels per density-grid cell
-
-typedef _HeatmapInput = ({
-  List<List<List<double>>> routes, // [[x,y], …] already in screen-space
-  int width,
-  int height,
-});
-
-/// Builds an RGBA pixel buffer (cols×rows) representing the density heatmap.
-Uint32List _buildDensityGrid(_HeatmapInput input) {
-  final cols = (input.width / _kCellSize).ceil();
-  final rows = (input.height / _kCellSize).ceil();
-  final density = Float32List(cols * rows);
-
-  // Gaussian kernel – radius 2 cells, σ = 4/3
-  const kr = 2;
-  const sigma = kr / 1.5;
-  const ks = kr * 2 + 1;
-  final kernel = List.generate(ks, (dy) => List.generate(ks, (dx) {
-    final x = (dx - kr).toDouble(), y = (dy - kr).toDouble();
-    return math.exp(-(x * x + y * y) / (2 * sigma * sigma));
-  }));
-
-  for (final route in input.routes) {
-    for (final pt in route) {
-      final px = pt[0], py = pt[1];
-      if (px < -kr * _kCellSize || py < -kr * _kCellSize ||
-          px > input.width + kr * _kCellSize ||
-          py > input.height + kr * _kCellSize) { continue; }
-      final cx = (px / _kCellSize).round();
-      final cy = (py / _kCellSize).round();
-      for (int dy = 0; dy < ks; dy++) {
-        final row = cy + dy - kr;
-        if (row < 0 || row >= rows) { continue; }
-        for (int dx = 0; dx < ks; dx++) {
-          final col = cx + dx - kr;
-          if (col < 0 || col >= cols) { continue; }
-          density[row * cols + col] += kernel[dy][dx];
-        }
-      }
-    }
-  }
-
-  double maxD = 0;
-  for (final v in density) {
-    if (v > maxD) maxD = v;
-  }
-  if (maxD == 0) return Uint32List(0);
-
-  final pixels = Uint32List(cols * rows);
-  for (int i = 0; i < density.length; i++) {
-    // sqrt-scale so faint routes stay visible
-    final t = math.sqrt(density[i] / maxD);
-    if (t < 0.01) continue;
-    pixels[i] = _heatColor(t);
-  }
-  return pixels;
-}
-
-/// Maps t∈[0,1] → RGBA Uint32 (little-endian: R | G<<8 | B<<16 | A<<24).
-/// Palette: transparent → dark-blue → cyan → yellow → white
-int _heatColor(double t) {
-  final double r, g, b, a;
-  if (t < 0.25) {
-    final s = t / 0.25;
-    (r, g, b, a) = (0, 0, 180 * s, 160 * s);
-  } else if (t < 0.5) {
-    final s = (t - 0.25) / 0.25;
-    (r, g, b, a) = (0, s * 200, 180 - 80 * s, 160 + 40 * s);
-  } else if (t < 0.75) {
-    final s = (t - 0.5) / 0.25;
-    (r, g, b, a) = (255 * s, 200 + 30 * s, 100 * (1 - s), 200 + 30 * s);
-  } else {
-    final s = (t - 0.75) / 0.25;
-    (r, g, b, a) = (255, 230 + 25 * s, 120 * s, 230 + 25 * s);
-  }
-  return (a.round().clamp(0, 255) << 24) |
-      (b.round().clamp(0, 255) << 16) |
-      (g.round().clamp(0, 255) << 8) |
-      r.round().clamp(0, 255);
-}
-
 // ── HeatmapLayer ──────────────────────────────────────────────────────────────
+//
+// Approach: additive blending (BlendMode.plus). Each route contributes a dark
+// blue stroke; overlapping areas accumulate colour toward cyan → white.  No
+// isolate, no pixel-buffer round-trip — Flutter's GPU canvas handles it all.
+//
+// Pan  → instant: we just shift the canvas origin by the camera delta.
+// Zoom → reproject screen coords (synchronous, no isolate), debounced 80 ms.
 
 class HeatmapLayer extends StatefulWidget {
   const HeatmapLayer({super.key, required this.routes});
@@ -105,74 +25,30 @@ class HeatmapLayer extends StatefulWidget {
 }
 
 class _HeatmapLayerState extends State<HeatmapLayer> {
-  ui.Image? _image;
+  List<List<Offset>>? _screenRoutes;
+  MapCamera? _renderCamera;
   Timer? _debounce;
-  bool _computing = false;
-  MapCamera? _pendingCamera;
-  Size? _pendingSize;
 
   @override
   void dispose() {
     _debounce?.cancel();
-    _image?.dispose();
     super.dispose();
   }
 
-  void _scheduleRebuild(MapCamera camera, Size size) {
-    _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 120), () => _rebuild(camera, size));
+  /// Project lat/lng → screen coords for the current camera (synchronous).
+  void _reproject(MapCamera camera) {
+    _screenRoutes = widget.routes
+        .map((r) => r.map((ll) => camera.latLngToScreenOffset(ll)).toList())
+        .toList();
+    _renderCamera = camera;
   }
 
-  Future<void> _rebuild(MapCamera camera, Size size) async {
-    if (_computing) {
-      _pendingCamera = camera;
-      _pendingSize = size;
-      return;
-    }
-    _computing = true;
-    _pendingCamera = null;
-    _pendingSize = null;
-
-    final screenRoutes = widget.routes.map((route) => route.map((ll) {
-          final pt = camera.latLngToScreenOffset(ll);
-          return [pt.dx, pt.dy];
-        }).toList()).toList();
-
-    final input = (
-      routes: screenRoutes,
-      width: size.width.round(),
-      height: size.height.round(),
-    );
-
-    final pixels = await compute(_buildDensityGrid, input);
-    _computing = false;
-    if (!mounted) return;
-
-    if (pixels.isEmpty) {
-      if (_pendingCamera != null) _rebuild(_pendingCamera!, _pendingSize!);
-      return;
-    }
-
-    final cols = (size.width / _kCellSize).ceil();
-    final rows = (size.height / _kCellSize).ceil();
-
-    final completer = Completer<ui.Image>();
-    ui.decodeImageFromPixels(
-      pixels.buffer.asUint8List(),
-      cols,
-      rows,
-      ui.PixelFormat.rgba8888,
-      completer.complete,
-    );
-    final image = await completer.future;
-
-    if (!mounted) return;
-    setState(() {
-      _image?.dispose();
-      _image = image;
+  void _scheduleReproject(MapCamera camera) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 80), () {
+      if (!mounted) return;
+      setState(() => _reproject(camera));
     });
-
-    if (_pendingCamera != null) _rebuild(_pendingCamera!, _pendingSize!);
   }
 
   @override
@@ -180,36 +56,87 @@ class _HeatmapLayerState extends State<HeatmapLayer> {
     final camera = MapCamera.of(context);
     return LayoutBuilder(builder: (ctx, constraints) {
       final size = Size(constraints.maxWidth, constraints.maxHeight);
-      _scheduleRebuild(camera, size);
+
+      // Reproject if this is the first build or the zoom changed.
+      final rc = _renderCamera;
+      if (rc == null || (camera.zoom - rc.zoom).abs() > 0.15) {
+        _scheduleReproject(camera);
+      }
+
+      // Pan offset: how much every screen-coord has shifted since last render.
+      Offset panOffset = Offset.zero;
+      if (rc != null) {
+        panOffset = camera.latLngToScreenOffset(rc.center) -
+            Offset(size.width / 2, size.height / 2);
+      }
+
       return CustomPaint(
-        painter: _HeatmapImagePainter(_image, size),
+        painter: _HeatmapPainter(_screenRoutes, panOffset),
         size: size,
+        isComplex: true,
+        willChange: false,
       );
     });
   }
 }
 
-class _HeatmapImagePainter extends CustomPainter {
-  final ui.Image? image;
-  final Size targetSize;
+class _HeatmapPainter extends CustomPainter {
+  final List<List<Offset>>? routes;
+  final Offset panOffset;
 
-  const _HeatmapImagePainter(this.image, this.targetSize);
+  const _HeatmapPainter(this.routes, this.panOffset);
 
   @override
   void paint(Canvas canvas, Size size) {
-    final img = image;
-    if (img == null) return;
-    canvas.drawImageRect(
-      img,
-      Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()),
-      Rect.fromLTWH(0, 0, targetSize.width, targetSize.height),
-      Paint()..filterQuality = FilterQuality.medium,
+    final routes = this.routes;
+    if (routes == null || routes.isEmpty) return;
+
+    canvas.save();
+    canvas.translate(panOffset.dx, panOffset.dy);
+
+    // Offscreen layer with additive blend: overlapping routes brighten toward
+    // white (dark-blue → blue → cyan → white as density increases).
+    canvas.saveLayer(
+      Rect.fromLTWH(-size.width, -size.height, size.width * 3, size.height * 3),
+      Paint(),
     );
+
+    // Wide halo pass: broad, very dim.
+    final haloPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 10.0
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..blendMode = BlendMode.plus
+      // alpha=18: single route ≈ 7% opacity; ~14 overlaps → fully saturated
+      ..color = const Color(0x1200061A); // (a=18, r=0, g=6, b=26)
+
+    // Narrow core pass: brighter centre.
+    final corePaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 4.0
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..blendMode = BlendMode.plus
+      ..color = const Color(0x1C000E34); // (a=28, r=0, g=14, b=52)
+
+    for (final route in routes) {
+      if (route.length < 2) continue;
+      final path = ui.Path()..moveTo(route[0].dx, route[0].dy);
+      for (int i = 1; i < route.length; i++) {
+        path.lineTo(route[i].dx, route[i].dy);
+      }
+      canvas.drawPath(path, haloPaint);
+      canvas.drawPath(path, corePaint);
+    }
+
+    canvas.restore(); // saveLayer
+    canvas.restore(); // translate
   }
 
   @override
-  bool shouldRepaint(_HeatmapImagePainter old) =>
-      old.image != image || old.targetSize != targetSize;
+  bool shouldRepaint(_HeatmapPainter old) =>
+      old.routes != routes || old.panOffset != panOffset;
 }
 
 // ── Screen ────────────────────────────────────────────────────────────────────

@@ -343,6 +343,19 @@ pub async fn delete_run(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// Delete **all** runs so they can be reimported from scratch.
+///
+/// # Errors
+/// Returns a database error if the deletion fails.
+pub async fn delete_all_runs(
+    State(state): State<AppState>,
+) -> AppResult<StatusCode> {
+    sqlx::query("DELETE FROM runs")
+        .execute(&state.pool)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 #[derive(Serialize)]
 pub struct SyncResult {
     pub imported: usize,
