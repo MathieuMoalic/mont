@@ -151,3 +151,43 @@ jobs:
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  update-flake:
+    runs-on: ubuntu-latest
+    needs: [release]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute nix SRI hash and update flake.nix
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          TARBALL="mont-${TAG}-x86_64-linux.tar.gz"
+          URL="https://github.com/MathieuMoalic/mont/releases/download/${TAG}/${TARBALL}"
+
+          curl -fsSL "$URL" -o /tmp/mont.tar.gz
+          HEX=$(sha256sum /tmp/mont.tar.gz | awk '{print $1}')
+          B64=$(python3 -c "import binascii,base64,sys; print(base64.b64encode(binascii.unhexlify(sys.argv[1])).decode())" "$HEX")
+          SRI="sha256-${B64}"
+
+          OLD_VERSION=$(grep -oP '(?<=version = ")[^"]+' flake.nix | tail -1)
+
+          sed -i "s|version = \"${OLD_VERSION}\";|version = \"${VERSION}\";|g" flake.nix
+          sed -i "s|download/v[^/]*/mont-v[^-]*-x86_64-linux.tar.gz|download/${TAG}/${TARBALL}|" flake.nix
+          sed -i "s|hash = \"sha256-[^\"]*\";|hash = \"${SRI}\";|" flake.nix
+          sed -i "s|install -Dm755 mont-v[^-]*-x86_64-linux|install -Dm755 mont-${TAG}-x86_64-linux|" flake.nix
+
+          echo "Updated flake.nix: version=${VERSION} hash=${SRI}"
+
+      - name: Commit flake.nix update
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add flake.nix
+          git diff --cached --quiet && echo "No changes" && exit 0
+          git commit -m "Update prebuilt to ${GITHUB_REF_NAME}"
+          git push
