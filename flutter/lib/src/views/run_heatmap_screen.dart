@@ -156,20 +156,20 @@ class _HeatmapLayerState extends State<HeatmapLayer> {
     final cols = (size.width / _kCellSize).ceil();
     final rows = (size.height / _kCellSize).ceil();
 
-    final buffer = await ui.ImmutableBuffer.fromUint8List(pixels.buffer.asUint8List());
-    final descriptor = ui.ImageDescriptor.raw(
-      buffer,
-      width: cols,
-      height: rows,
-      pixelFormat: ui.PixelFormat.rgba8888,
+    final completer = Completer<ui.Image>();
+    ui.decodeImageFromPixels(
+      pixels.buffer.asUint8List(),
+      cols,
+      rows,
+      ui.PixelFormat.rgba8888,
+      completer.complete,
     );
-    final codec = await descriptor.instantiateCodec();
-    final frame = await codec.getNextFrame();
+    final image = await completer.future;
 
     if (!mounted) return;
     setState(() {
       _image?.dispose();
-      _image = frame.image;
+      _image = image;
     });
 
     if (_pendingCamera != null) _rebuild(_pendingCamera!, _pendingSize!);
