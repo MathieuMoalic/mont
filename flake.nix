@@ -274,6 +274,7 @@
             PrivateTmp = "yes";
             ProtectSystem = "strict";
             ReadWritePaths = [(dirOf cfg.databasePath)];
+            ReadOnlyPaths = lib.optional (cfg.gadgetbridgeZip != null) (dirOf cfg.gadgetbridgeZip);
             SocketBindAllow = let
               port = lib.last (lib.splitString ":" cfg.bindAddr);
             in ["tcp:${port}"];
