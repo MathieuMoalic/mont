@@ -58,6 +58,34 @@ pub async fn create_weight_entry(
     Ok((StatusCode::CREATED, Json(entry)))
 }
 
+#[derive(Deserialize)]
+pub struct UpdateWeightEntry {
+    pub weight_kg: Option<f64>,
+    pub measured_at: Option<String>,
+}
+
+/// # Errors
+/// Returns `NOT_FOUND` if the entry doesn't exist.
+pub async fn update_weight_entry(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Json(body): Json<UpdateWeightEntry>,
+) -> AppResult<Json<WeightEntry>> {
+    let entry = sqlx::query_as::<_, WeightEntry>(
+        "UPDATE weight_entries SET \
+         weight_kg = COALESCE(?, weight_kg), \
+         measured_at = COALESCE(?, measured_at) \
+         WHERE id = ? RETURNING id, measured_at, weight_kg",
+    )
+    .bind(body.weight_kg)
+    .bind(body.measured_at)
+    .bind(id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or(StatusCode::NOT_FOUND)?;
+    Ok(Json(entry))
+}
+
 /// # Errors
 /// Returns `NOT_FOUND` if the entry doesn't exist.
 pub async fn delete_weight_entry(

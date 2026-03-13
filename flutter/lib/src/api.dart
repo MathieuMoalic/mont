@@ -214,6 +214,19 @@ Future<void> deleteWeightEntry(int id) async {
   if (res.statusCode != 204) throw Exception('HTTP ${res.statusCode}');
 }
 
+Future<WeightEntry> updateWeightEntry(int id, {double? weightKg, String? measuredAt}) async {
+  final res = await http.patch(
+    _u('/weight/$id'),
+    headers: _headers(),
+    body: jsonEncode({
+      if (weightKg != null) 'weight_kg': weightKg,
+      if (measuredAt != null) 'measured_at': measuredAt,
+    }),
+  );
+  if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
+  return WeightEntry.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+}
+
 // ── Runs ──────────────────────────────────────────────────────────────────────
 
 Future<List<RunSummary>> listRuns() async {

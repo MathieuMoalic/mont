@@ -78,11 +78,11 @@ class _HealthScreenState extends State<HealthScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Log weight'),
+        title: const Text('Log body mass'),
         content: TextFormField(
           autofocus: true,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: const InputDecoration(labelText: 'Weight (kg)', suffixText: 'kg'),
+          decoration: const InputDecoration(labelText: 'Body mass (kg)', suffixText: 'kg'),
           onChanged: (v) => entered = double.tryParse(v),
           onFieldSubmitted: (_) => Navigator.pop(ctx, true),
         ),
@@ -110,6 +110,54 @@ class _HealthScreenState extends State<HealthScreen> {
     }
   }
 
+  Future<void> _editWeight(WeightEntry entry) async {
+    final d = entry.measuredAt.toLocal();
+    final dateStr = '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+    double? newKg = entry.weightKg;
+    String? newDate = dateStr;
+    final kgCtrl = TextEditingController(text: entry.weightKg.toStringAsFixed(1));
+    final dateCtrl = TextEditingController(text: dateStr);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Edit entry'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextFormField(
+              controller: kgCtrl,
+              autofocus: true,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(labelText: 'Body mass (kg)', suffixText: 'kg'),
+              onChanged: (v) => newKg = double.tryParse(v),
+            ),
+            const SizedBox(height: 8),
+            TextFormField(
+              controller: dateCtrl,
+              keyboardType: TextInputType.datetime,
+              decoration: const InputDecoration(labelText: 'Date (YYYY-MM-DD)'),
+              onChanged: (v) => newDate = v.trim(),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Save')),
+        ],
+      ),
+    );
+    kgCtrl.dispose();
+    dateCtrl.dispose();
+    if (confirmed != true || !mounted) return;
+    try {
+      final measuredAt = newDate != null && newDate!.isNotEmpty ? '${newDate!}T12:00:00Z' : null;
+      await api.updateWeightEntry(entry.id, weightKg: newKg, measuredAt: measuredAt);
+      _load();
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+    }
+  }
+
   List<DailyHealth> get _filteredDays {
     final all = _days ?? [];
     if (_range.days == 0 || all.isEmpty) return all;
@@ -130,7 +178,7 @@ class _HealthScreenState extends State<HealthScreen> {
     return Scaffold(
       floatingActionButton: FloatingActionButton(
         onPressed: _addWeight,
-        tooltip: 'Log weight',
+        tooltip: 'Log body mass',
         child: const Icon(Icons.monitor_weight_outlined),
       ),
       body: RefreshIndicator(
@@ -191,6 +239,8 @@ class _HealthScreenState extends State<HealthScreen> {
                   leading: const Icon(Icons.monitor_weight_outlined),
                   title: Text('${entry.weightKg} kg'),
                   subtitle: Text('${d.day}/${d.month}/${d.year}'),
+                  onTap: () => _editWeight(entry),
+                  trailing: const Icon(Icons.edit_outlined, size: 16),
                 ),
               );
             },
@@ -226,7 +276,10 @@ class _HealthScreenState extends State<HealthScreen> {
       sideTitles: SideTitles(
         showTitles: true,
         reservedSize: yReserved,
-        getTitlesWidget: (v, meta) => Text(meta.formattedValue, style: const TextStyle(fontSize: 10)),
+        getTitlesWidget: (v, meta) {
+          if (v == meta.min || v == meta.max) return const SizedBox.shrink();
+          return Text(meta.formattedValue, style: const TextStyle(fontSize: 10));
+        },
       ),
     ),
     bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
@@ -301,7 +354,7 @@ class _HealthScreenState extends State<HealthScreen> {
   Widget _buildHrvChart(List<DailyHealth> days) {
     final hrvDays = days.where((d) => d.hrvRmssd != null).toList();
     if (hrvDays.isEmpty) {
-      return _chartSection(label: 'HRV — nightly RMSSD (ms)', height: 48,
+      return _chartSection(label: 'HRV (ms)', height: 48,
           child: const Center(child: Text('No HRV data in range', style: TextStyle(fontSize: 12))));
     }
     final indexed = hrvDays.asMap().entries.toList();
@@ -311,7 +364,7 @@ class _HealthScreenState extends State<HealthScreen> {
     final maxY = values.reduce((a, b) => a > b ? a : b) + 2;
     final scheme = Theme.of(context).colorScheme;
     return _chartSection(
-      label: 'HRV — nightly RMSSD (ms)',
+      label: 'HRV (ms)',
       height: 120,
       child: LineChart(LineChartData(
         minY: minY, maxY: maxY,
@@ -363,10 +416,10 @@ class _HealthScreenState extends State<HealthScreen> {
   Widget _buildWeightChart(List<WeightEntry> weights) {
     if (weights.length < 2) {
       return _chartSection(
-        label: 'Weight (kg)',
+        label: 'Body Mass (kg)',
         height: 48,
         child: Center(child: Text(
-          weights.isEmpty ? 'No weight entries in range' : 'Need at least 2 entries to show chart',
+          weights.isEmpty ? 'No body mass entries in range' : 'Need at least 2 entries to show chart',
           style: const TextStyle(fontSize: 12),
         )),
       );
@@ -378,7 +431,7 @@ class _HealthScreenState extends State<HealthScreen> {
     final pad = (maxW - minW) < 1 ? 1.0 : (maxW - minW) * 0.15;
     final scheme = Theme.of(context).colorScheme;
     return _chartSection(
-      label: 'Weight (kg)',
+      label: 'Body Mass (kg)',
       height: 160,
       child: LineChart(LineChartData(
         minY: (minW - pad).floorToDouble(),
