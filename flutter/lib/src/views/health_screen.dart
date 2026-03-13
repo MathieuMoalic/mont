@@ -85,7 +85,10 @@ class _HealthScreenState extends State<HealthScreen> {
 
   Widget _buildHrChart(List<DailyHealth> days) {
     final hrDays = days.asMap().entries.where((e) => e.value.avgHr != null).toList();
-    if (hrDays.isEmpty) return const SizedBox.shrink();
+
+    if (hrDays.isEmpty) {
+      return _chartSection(label: 'Heart Rate (bpm)', height: 48, child: const Center(child: Text('No HR data', style: TextStyle(fontSize: 12))));
+    }
 
     final avgSpots = hrDays.map((e) => FlSpot(e.key.toDouble(), e.value.avgHr!.toDouble())).toList();
     final minSpots = hrDays.map((e) => FlSpot(e.key.toDouble(), (e.value.minHr ?? e.value.avgHr!).toDouble())).toList();
@@ -139,7 +142,10 @@ class _HealthScreenState extends State<HealthScreen> {
 
   Widget _buildHrvChart(List<DailyHealth> days) {
     final hrvDays = days.asMap().entries.where((e) => e.value.hrvRmssd != null).toList();
-    if (hrvDays.isEmpty) return const SizedBox.shrink();
+
+    if (hrvDays.isEmpty) {
+      return _chartSection(label: 'HRV — nightly RMSSD (ms)', height: 48, child: const Center(child: Text('No HRV data — ensure your watch records nightly HRV and re-sync', style: TextStyle(fontSize: 12), textAlign: TextAlign.center)));
+    }
 
     final spots = hrvDays.map((e) => FlSpot(e.key.toDouble(), e.value.hrvRmssd!)).toList();
     final values = hrvDays.map((e) => e.value.hrvRmssd!);
@@ -178,7 +184,10 @@ class _HealthScreenState extends State<HealthScreen> {
 
   Widget _buildStepsChart(List<DailyHealth> days) {
     final stepDays = days.asMap().entries.where((e) => e.value.steps != null && e.value.steps! > 0).toList();
-    if (stepDays.isEmpty) return const SizedBox.shrink();
+
+    if (stepDays.isEmpty) {
+      return _chartSection(label: 'Steps per day', height: 48, child: const Center(child: Text('No steps data', style: TextStyle(fontSize: 12))));
+    }
 
     final scheme = Theme.of(context).colorScheme;
     final bars = stepDays.map((e) => BarChartGroupData(
