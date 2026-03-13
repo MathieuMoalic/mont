@@ -63,6 +63,7 @@ impl TestApp {
             pool,
             jwt_encoding: EncodingKey::from_secret(TEST_JWT_SECRET.as_bytes()),
             config,
+            http: reqwest::Client::new(),
         };
 
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");

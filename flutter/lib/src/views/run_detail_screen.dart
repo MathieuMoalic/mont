@@ -98,6 +98,11 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
           if (run.avgHr != null) _statCard('Avg HR', '${run.avgHr} bpm'),
           if (run.avgCadence != null) _statCard('Avg Cadence', '${run.avgCadence} spm'),
           if (run.avgStrideM != null) _statCard('Avg Step', '${run.avgStrideM!.toStringAsFixed(2)} m'),
+          if (run.weatherTempC != null) _statCard('Temp', '${run.weatherTempC!.round()}°C'),
+          if (run.weatherCode != null) _statCard('Weather', _wmoDescription(run.weatherCode!)),
+          if (run.weatherWindKph != null) _statCard('Wind', '${run.weatherWindKph!.round()} km/h'),
+          if (run.weatherPrecipMm != null && run.weatherPrecipMm! > 0)
+            _statCard('Precip.', '${run.weatherPrecipMm!.toStringAsFixed(1)} mm'),
         ],
       ),
     );
@@ -303,6 +308,24 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
   }
 
   static String _fmtKm(double km) => '${km.toStringAsFixed(1)} km';
+
+  static String _wmoDescription(int code) {
+    switch (code) {
+      case 0: return 'Clear sky';
+      case 1: return 'Mainly clear';
+      case 2: return 'Partly cloudy';
+      case 3: return 'Overcast';
+      case 45: case 48: return 'Fog';
+      case 51: case 53: case 55: return 'Drizzle';
+      case 61: case 63: case 65: return 'Rain';
+      case 71: case 73: case 75: return 'Snow';
+      case 80: case 81: case 82: return 'Rain showers';
+      case 85: case 86: return 'Snow showers';
+      case 95: return 'Thunderstorm';
+      case 96: case 99: return 'Thunderstorm+hail';
+      default: return 'code $code';
+    }
+  }
 
   Widget _hrChart(BuildContext context, RunDetail run) {
     final pts = run.route.where((p) => p.hr != null).toList();

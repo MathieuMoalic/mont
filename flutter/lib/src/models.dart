@@ -30,6 +30,10 @@ class RunSummary {
   final bool isInvalid;
   final int? avgCadence;
   final double? avgStrideM;
+  final double? weatherTempC;
+  final double? weatherWindKph;
+  final double? weatherPrecipMm;
+  final int? weatherCode;
 
   RunSummary({
     required this.id,
@@ -43,6 +47,10 @@ class RunSummary {
     this.isInvalid = false,
     this.avgCadence,
     this.avgStrideM,
+    this.weatherTempC,
+    this.weatherWindKph,
+    this.weatherPrecipMm,
+    this.weatherCode,
   });
 
    factory RunSummary.fromJson(Map<String, dynamic> j) => RunSummary(
@@ -57,6 +65,10 @@ class RunSummary {
         isInvalid: (j['is_invalid'] as bool?) ?? false,
         avgCadence: (j['avg_cadence'] as num?)?.toInt(),
         avgStrideM: (j['avg_stride_m'] as num?)?.toDouble(),
+        weatherTempC: (j['weather_temp_c'] as num?)?.toDouble(),
+        weatherWindKph: (j['weather_wind_kph'] as num?)?.toDouble(),
+        weatherPrecipMm: (j['weather_precip_mm'] as num?)?.toDouble(),
+        weatherCode: (j['weather_code'] as num?)?.toInt(),
       );
 }
 
@@ -75,6 +87,10 @@ class RunDetail extends RunSummary {
     super.isInvalid,
     super.avgCadence,
     super.avgStrideM,
+    super.weatherTempC,
+    super.weatherWindKph,
+    super.weatherPrecipMm,
+    super.weatherCode,
     required this.route,
   });
 
@@ -90,6 +106,10 @@ class RunDetail extends RunSummary {
         isInvalid: (j['is_invalid'] as bool?) ?? false,
         avgCadence: (j['avg_cadence'] as num?)?.toInt(),
         avgStrideM: (j['avg_stride_m'] as num?)?.toDouble(),
+        weatherTempC: (j['weather_temp_c'] as num?)?.toDouble(),
+        weatherWindKph: (j['weather_wind_kph'] as num?)?.toDouble(),
+        weatherPrecipMm: (j['weather_precip_mm'] as num?)?.toDouble(),
+        weatherCode: (j['weather_code'] as num?)?.toInt(),
         route: (j['route'] as List)
             .map((e) => RunPoint.fromJson(e as Map<String, dynamic>))
             .toList(),

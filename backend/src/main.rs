@@ -69,6 +69,7 @@ async fn main() -> anyhow::Result<()> {
         pool,
         jwt_encoding: jsonwebtoken::EncodingKey::from_secret(jwt_secret.as_bytes()),
         config: config.clone(),
+        http: reqwest::Client::new(),
     };
 
     let app = build_app(state.clone());
