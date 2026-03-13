@@ -55,6 +55,7 @@ impl TestApp {
             jwt_secret: Some(TEST_JWT_SECRET.to_string()),
             password_hash,
             gadgetbridge_zip,
+            sync_time: "05:00".to_string(),
         };
 
         let pool2 = pool.clone();
