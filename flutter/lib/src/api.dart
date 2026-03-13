@@ -290,3 +290,13 @@ Future<List<ExerciseHistoryPoint>> getExerciseHistory(int exerciseId) async {
       .toList();
 }
 
+
+// ── Health ────────────────────────────────────────────────────────────────────
+
+Future<List<DailyHealth>> listDailyHealth() async {
+  final res = await http.get(_u('/health/daily'), headers: _headers());
+  if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
+  return (jsonDecode(res.body) as List)
+      .map((e) => DailyHealth.fromJson(e as Map<String, dynamic>))
+      .toList();
+}

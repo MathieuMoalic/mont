@@ -231,6 +231,34 @@ class WorkoutDetail {
       );
 }
 
+class DailyHealth {
+  final String date;
+  final int? avgHr;
+  final int? minHr;
+  final int? maxHr;
+  final double? hrvRmssd;
+  final int? steps;
+
+  DailyHealth({
+    required this.date,
+    this.avgHr,
+    this.minHr,
+    this.maxHr,
+    this.hrvRmssd,
+    this.steps,
+  });
+
+  factory DailyHealth.fromJson(Map<String, dynamic> j) => DailyHealth(
+        date: j['date'] as String,
+        avgHr: j['avg_hr'] as int?,
+        minHr: j['min_hr'] as int?,
+        maxHr: j['max_hr'] as int?,
+        hrvRmssd: (j['hrv_rmssd'] as num?)?.toDouble(),
+        steps: j['steps'] as int?,
+      );
+}
+
+
 class ExerciseHistoryPoint {
   final DateTime workoutDate;
   final double maxWeightKg;

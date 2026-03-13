@@ -359,7 +359,103 @@ pub async fn delete_all_runs(
 #[derive(Serialize)]
 pub struct SyncResult {
     pub imported: usize,
+    pub health_days: usize,
     pub errors: Vec<String>,
+}
+
+/// Aggregate struct returned by the blocking GB extraction task.
+struct GbHealthRow {
+    date: String,
+    avg_hr: Option<i64>,
+    min_hr: Option<i64>,
+    max_hr: Option<i64>,
+    hrv_rmssd: Option<f64>,
+    steps: Option<i64>,
+}
+
+/// Extract daily HR and HRV data from the Gadgetbridge `SQLite` DB.
+/// Tries common activity-sample table names (Amazfit / Mi Band / Huami).
+/// Silently skips tables that don't exist.
+#[allow(clippy::similar_names)]
+fn extract_daily_health(db_path: &std::path::Path) -> Vec<GbHealthRow> {
+    let Ok(conn) = rusqlite::Connection::open(db_path) else { return vec![] };
+
+    // ── HR: try known activity-sample tables in priority order ────────────────
+    let mut hr_accum: std::collections::HashMap<String, (i64, i64, i64, i64, i64)> =
+        std::collections::HashMap::default(); // date → (sum_hr, count, min, max, steps)
+
+    for table in &[
+        "MI_BAND_ACTIVITY_SAMPLE",
+        "HUAMI_EXTENDED_ACTIVITY_SAMPLE",
+        "HUAMI_ACTIVITY_SAMPLE",
+    ] {
+        let sql = format!(
+            "SELECT DATE(TIMESTAMP, 'unixepoch'), HEART_RATE, STEPS \
+             FROM {table} WHERE HEART_RATE > 0 AND HEART_RATE < 255"
+        );
+        let Ok(mut stmt) = conn.prepare(&sql) else { continue };
+        let Ok(rows) = stmt.query_map([], |r| {
+            Ok((
+                r.get::<_, Option<String>>(0)?,
+                r.get::<_, i64>(1)?,
+                r.get::<_, Option<i64>>(2).unwrap_or(None).unwrap_or(0),
+            ))
+        }) else { continue };
+
+        for row in rows.flatten() {
+            let (Some(date), hr, steps) = row else { continue };
+            let e = hr_accum.entry(date).or_insert((0, 0, hr, hr, 0));
+            e.0 += hr;
+            e.1 += 1;
+            e.2 = e.2.min(hr);
+            e.3 = e.3.max(hr);
+            e.4 += steps;
+        }
+        if !hr_accum.is_empty() { break; } // use first available table
+    }
+
+    // ── HRV: HUAMI_EXTENDED_ACTIVITY_SAMPLE.HRV_SLEEP ────────────────────────
+    let mut hrv_accum: std::collections::HashMap<String, (f64, f64)> =
+        std::collections::HashMap::default();
+    if let Ok(mut stmt) = conn.prepare(
+        "SELECT DATE(TIMESTAMP, 'unixepoch'), HRV_SLEEP \
+         FROM HUAMI_EXTENDED_ACTIVITY_SAMPLE WHERE HRV_SLEEP > 0",
+    ) && let Ok(rows) = stmt.query_map([], |r| {
+            Ok((r.get::<_, Option<String>>(0)?, r.get::<_, f64>(1)?))
+        })
+    {
+        for row in rows.flatten() {
+            let (Some(date), hrv) = row else { continue };
+            let e = hrv_accum.entry(date).or_insert((0.0, 0.0));
+            e.0 += hrv;
+            e.1 += 1.0;
+        }
+    }
+
+    // ── Merge into output rows ────────────────────────────────────────────────
+    let all_dates: std::collections::HashSet<String> = hr_accum
+        .keys()
+        .chain(hrv_accum.keys())
+        .cloned()
+        .collect();
+
+    let mut rows: Vec<GbHealthRow> = all_dates
+        .into_iter()
+        .map(|date| {
+            let hr = hr_accum.get(&date);
+            let hrv = hrv_accum.get(&date);
+            GbHealthRow {
+                avg_hr: hr.filter(|e| e.1 > 0).map(|e| e.0 / e.1),
+                min_hr: hr.filter(|e| e.1 > 0).map(|e| e.2),
+                max_hr: hr.filter(|e| e.1 > 0).map(|e| e.3),
+                steps: hr.filter(|e| e.1 > 0).map(|e| e.4),
+                hrv_rmssd: hrv.filter(|e| e.1 > 0.0).map(|e| e.0 / e.1),
+                date,
+            }
+        })
+        .collect();
+    rows.sort_by(|a, b| a.date.cmp(&b.date));
+    rows
 }
 
 /// Load running GPX filenames from the Gadgetbridge `SQLite` DB.
@@ -384,6 +480,41 @@ fn load_running_filenames(db_path: &std::path::Path) -> Result<std::collections:
     Ok(set)
 }
 
+/// Import a single parsed GPX file into the runs table.
+async fn import_gpx_run(
+    name: &str,
+    parsed: &ParsedRun,
+    pool: &sqlx::SqlitePool,
+) -> Result<(), String> {
+    let route_json = serde_json::to_string(&parsed.route)
+        .map_err(|e| format!("{name}: {e}"))?;
+    sqlx::query(
+        "INSERT INTO runs \
+         (started_at, duration_s, distance_m, elevation_gain_m, avg_hr, max_hr, route_json, source_file) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?) \
+         ON CONFLICT(source_file) WHERE source_file IS NOT NULL DO UPDATE SET \
+           started_at = excluded.started_at, \
+           duration_s = excluded.duration_s, \
+           distance_m = excluded.distance_m, \
+           elevation_gain_m = excluded.elevation_gain_m, \
+           avg_hr = excluded.avg_hr, \
+           max_hr = excluded.max_hr, \
+           route_json = excluded.route_json",
+    )
+    .bind(&parsed.started_at)
+    .bind(parsed.duration_s)
+    .bind(parsed.distance_m)
+    .bind(parsed.elevation_gain_m)
+    .bind(parsed.avg_hr)
+    .bind(parsed.max_hr)
+    .bind(&route_json)
+    .bind(name)
+    .execute(pool)
+    .await
+    .map_err(|e| format!("{name}: {e}"))?;
+    Ok(())
+}
+
 /// # Errors
 /// Returns `SERVICE_UNAVAILABLE` if `MONT_GADGETBRIDGE_ZIP` is not configured,
 /// or a database error.
@@ -396,7 +527,7 @@ pub async fn sync_gadgetbridge(
         .clone()
         .ok_or_else(|| (StatusCode::SERVICE_UNAVAILABLE, "MONT_GADGETBRIDGE_ZIP not configured".to_string()))?;
 
-    let (running_filenames, gpx_files) = tokio::task::spawn_blocking(move || -> Result<_, String> {
+    let (running_filenames, gpx_files, health_rows) = tokio::task::spawn_blocking(move || -> Result<_, String> {
         let file = std::fs::File::open(&zip_path)
             .map_err(|e| format!("Cannot open zip {}: {e}", zip_path.display()))?;
         let mut archive = zip::ZipArchive::new(file)
@@ -417,6 +548,7 @@ pub async fn sync_gadgetbridge(
             .join(format!("gadgetbridge_{}.sqlite", uuid::Uuid::new_v4()));
         std::fs::write(&tmp_path, &db_bytes).map_err(|e| e.to_string())?;
         let running_filenames = load_running_filenames(&tmp_path);
+        let health_rows = extract_daily_health(&tmp_path);
         let _ = std::fs::remove_file(&tmp_path);
         let running_filenames = running_filenames?;
 
@@ -434,7 +566,7 @@ pub async fn sync_gadgetbridge(
             gpx_files.push((basename, buf));
         }
 
-        Ok((running_filenames, gpx_files))
+        Ok((running_filenames, gpx_files, health_rows))
     })
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
@@ -459,42 +591,37 @@ pub async fn sync_gadgetbridge(
                 if !is_running_activity(parsed.activity_type.as_deref()) {
                     continue;
                 }
-                let route_json = match serde_json::to_string(&parsed.route) {
-                    Ok(j) => j,
-                    Err(e) => { errors.push(format!("{name}: {e}")); continue; }
-                };
-                let result = sqlx::query(
-                    "INSERT INTO runs \
-                     (started_at, duration_s, distance_m, elevation_gain_m, avg_hr, max_hr, route_json, source_file) \
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?) \
-                     ON CONFLICT(source_file) WHERE source_file IS NOT NULL DO UPDATE SET \
-                       started_at = excluded.started_at, \
-                       duration_s = excluded.duration_s, \
-                       distance_m = excluded.distance_m, \
-                       elevation_gain_m = excluded.elevation_gain_m, \
-                       avg_hr = excluded.avg_hr, \
-                       max_hr = excluded.max_hr, \
-                       route_json = excluded.route_json",
-                )
-                .bind(&parsed.started_at)
-                .bind(parsed.duration_s)
-                .bind(parsed.distance_m)
-                .bind(parsed.elevation_gain_m)
-                .bind(parsed.avg_hr)
-                .bind(parsed.max_hr)
-                .bind(&route_json)
-                .bind(&name)
-                .execute(&state.pool)
-                .await;
-                match result {
-                    Ok(_) => imported += 1,
-                    Err(e) => errors.push(format!("{name}: {e}")),
+                match import_gpx_run(&name, &parsed, &state.pool).await {
+                    Ok(()) => imported += 1,
+                    Err(e) => errors.push(e),
                 }
             }
         }
     }
 
-    Ok(Json(SyncResult { imported, errors }))
+    // ── Upsert daily health rows ──────────────────────────────────────────────
+    for row in &health_rows {
+        let _ = sqlx::query(
+            "INSERT INTO daily_health (date, avg_hr, min_hr, max_hr, hrv_rmssd, steps) \
+             VALUES (?, ?, ?, ?, ?, ?) \
+             ON CONFLICT(date) DO UPDATE SET \
+               avg_hr    = excluded.avg_hr, \
+               min_hr    = excluded.min_hr, \
+               max_hr    = excluded.max_hr, \
+               hrv_rmssd = excluded.hrv_rmssd, \
+               steps     = excluded.steps",
+        )
+        .bind(&row.date)
+        .bind(row.avg_hr)
+        .bind(row.min_hr)
+        .bind(row.max_hr)
+        .bind(row.hrv_rmssd)
+        .bind(row.steps)
+        .execute(&state.pool)
+        .await;
+    }
+
+    Ok(Json(SyncResult { imported, health_days: health_rows.len(), errors }))
 }
 
 // ── Heatmap ───────────────────────────────────────────────────────────────────
