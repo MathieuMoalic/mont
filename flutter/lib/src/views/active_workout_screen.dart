@@ -15,6 +15,7 @@ class ActiveWorkoutScreen extends StatefulWidget {
 class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   WorkoutDetail? _workout;
   String? _error;
+  final _scrollCtrl = ScrollController();
 
   @override
   void initState() {
@@ -22,10 +23,27 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     _load();
   }
 
+  @override
+  void dispose() {
+    _scrollCtrl.dispose();
+    super.dispose();
+  }
+
   Future<void> _load() async {
     try {
       final w = await api.getWorkout(widget.workoutId);
-      if (mounted) setState(() { _workout = w; _error = null; });
+      if (mounted) {
+        setState(() { _workout = w; _error = null; });
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_scrollCtrl.hasClients) {
+            _scrollCtrl.animateTo(
+              _scrollCtrl.position.maxScrollExtent,
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOut,
+            );
+          }
+        });
+      }
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     }
@@ -302,37 +320,56 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     }
 
     return ListView.builder(
+      controller: _scrollCtrl,
       padding: const EdgeInsets.only(bottom: 80),
       itemCount: order.length,
       itemBuilder: (ctx, i) {
         final sets = byExercise[order[i]]!;
+        final theme = Theme.of(ctx);
         return Card(
-          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 2),
                 child: Text(
                   sets.first.exerciseName,
-                  style: Theme.of(ctx).textTheme.titleMedium,
+                  style: theme.textTheme.titleSmall,
                 ),
               ),
               ...sets.map(
-                (s) => ListTile(
-                  dense: true,
-                  title: Text(
-                    'Set ${s.setNumber}   ${_weightStr(s.weightKg)} × ${s.reps} reps',
+                (s) => Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 1),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 44,
+                        child: Text('S${s.setNumber}',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant)),
+                      ),
+                      Expanded(
+                        child: Text(
+                          '${_weightStr(s.weightKg)} × ${s.reps} reps',
+                          style: theme.textTheme.bodyMedium,
+                        ),
+                      ),
+                      if (_workout!.isActive)
+                        InkWell(
+                          onTap: () => _deleteSet(s.id),
+                          borderRadius: BorderRadius.circular(12),
+                          child: Padding(
+                            padding: const EdgeInsets.all(6),
+                            child: Icon(Icons.close, size: 14,
+                                color: theme.colorScheme.onSurfaceVariant),
+                          ),
+                        ),
+                    ],
                   ),
-                  trailing: _workout!.isActive
-                      ? IconButton(
-                          icon: const Icon(Icons.delete_outline, size: 20),
-                          onPressed: () => _deleteSet(s.id),
-                        )
-                      : null,
                 ),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 6),
             ],
           ),
         );
