@@ -219,34 +219,6 @@ class _HealthScreenState extends State<HealthScreen> {
         SliverToBoxAdapter(child: _buildHrvChart(days)),
         SliverToBoxAdapter(child: _buildStepsChart(days)),
         SliverToBoxAdapter(child: _buildWeightChart(weights)),
-        SliverList(
-          delegate: SliverChildBuilderDelegate(
-            (ctx, i) {
-              final entry = (_weights!)[_weights!.length - 1 - i];
-              final d = entry.measuredAt.toLocal();
-              return Dismissible(
-                key: ValueKey(entry.id),
-                direction: DismissDirection.endToStart,
-                background: Container(
-                  color: Colors.red,
-                  alignment: Alignment.centerRight,
-                  padding: const EdgeInsets.only(right: 16),
-                  child: const Icon(Icons.delete, color: Colors.white),
-                ),
-                onDismissed: (_) => _deleteWeight(entry),
-                child: ListTile(
-                  dense: true,
-                  leading: const Icon(Icons.monitor_weight_outlined),
-                  title: Text('${entry.weightKg} kg'),
-                  subtitle: Text('${d.day}/${d.month}/${d.year}'),
-                  onTap: () => _editWeight(entry),
-                  trailing: const Icon(Icons.edit_outlined, size: 16),
-                ),
-              );
-            },
-            childCount: _weights!.length,
-          ),
-        ),
         const SliverToBoxAdapter(child: SizedBox(height: 80)),
       ],
     );
@@ -319,6 +291,149 @@ class _HealthScreenState extends State<HealthScreen> {
 
   // ── Charts ────────────────────────────────────────────────────────────────
 
+  Widget _detailsBtn(VoidCallback onTap) => TextButton(
+    onPressed: onTap,
+    style: TextButton.styleFrom(
+      visualDensity: VisualDensity.compact,
+      padding: EdgeInsets.zero,
+    ),
+    child: const Text('Details'),
+  );
+
+  void _showSheet(String title, List<Widget> rows) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.5,
+        maxChildSize: 0.9,
+        minChildSize: 0.25,
+        expand: false,
+        builder: (_, scroll) => Column(
+          children: [
+            const SizedBox(height: 8),
+            Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.4),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Text(title, style: Theme.of(context).textTheme.titleMedium),
+            ),
+            Expanded(child: ListView(controller: scroll, children: rows)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showHrDetails(List<DailyHealth> days) {
+    _showSheet('Heart Rate (bpm)', days.reversed.map((d) => ListTile(
+      dense: true,
+      title: Text(d.date),
+      trailing: Text(
+        d.avgHr != null
+            ? 'avg ${d.avgHr} • min ${d.minHr ?? '—'} • max ${d.maxHr ?? '—'}'
+            : '—',
+        style: const TextStyle(fontSize: 12),
+      ),
+    )).toList());
+  }
+
+  void _showHrvDetails(List<DailyHealth> days) {
+    _showSheet('HRV (ms)', days.reversed.map((d) => ListTile(
+      dense: true,
+      title: Text(d.date),
+      trailing: Text(
+        d.hrvRmssd != null ? d.hrvRmssd!.toStringAsFixed(0) : '—',
+        style: const TextStyle(fontSize: 12),
+      ),
+    )).toList());
+  }
+
+  void _showStepsDetails(List<DailyHealth> days) {
+    _showSheet('Steps per day', days.reversed.map((d) => ListTile(
+      dense: true,
+      title: Text(d.date),
+      trailing: Text(
+        d.steps != null ? '${d.steps}' : '—',
+        style: const TextStyle(fontSize: 12),
+      ),
+    )).toList());
+  }
+
+  void _showWeightDetails(List<WeightEntry> weights) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) {
+          final sorted = [...weights]..sort((a, b) => b.measuredAt.compareTo(a.measuredAt));
+          return DraggableScrollableSheet(
+            initialChildSize: 0.5,
+            maxChildSize: 0.9,
+            minChildSize: 0.25,
+            expand: false,
+            builder: (_, scroll) => Column(
+              children: [
+                const SizedBox(height: 8),
+                Container(
+                  width: 40, height: 4,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.4),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Text('Body Mass (kg)', style: Theme.of(context).textTheme.titleMedium),
+                ),
+                Expanded(
+                  child: ListView.builder(
+                    controller: scroll,
+                    itemCount: sorted.length,
+                    itemBuilder: (_, i) {
+                      final entry = sorted[i];
+                      final d = entry.measuredAt.toLocal();
+                      return Dismissible(
+                        key: ValueKey(entry.id),
+                        direction: DismissDirection.endToStart,
+                        background: Container(
+                          color: Colors.red,
+                          alignment: Alignment.centerRight,
+                          padding: const EdgeInsets.only(right: 16),
+                          child: const Icon(Icons.delete, color: Colors.white),
+                        ),
+                        onDismissed: (_) {
+                          _deleteWeight(entry);
+                          setSheetState(() => sorted.removeAt(i));
+                        },
+                        child: ListTile(
+                          dense: true,
+                          leading: const Icon(Icons.monitor_weight_outlined),
+                          title: Text('${entry.weightKg} kg'),
+                          subtitle: Text('${d.day}/${d.month}/${d.year}'),
+                          trailing: const Icon(Icons.edit_outlined, size: 16),
+                          onTap: () {
+                            Navigator.pop(ctx);
+                            _editWeight(entry);
+                          },
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildHrChart(List<DailyHealth> days) {
     final hrDays = days.where((d) => d.avgHr != null).toList();
     if (hrDays.isEmpty) {
@@ -336,6 +451,7 @@ class _HealthScreenState extends State<HealthScreen> {
     return _chartSection(
       label: 'Heart Rate (bpm)',
       height: 160,
+      action: _detailsBtn(() => _showHrDetails(hrDays)),
       child: LineChart(LineChartData(
         minY: minY, maxY: maxY,
         gridData: FlGridData(show: false),
@@ -366,6 +482,7 @@ class _HealthScreenState extends State<HealthScreen> {
     return _chartSection(
       label: 'HRV (ms)',
       height: 120,
+      action: _detailsBtn(() => _showHrvDetails(hrvDays)),
       child: LineChart(LineChartData(
         minY: minY, maxY: maxY,
         gridData: FlGridData(show: false),
@@ -402,6 +519,7 @@ class _HealthScreenState extends State<HealthScreen> {
     return _chartSection(
       label: 'Steps per day',
       height: 120,
+      action: _detailsBtn(() => _showStepsDetails(stepDays)),
       child: BarChart(BarChartData(
         maxY: maxY,
         gridData: FlGridData(show: false),
@@ -433,6 +551,7 @@ class _HealthScreenState extends State<HealthScreen> {
     return _chartSection(
       label: 'Body Mass (kg)',
       height: 160,
+      action: _detailsBtn(() => _showWeightDetails(weights)),
       child: LineChart(LineChartData(
         minY: (minW - pad).floorToDouble(),
         maxY: (maxW + pad).ceilToDouble(),
@@ -441,7 +560,10 @@ class _HealthScreenState extends State<HealthScreen> {
         titlesData: FlTitlesData(
           leftTitles: AxisTitles(sideTitles: SideTitles(
             showTitles: true, reservedSize: 44,
-            getTitlesWidget: (v, _) => Text(v.toStringAsFixed(1), style: const TextStyle(fontSize: 10)),
+            getTitlesWidget: (v, meta) {
+              if (v == meta.min || v == meta.max) return const SizedBox.shrink();
+              return Text(v.toStringAsFixed(1), style: const TextStyle(fontSize: 10));
+            },
           )),
           bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
           rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
