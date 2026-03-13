@@ -22,6 +22,10 @@ pub struct RunSummary {
     pub is_invalid: bool,
     pub avg_cadence: Option<i64>,
     pub avg_stride_m: Option<f64>,
+    pub weather_temp_c: Option<f64>,
+    pub weather_wind_kph: Option<f64>,
+    pub weather_precip_mm: Option<f64>,
+    pub weather_code: Option<i64>,
 }
 
 #[derive(Serialize)]
@@ -35,6 +39,10 @@ pub struct RunDetail {
     pub max_hr: Option<i64>,
     pub notes: Option<String>,
     pub route: Vec<RoutePoint>,
+    pub weather_temp_c: Option<f64>,
+    pub weather_wind_kph: Option<f64>,
+    pub weather_precip_mm: Option<f64>,
+    pub weather_code: Option<i64>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -74,6 +82,10 @@ struct ParsedRun {
     avg_stride_m: Option<f64>,
     route: Vec<RoutePoint>,
     activity_type: Option<String>,
+    weather_temp_c: Option<f64>,
+    weather_wind_kph: Option<f64>,
+    weather_precip_mm: Option<f64>,
+    weather_code: Option<i64>,
 }
 
 fn is_running_activity(activity_type: Option<&str>) -> bool {
@@ -224,6 +236,8 @@ fn parse_gpx(data: &[u8]) -> anyhow::Result<ParsedRun> {
         avg_hr: stats.avg_hr, max_hr: stats.max_hr,
         avg_cadence: stats.avg_cadence, avg_stride_m: stats.avg_stride_m,
         route, activity_type,
+        weather_temp_c: None, weather_wind_kph: None,
+        weather_precip_mm: None, weather_code: None,
     })
 }
 
@@ -257,7 +271,7 @@ pub async fn import_run(
     let bytes = gpx_bytes
         .ok_or_else(|| (StatusCode::BAD_REQUEST, "Missing `file` field".to_string()))?;
 
-    let parsed = parse_gpx(&bytes)
+    let mut parsed = parse_gpx(&bytes)
         .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, e.to_string()))?;
 
     if !is_running_activity(parsed.activity_type.as_deref()) {
@@ -270,14 +284,29 @@ pub async fn import_run(
         ).into());
     }
 
+    // Fetch weather for the first route point
+    if let Some(first) = parsed.route.first()
+        && let Ok(ts) = parse_timestamp(&parsed.started_at)
+        && let Some(w) = crate::weather::fetch_weather(
+            &state.http, first.lat, first.lon, ts,
+        ).await
+    {
+        parsed.weather_temp_c    = Some(w.temp_c);
+        parsed.weather_wind_kph  = Some(w.wind_kph);
+        parsed.weather_precip_mm = Some(w.precip_mm);
+        parsed.weather_code      = Some(w.code);
+    }
+
     let route_json = serde_json::to_string(&parsed.route)
         .map_err(anyhow::Error::from)?;
 
     let run = sqlx::query_as::<_, RunSummary>(
         "INSERT INTO runs \
-         (started_at, duration_s, distance_m, elevation_gain_m, avg_hr, max_hr, route_json, avg_cadence, avg_stride_m) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) \
-         RETURNING id, started_at, duration_s, distance_m, elevation_gain_m, avg_hr, max_hr, notes, is_invalid, avg_cadence, avg_stride_m",
+         (started_at, duration_s, distance_m, elevation_gain_m, avg_hr, max_hr, route_json, avg_cadence, avg_stride_m, \
+          weather_temp_c, weather_wind_kph, weather_precip_mm, weather_code) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
+         RETURNING id, started_at, duration_s, distance_m, elevation_gain_m, avg_hr, max_hr, notes, is_invalid, \
+                   avg_cadence, avg_stride_m, weather_temp_c, weather_wind_kph, weather_precip_mm, weather_code",
     )
     .bind(&parsed.started_at)
     .bind(parsed.duration_s)
@@ -288,6 +317,10 @@ pub async fn import_run(
     .bind(&route_json)
     .bind(parsed.avg_cadence)
     .bind(parsed.avg_stride_m)
+    .bind(parsed.weather_temp_c)
+    .bind(parsed.weather_wind_kph)
+    .bind(parsed.weather_precip_mm)
+    .bind(parsed.weather_code)
     .fetch_one(&state.pool)
     .await?;
 
@@ -298,7 +331,8 @@ pub async fn import_run(
 /// Returns an error if the database query fails.
 pub async fn list_runs(State(state): State<AppState>) -> AppResult<Json<Vec<RunSummary>>> {
     let runs = sqlx::query_as::<_, RunSummary>(
-        "SELECT id, started_at, duration_s, distance_m, elevation_gain_m, avg_hr, max_hr, notes, is_invalid, avg_cadence, avg_stride_m \
+        "SELECT id, started_at, duration_s, distance_m, elevation_gain_m, avg_hr, max_hr, notes, is_invalid, \
+                avg_cadence, avg_stride_m, weather_temp_c, weather_wind_kph, weather_precip_mm, weather_code \
          FROM runs ORDER BY started_at DESC",
     )
     .fetch_all(&state.pool)
@@ -323,11 +357,16 @@ pub async fn get_run(
         max_hr: Option<i64>,
         notes: Option<String>,
         route_json: String,
+        weather_temp_c: Option<f64>,
+        weather_wind_kph: Option<f64>,
+        weather_precip_mm: Option<f64>,
+        weather_code: Option<i64>,
     }
 
     let row = sqlx::query_as::<_, RunRow>(
         "SELECT id, started_at, duration_s, distance_m, elevation_gain_m, \
-                avg_hr, max_hr, notes, route_json \
+                avg_hr, max_hr, notes, route_json, \
+                weather_temp_c, weather_wind_kph, weather_precip_mm, weather_code \
          FROM runs WHERE id = ?",
     )
     .bind(id)
@@ -347,6 +386,10 @@ pub async fn get_run(
         max_hr: row.max_hr,
         notes: row.notes,
         route,
+        weather_temp_c: row.weather_temp_c,
+        weather_wind_kph: row.weather_wind_kph,
+        weather_precip_mm: row.weather_precip_mm,
+        weather_code: row.weather_code,
     }))
 }
 
@@ -626,25 +669,42 @@ fn load_running_filenames(db_path: &std::path::Path) -> Result<std::collections:
 /// Import a single parsed GPX file into the runs table.
 async fn import_gpx_run(
     name: &str,
-    parsed: &ParsedRun,
+    parsed: &mut ParsedRun,
     pool: &sqlx::SqlitePool,
+    http: &reqwest::Client,
 ) -> Result<(), String> {
+    // Fetch weather if not already set
+    if parsed.weather_temp_c.is_none()
+        && let Some(first) = parsed.route.first()
+        && let Ok(ts) = parse_timestamp(&parsed.started_at)
+        && let Some(w) = crate::weather::fetch_weather(http, first.lat, first.lon, ts).await
+    {
+        parsed.weather_temp_c    = Some(w.temp_c);
+        parsed.weather_wind_kph  = Some(w.wind_kph);
+        parsed.weather_precip_mm = Some(w.precip_mm);
+        parsed.weather_code      = Some(w.code);
+    }
     let route_json = serde_json::to_string(&parsed.route)
         .map_err(|e| format!("{name}: {e}"))?;
     sqlx::query(
         "INSERT INTO runs \
-         (started_at, duration_s, distance_m, elevation_gain_m, avg_hr, max_hr, route_json, source_file, avg_cadence, avg_stride_m) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
+         (started_at, duration_s, distance_m, elevation_gain_m, avg_hr, max_hr, route_json, source_file, \
+          avg_cadence, avg_stride_m, weather_temp_c, weather_wind_kph, weather_precip_mm, weather_code) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
          ON CONFLICT(source_file) WHERE source_file IS NOT NULL DO UPDATE SET \
-           started_at = excluded.started_at, \
-           duration_s = excluded.duration_s, \
-           distance_m = excluded.distance_m, \
-           elevation_gain_m = excluded.elevation_gain_m, \
-           avg_hr = excluded.avg_hr, \
-           max_hr = excluded.max_hr, \
-           route_json = excluded.route_json, \
-           avg_cadence = excluded.avg_cadence, \
-           avg_stride_m = excluded.avg_stride_m",
+           started_at        = excluded.started_at, \
+           duration_s        = excluded.duration_s, \
+           distance_m        = excluded.distance_m, \
+           elevation_gain_m  = excluded.elevation_gain_m, \
+           avg_hr            = excluded.avg_hr, \
+           max_hr            = excluded.max_hr, \
+           route_json        = excluded.route_json, \
+           avg_cadence       = excluded.avg_cadence, \
+           avg_stride_m      = excluded.avg_stride_m, \
+           weather_temp_c    = COALESCE(runs.weather_temp_c,    excluded.weather_temp_c), \
+           weather_wind_kph  = COALESCE(runs.weather_wind_kph,  excluded.weather_wind_kph), \
+           weather_precip_mm = COALESCE(runs.weather_precip_mm, excluded.weather_precip_mm), \
+           weather_code      = COALESCE(runs.weather_code,      excluded.weather_code)",
     )
     .bind(&parsed.started_at)
     .bind(parsed.duration_s)
@@ -656,6 +716,10 @@ async fn import_gpx_run(
     .bind(name)
     .bind(parsed.avg_cadence)
     .bind(parsed.avg_stride_m)
+    .bind(parsed.weather_temp_c)
+    .bind(parsed.weather_wind_kph)
+    .bind(parsed.weather_precip_mm)
+    .bind(parsed.weather_code)
     .execute(pool)
     .await
     .map_err(|e| format!("{name}: {e}"))?;
@@ -730,12 +794,12 @@ pub async fn perform_sync(state: &AppState) -> Result<SyncResult, String> {
             Err(e) => {
                 errors.push(format!("{name}: {e}"));
             }
-            Ok(parsed) => {
+            Ok(mut parsed) => {
                 // Skip non-running activities based on GPX <type> field (when present)
                 if !is_running_activity(parsed.activity_type.as_deref()) {
                     continue;
                 }
-                match import_gpx_run(&name, &parsed, &state.pool).await {
+                match import_gpx_run(&name, &mut parsed, &state.pool, &state.http).await {
                     Ok(()) => imported += 1,
                     Err(e) => errors.push(e),
                 }
