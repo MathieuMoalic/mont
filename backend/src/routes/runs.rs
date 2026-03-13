@@ -477,7 +477,126 @@ fn extract_daily_health(db_path: &std::path::Path) -> Vec<GbHealthRow> {
     rows
 }
 
-/// Load running GPX filenames from the Gadgetbridge `SQLite` DB.
+// ── GB debug ──────────────────────────────────────────────────────────────────
+
+/// GB `SQLite` debug dump.
+///
+/// Extracts the GB database from the zip and returns all table names with
+/// columns; for tables matching HRV/HEALTH/ACTIVITY/SLEEP/STRESS also includes
+/// 5 sample rows.
+///
+/// # Errors
+/// Returns an error if the zip is not configured or cannot be read.
+pub async fn gb_debug(
+    State(state): State<AppState>,
+) -> AppResult<Json<serde_json::Value>> {
+    let zip_path = state
+        .config
+        .gadgetbridge_zip
+        .clone()
+        .ok_or_else(|| (StatusCode::SERVICE_UNAVAILABLE, "MONT_GADGETBRIDGE_ZIP not configured".to_string()))?;
+
+    let result = tokio::task::spawn_blocking(move || -> Result<serde_json::Value, String> {
+        let file = std::fs::File::open(&zip_path)
+            .map_err(|e| format!("Cannot open zip: {e}"))?;
+        let mut archive = zip::ZipArchive::new(file)
+            .map_err(|e| format!("Invalid zip: {e}"))?;
+
+        let db_bytes = {
+            use std::io::Read;
+            let mut entry = archive.by_name("database/Gadgetbridge")
+                .map_err(|e| format!("Cannot find database/Gadgetbridge: {e}"))?;
+            let mut buf = Vec::new();
+            entry.read_to_end(&mut buf).map_err(|e| e.to_string())?;
+            buf
+        };
+
+        let tmp = std::env::temp_dir()
+            .join(format!("gb_debug_{}.sqlite", uuid::Uuid::new_v4()));
+        std::fs::write(&tmp, &db_bytes).map_err(|e| e.to_string())?;
+        let conn = rusqlite::Connection::open(&tmp)
+            .map_err(|e| format!("Cannot open DB: {e}"))?;
+
+        // List all tables
+        let mut stmt = conn.prepare(
+            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name",
+        ).map_err(|e| e.to_string())?;
+        let tables: Vec<String> = stmt
+            .query_map([], |r| r.get(0))
+            .map_err(|e| e.to_string())?
+            .flatten()
+            .collect();
+
+        let mut output = serde_json::Map::new();
+        for table in &tables {
+            let upper = table.to_uppercase();
+            // For all tables, return column info; for interesting ones, also sample rows
+            let cols_sql = format!("PRAGMA table_info({table})");
+            let Ok(mut cs) = conn.prepare(&cols_sql) else { continue };
+            let cols: Vec<String> = cs
+                .query_map([], |r| r.get::<_, String>(1))
+                .map(|mapped| mapped.flatten().collect())
+                .unwrap_or_default();
+
+            let interesting = upper.contains("HRV")
+                || upper.contains("HEALTH")
+                || upper.contains("ACTIVITY")
+                || upper.contains("SLEEP")
+                || upper.contains("STRESS");
+
+            let samples = if interesting {
+                let row_sql = format!("SELECT * FROM {table} LIMIT 5");
+                let mut rows_json: Vec<serde_json::Value> = Vec::new();
+                if let Ok(mut rs) = conn.prepare(&row_sql) {
+                    let col_names: Vec<String> = rs
+                        .column_names()
+                        .iter()
+                        .map(|s| (*s).to_string())
+                        .collect();
+                    if let Ok(mapped) = rs.query_map([], |r| {
+                        let mut map = serde_json::Map::new();
+                        for (i, name) in col_names.iter().enumerate() {
+                            let v = r.get_ref(i).map(|rv| match rv {
+                                rusqlite::types::ValueRef::Null => serde_json::Value::Null,
+                                rusqlite::types::ValueRef::Integer(n) => serde_json::Value::Number(n.into()),
+                                rusqlite::types::ValueRef::Real(f) => {
+                                    serde_json::Number::from_f64(f)
+                                        .map_or(serde_json::Value::Null, serde_json::Value::Number)
+                                }
+                                rusqlite::types::ValueRef::Text(t) => {
+                                    serde_json::Value::String(String::from_utf8_lossy(t).into_owned())
+                                }
+                                rusqlite::types::ValueRef::Blob(_) => serde_json::Value::String("<blob>".into()),
+                            }).unwrap_or(serde_json::Value::Null);
+                            map.insert(name.clone(), v);
+                        }
+                        Ok(serde_json::Value::Object(map))
+                    }) {
+                        rows_json = mapped.flatten().collect();
+                    }
+                }
+                serde_json::Value::Array(rows_json)
+            } else {
+                serde_json::Value::Null
+            };
+
+            output.insert(table.clone(), serde_json::json!({
+                "columns": cols,
+                "samples": samples,
+            }));
+        }
+
+        let _ = std::fs::remove_file(&tmp);
+        Ok(serde_json::Value::Object(output))
+    })
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+
+    Ok(Json(result))
+}
+
+
 /// Running activities have `ACTIVITY_KIND & 3 == 1` (bit 0 set, bit 1 clear).
 fn load_running_filenames(db_path: &std::path::Path) -> Result<std::collections::HashSet<String>, String> {
     let conn = rusqlite::Connection::open(db_path)
