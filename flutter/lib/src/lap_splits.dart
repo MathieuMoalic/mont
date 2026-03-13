@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'models.dart';
 
 /// One per-km split for a run.
@@ -7,6 +8,8 @@ class LapSplit {
   final int? paceSeconds; // seconds per km (null if no time data)
   final double? avgHr; // average heart rate (null if no HR data)
   final double? elevationDelta; // ele gain/loss in metres (null if no ele data)
+  final double? avgCadence; // steps per minute (null if no cadence data)
+  final double? avgStrideM; // metres per stride (null if no cadence/speed data)
 
   const LapSplit({
     required this.lapNumber,
@@ -14,6 +17,8 @@ class LapSplit {
     this.paceSeconds,
     this.avgHr,
     this.elevationDelta,
+    this.avgCadence,
+    this.avgStrideM,
   });
 }
 
@@ -78,12 +83,37 @@ List<LapSplit> computeLapSplits(List<RunPoint> pts, List<double> cumKm) {
       elevationDelta = lastEle - firstEle;
     }
 
+    // Avg cadence
+    final cadValues = indices.map((i) => pts[i].cad).whereType<int>().toList();
+    final double? avgCadence = cadValues.isEmpty
+        ? null
+        : cadValues.reduce((a, b) => a + b) / cadValues.length;
+
+    // Avg stride: speed * 120 / cad for each consecutive pair with cad+time
+    final strideValues = <double>[];
+    for (var k = 0; k < indices.length - 1; k++) {
+      final ia = indices[k], ib = indices[k + 1];
+      final ca = pts[ia].cad, ta = pts[ia].t, tb = pts[ib].t;
+      if (ca == null || ca == 0 || ta == null || tb == null) continue;
+      final dt = (tb - ta).toDouble();
+      if (dt <= 0) continue;
+      final dm = _haversine(pts[ia].lat, pts[ia].lon, pts[ib].lat, pts[ib].lon);
+      if (dm < 0.1) continue;
+      final stride = (dm / dt) * 120.0 / ca;
+      if (stride > 0.5 && stride < 3.5) strideValues.add(stride);
+    }
+    final double? avgStrideM = strideValues.isEmpty
+        ? null
+        : strideValues.reduce((a, b) => a + b) / strideValues.length;
+
     splits.add(LapSplit(
       lapNumber: lap,
       distanceKm: endKm,
       paceSeconds: paceSeconds,
       avgHr: avgHr,
       elevationDelta: elevationDelta,
+      avgCadence: avgCadence,
+      avgStrideM: avgStrideM,
     ));
   }
 
@@ -95,4 +125,16 @@ String fmtPaceFromSeconds(int seconds) {
   final m = seconds ~/ 60;
   final s = (seconds % 60).toString().padLeft(2, '0');
   return '$m:$s';
+}
+
+double _haversine(double lat1, double lon1, double lat2, double lon2) {
+  const r = 6371000.0;
+  final dlat = (lat2 - lat1) * math.pi / 180;
+  final dlon = (lon2 - lon1) * math.pi / 180;
+  final a = math.sin(dlat / 2) * math.sin(dlat / 2) +
+      math.cos(lat1 * math.pi / 180) *
+          math.cos(lat2 * math.pi / 180) *
+          math.sin(dlon / 2) *
+          math.sin(dlon / 2);
+  return r * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
 }
