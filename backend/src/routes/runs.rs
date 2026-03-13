@@ -380,13 +380,14 @@ struct GbHealthRow {
 fn extract_daily_health(db_path: &std::path::Path) -> Vec<GbHealthRow> {
     let Ok(conn) = rusqlite::Connection::open(db_path) else { return vec![] };
 
-    // ── HR: try known activity-sample tables in priority order ────────────────
+    // ── HR: Amazfit Cheetah Pro uses HUAMI_EXTENDED_ACTIVITY_SAMPLE (seconds) ─
+    // Fall back to MI_BAND / plain HUAMI if empty.
     let mut hr_accum: std::collections::HashMap<String, (i64, i64, i64, i64, i64)> =
         std::collections::HashMap::default(); // date → (sum_hr, count, min, max, steps)
 
     for table in &[
-        "MI_BAND_ACTIVITY_SAMPLE",
         "HUAMI_EXTENDED_ACTIVITY_SAMPLE",
+        "MI_BAND_ACTIVITY_SAMPLE",
         "HUAMI_ACTIVITY_SAMPLE",
     ] {
         let sql = format!(
@@ -411,43 +412,24 @@ fn extract_daily_health(db_path: &std::path::Path) -> Vec<GbHealthRow> {
             e.3 = e.3.max(hr);
             e.4 += steps;
         }
-        if !hr_accum.is_empty() { break; } // use first available table
+        if !hr_accum.is_empty() { break; }
     }
 
-    // ── HRV: try Zepp OS dedicated table first, fall back to Huami extended ──
+    // ── HRV: Amazfit Cheetah Pro uses GENERIC_HRV_VALUE_SAMPLE (ms timestamps) ─
     let mut hrv_accum: std::collections::HashMap<String, (f64, f64)> =
         std::collections::HashMap::default();
 
-    // Zepp OS 2/3 (Amazfit Cheetah Pro, GTR 4, GTS 4, etc.) stores nightly HRV
-    // in a dedicated table. Try each known variant.
-    let hrv_queries: &[(&str, &str)] = &[
-        // table, column
-        ("ZEPP_OS_HRV_SAMPLE", "RMSSD"),
-        ("ZEPP_OS_HRV_SAMPLE", "HRV"),
-        ("ZEPP_OS_HRV_SAMPLE", "HRV_VALUE"),
-        // Older Huami / Mi Band fallback
-        ("HUAMI_EXTENDED_ACTIVITY_SAMPLE", "HRV_SLEEP"),
-    ];
-    'hrv: for (table, col) in hrv_queries {
-        // Try unix-second timestamps
-        for ts_expr in &[
-            "DATE(TIMESTAMP, 'unixepoch')",
-            "DATE(TIMESTAMP/1000, 'unixepoch')",
-        ] {
-            let sql = format!(
-                "SELECT {ts_expr}, {col} FROM {table} WHERE {col} > 0"
-            );
-            let Ok(mut stmt) = conn.prepare(&sql) else { continue };
-            let Ok(rows) = stmt.query_map([], |r| {
-                Ok((r.get::<_, Option<String>>(0)?, r.get::<_, f64>(1)?))
-            }) else { continue };
-            for row in rows.flatten() {
-                let (Some(date), hrv) = row else { continue };
-                let e = hrv_accum.entry(date).or_insert((0.0, 0.0));
-                e.0 += hrv;
-                e.1 += 1.0;
-            }
-            if !hrv_accum.is_empty() { break 'hrv; }
+    if let Ok(mut stmt) = conn.prepare(
+        "SELECT DATE(TIMESTAMP/1000, 'unixepoch'), VALUE \
+         FROM GENERIC_HRV_VALUE_SAMPLE WHERE VALUE > 0",
+    ) && let Ok(rows) = stmt.query_map([], |r| {
+        Ok((r.get::<_, Option<String>>(0)?, r.get::<_, f64>(1)?))
+    }) {
+        for row in rows.flatten() {
+            let (Some(date), hrv) = row else { continue };
+            let e = hrv_accum.entry(date).or_insert((0.0, 0.0));
+            e.0 += hrv;
+            e.1 += 1.0;
         }
     }
 
