@@ -142,14 +142,12 @@ class _RunsScreenState extends State<RunsScreen> {
           IconButton(
             icon: const Icon(Icons.bar_chart),
             tooltip: 'Stats',
-            onPressed: _runs.isEmpty
-                ? null
-                : () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => RunStatsScreen(runs: _runs),
-                      ),
-                    ),
+            onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const RunStatsScreen(),
+                  ),
+                ),
           ),
           IconButton(
             icon: const Icon(Icons.sync),

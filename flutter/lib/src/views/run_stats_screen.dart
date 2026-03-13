@@ -8,32 +8,42 @@ import '../models.dart';
 import 'run_detail_screen.dart';
 
 class RunStatsScreen extends StatefulWidget {
-  const RunStatsScreen({super.key, required this.runs});
-
-  final List<RunSummary> runs;
+  const RunStatsScreen({super.key});
 
   @override
   State<RunStatsScreen> createState() => _RunStatsScreenState();
 }
 
 class _RunStatsScreenState extends State<RunStatsScreen> {
+  List<RunSummary> _runs = [];
   List<PersonalRecord> _prs = [];
+  bool _loading = true;
 
   // Only include valid runs in stats computations
   List<RunSummary> get _validRuns =>
-      widget.runs.where((r) => !r.isInvalid).toList();
+      _runs.where((r) => !r.isInvalid).toList();
 
   @override
   void initState() {
     super.initState();
-    _loadPrs();
+    _loadAll();
   }
 
-  Future<void> _loadPrs() async {
+  Future<void> _loadAll() async {
     try {
-      final prs = await api.getPersonalRecords();
-      if (mounted) setState(() => _prs = prs);
-    } catch (_) {}
+      final results = await Future.wait([
+        api.listRuns(),
+        api.getPersonalRecords(),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _runs = results[0] as List<RunSummary>;
+        _prs = results[1] as List<PersonalRecord>;
+        _loading = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   // seconds/km → "M:SS /km"
@@ -573,6 +583,9 @@ class _RunStatsScreenState extends State<RunStatsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_loading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
     if (_validRuns.isEmpty) {
       return const Scaffold(body: Center(child: Text('No run data yet')));
     }
