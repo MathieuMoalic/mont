@@ -4,8 +4,9 @@ class RunPoint {
   final double? ele;
   final int? hr;
   final int? t; // seconds since run start
+  final int? cad; // steps per minute
 
-  RunPoint({required this.lat, required this.lon, this.ele, this.hr, this.t});
+  RunPoint({required this.lat, required this.lon, this.ele, this.hr, this.t, this.cad});
 
   factory RunPoint.fromJson(Map<String, dynamic> j) => RunPoint(
         lat: (j['lat'] as num).toDouble(),
@@ -13,6 +14,7 @@ class RunPoint {
         ele: (j['ele'] as num?)?.toDouble(),
         hr: j['hr'] as int?,
         t: j['t'] as int?,
+        cad: (j['cad'] as num?)?.toInt(),
       );
 }
 

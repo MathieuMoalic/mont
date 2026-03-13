@@ -47,6 +47,8 @@ pub struct RoutePoint {
     pub hr: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub t: Option<i64>, // seconds since run start
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cad: Option<i64>, // steps per minute
 }
 
 // ── GPX parsing ───────────────────────────────────────────────────────────────
@@ -213,6 +215,7 @@ fn parse_gpx(data: &[u8]) -> anyhow::Result<ParsedRun> {
         points.into_iter().map(|p| RoutePoint {
             lat: p.lat, lon: p.lon, ele: p.ele, hr: p.hr,
             t: p.time_secs.and_then(|ts| t0.map(|t0| ts - t0)),
+            cad: p.cad.filter(|&c| c > 0),
         }).collect()
     };
 
