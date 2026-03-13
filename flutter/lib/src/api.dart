@@ -147,6 +147,16 @@ Future<void> finishWorkout(int id) async {
   if (res.statusCode != 204) throw Exception('HTTP ${res.statusCode}');
 }
 
+Future<void> deleteWorkout(int id) async {
+  final res = await http.delete(_u('/workouts/$id'), headers: _headers());
+  if (res.statusCode != 204) throw Exception('HTTP ${res.statusCode}');
+}
+
+Future<void> restartWorkout(int id) async {
+  final res = await http.patch(_u('/workouts/$id/restart'), headers: _headers());
+  if (res.statusCode != 204) throw Exception('HTTP ${res.statusCode}');
+}
+
 Future<WorkoutSet> addSet({
   required int workoutId,
   required int exerciseId,

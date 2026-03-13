@@ -227,3 +227,59 @@ async fn add_set_with_fractional_weight() {
     let set = app.add_set(wid, eid, 1, 15, 7.5).await;
     assert_eq!(set["weight_kg"], 7.5);
 }
+
+#[tokio::test]
+async fn delete_workout_returns_204() {
+    let app = common::TestApp::spawn().await;
+    let w = app.create_workout().await;
+    let wid = w["id"].as_i64().unwrap();
+    let res = app.delete(&format!("/workouts/{wid}")).await;
+    assert_eq!(res.status(), 204);
+}
+
+#[tokio::test]
+async fn delete_workout_removes_it_from_list() {
+    let app = common::TestApp::spawn().await;
+    let w = app.create_workout().await;
+    let wid = w["id"].as_i64().unwrap();
+    app.delete(&format!("/workouts/{wid}")).await;
+    let list: Vec<serde_json::Value> = app.get("/workouts").await.json().await.unwrap();
+    assert!(list.iter().all(|x| x["id"] != wid));
+}
+
+#[tokio::test]
+async fn delete_nonexistent_workout_returns_404() {
+    let app = common::TestApp::spawn().await;
+    let res = app.delete("/workouts/999").await;
+    assert_eq!(res.status(), 404);
+}
+
+#[tokio::test]
+async fn restart_workout_returns_204() {
+    let app = common::TestApp::spawn().await;
+    let w = app.create_workout().await;
+    let wid = w["id"].as_i64().unwrap();
+    app.patch_empty(&format!("/workouts/{wid}/finish")).await;
+    let res = app.patch_empty(&format!("/workouts/{wid}/restart")).await;
+    assert_eq!(res.status(), 204);
+}
+
+#[tokio::test]
+async fn restart_workout_clears_finished_at() {
+    let app = common::TestApp::spawn().await;
+    let w = app.create_workout().await;
+    let wid = w["id"].as_i64().unwrap();
+    app.patch_empty(&format!("/workouts/{wid}/finish")).await;
+    app.patch_empty(&format!("/workouts/{wid}/restart")).await;
+    let detail: serde_json::Value = app.get(&format!("/workouts/{wid}")).await.json().await.unwrap();
+    assert!(detail["finished_at"].is_null());
+}
+
+#[tokio::test]
+async fn restart_active_workout_returns_404() {
+    let app = common::TestApp::spawn().await;
+    let w = app.create_workout().await;
+    let wid = w["id"].as_i64().unwrap();
+    let res = app.patch_empty(&format!("/workouts/{wid}/restart")).await;
+    assert_eq!(res.status(), 404);
+}
