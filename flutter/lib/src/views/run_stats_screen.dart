@@ -36,12 +36,16 @@ class _RunStatsScreenState extends State<RunStatsScreen> {
         api.getPersonalRecords(),
       ]);
       if (!mounted) return;
+      final runs = results[0] as List<RunSummary>;
+      final withCad = runs.where((r) => r.avgCadence != null).length;
+      debugPrint('[RunStats] loaded ${runs.length} runs, $withCad with cadence');
       setState(() {
-        _runs = results[0] as List<RunSummary>;
+        _runs = runs;
         _prs = results[1] as List<PersonalRecord>;
         _loading = false;
       });
-    } catch (_) {
+    } catch (e, st) {
+      debugPrint('[RunStats] load error: $e\n$st');
       if (mounted) setState(() => _loading = false);
     }
   }
