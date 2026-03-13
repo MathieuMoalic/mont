@@ -99,8 +99,9 @@ List<LapSplit> computeLapSplits(List<RunPoint> pts, List<double> cumKm) {
       if (dt <= 0) continue;
       final dm = _haversine(pts[ia].lat, pts[ia].lon, pts[ib].lat, pts[ib].lon);
       if (dm < 0.1) continue;
-      final stride = (dm / dt) * 120.0 / ca;
-      if (stride > 0.5 && stride < 3.5) strideValues.add(stride);
+      final stride = (dm / dt) * 60.0 / ca;
+      if (stride < 0.25 || stride > 1.75) continue;
+      strideValues.add(stride);
     }
     final double? avgStrideM = strideValues.isEmpty
         ? null
