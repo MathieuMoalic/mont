@@ -206,6 +206,158 @@ class _RunStatsScreenState extends State<RunStatsScreen> {
     );
   }
 
+  // ── Cadence trend ────────────────────────────────────────────────────────────
+  Widget _cadenceTrend(BuildContext context) {
+    final sorted = _validRuns
+        .where((r) => r.avgCadence != null)
+        .toList()
+      ..sort((a, b) => a.startedAt.compareTo(b.startedAt));
+    if (sorted.length < 2) return const SizedBox.shrink();
+
+    final spots = sorted.asMap().entries
+        .map((e) => FlSpot(e.key.toDouble(), e.value.avgCadence!.toDouble()))
+        .toList();
+    final minY = spots.map((s) => s.y).fold(double.infinity, math.min);
+    final maxY = spots.map((s) => s.y).fold(0.0, math.max);
+    final pad = (maxY - minY) * 0.15;
+
+    return _Card(
+      title: 'Cadence trend (spm)',
+      child: LineChart(LineChartData(
+        minY: minY - pad,
+        maxY: maxY + pad,
+        lineTouchData: LineTouchData(
+          touchTooltipData: LineTouchTooltipData(
+            getTooltipItems: (spots) => spots.map((s) => LineTooltipItem(
+              '${s.y.round()} spm',
+              const TextStyle(fontSize: 11),
+            )).toList(),
+          ),
+        ),
+        lineBarsData: [
+          LineChartBarData(
+            spots: spots,
+            isCurved: true,
+            color: Theme.of(context).colorScheme.tertiary,
+            dotData: FlDotData(show: spots.length <= 30),
+            barWidth: 2,
+            belowBarData: BarAreaData(
+              show: true,
+              color: Theme.of(context).colorScheme.tertiary.withValues(alpha: 0.1),
+            ),
+          ),
+        ],
+        titlesData: FlTitlesData(
+          leftTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 40,
+              getTitlesWidget: (v, meta) {
+                if (v == meta.min || v == meta.max) return const SizedBox.shrink();
+                return Text(v.round().toString(), style: const TextStyle(fontSize: 9));
+              },
+            ),
+          ),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 20,
+              interval: math.max(1, (sorted.length / 5).ceilToDouble()),
+              getTitlesWidget: (v, _) {
+                final idx = v.toInt();
+                if (idx >= sorted.length) return const SizedBox.shrink();
+                return Text(
+                  sorted[idx].startedAt.toLocal().toString().substring(5, 10),
+                  style: const TextStyle(fontSize: 8),
+                );
+              },
+            ),
+          ),
+          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        ),
+        gridData: const FlGridData(show: true),
+        borderData: FlBorderData(show: false),
+      )),
+    );
+  }
+
+  // ── Stride length trend ───────────────────────────────────────────────────────
+  Widget _strideTrend(BuildContext context) {
+    final sorted = _validRuns
+        .where((r) => r.avgStrideM != null)
+        .toList()
+      ..sort((a, b) => a.startedAt.compareTo(b.startedAt));
+    if (sorted.length < 2) return const SizedBox.shrink();
+
+    final spots = sorted.asMap().entries
+        .map((e) => FlSpot(e.key.toDouble(), e.value.avgStrideM!))
+        .toList();
+    final minY = spots.map((s) => s.y).fold(double.infinity, math.min);
+    final maxY = spots.map((s) => s.y).fold(0.0, math.max);
+    final pad = (maxY - minY) * 0.15;
+
+    return _Card(
+      title: 'Stride length trend (m)',
+      child: LineChart(LineChartData(
+        minY: minY - pad,
+        maxY: maxY + pad,
+        lineTouchData: LineTouchData(
+          touchTooltipData: LineTouchTooltipData(
+            getTooltipItems: (spots) => spots.map((s) => LineTooltipItem(
+              '${s.y.toStringAsFixed(2)} m',
+              const TextStyle(fontSize: 11),
+            )).toList(),
+          ),
+        ),
+        lineBarsData: [
+          LineChartBarData(
+            spots: spots,
+            isCurved: true,
+            color: Theme.of(context).colorScheme.secondary,
+            dotData: FlDotData(show: spots.length <= 30),
+            barWidth: 2,
+            belowBarData: BarAreaData(
+              show: true,
+              color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.1),
+            ),
+          ),
+        ],
+        titlesData: FlTitlesData(
+          leftTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 40,
+              getTitlesWidget: (v, meta) {
+                if (v == meta.min || v == meta.max) return const SizedBox.shrink();
+                return Text(v.toStringAsFixed(2), style: const TextStyle(fontSize: 9));
+              },
+            ),
+          ),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 20,
+              interval: math.max(1, (sorted.length / 5).ceilToDouble()),
+              getTitlesWidget: (v, _) {
+                final idx = v.toInt();
+                if (idx >= sorted.length) return const SizedBox.shrink();
+                return Text(
+                  sorted[idx].startedAt.toLocal().toString().substring(5, 10),
+                  style: const TextStyle(fontSize: 8),
+                );
+              },
+            ),
+          ),
+          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        ),
+        gridData: const FlGridData(show: true),
+        borderData: FlBorderData(show: false),
+      )),
+    );
+  }
+
   // ── HR vs Pace scatter ───────────────────────────────────────────────────────
   Widget _hrVsPace(BuildContext context) {
     final valid = _validRuns
@@ -434,6 +586,8 @@ class _RunStatsScreenState extends State<RunStatsScreen> {
           const Divider(),
           _kmPerWeek(context),
           _paceTrend(context),
+          _cadenceTrend(context),
+          _strideTrend(context),
           _hrVsPace(context),
         ],
       ),

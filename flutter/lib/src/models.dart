@@ -26,6 +26,8 @@ class RunSummary {
   final int? maxHr;
   final String? notes;
   final bool isInvalid;
+  final int? avgCadence;
+  final double? avgStrideM;
 
   RunSummary({
     required this.id,
@@ -37,6 +39,8 @@ class RunSummary {
     this.maxHr,
     this.notes,
     this.isInvalid = false,
+    this.avgCadence,
+    this.avgStrideM,
   });
 
   factory RunSummary.fromJson(Map<String, dynamic> j) => RunSummary(
@@ -49,6 +53,8 @@ class RunSummary {
         maxHr: j['max_hr'] as int?,
         notes: j['notes'] as String?,
         isInvalid: (j['is_invalid'] as bool?) ?? false,
+        avgCadence: j['avg_cadence'] as int?,
+        avgStrideM: (j['avg_stride_m'] as num?)?.toDouble(),
       );
 }
 
@@ -65,6 +71,8 @@ class RunDetail extends RunSummary {
     super.maxHr,
     super.notes,
     super.isInvalid,
+    super.avgCadence,
+    super.avgStrideM,
     required this.route,
   });
 
@@ -78,6 +86,8 @@ class RunDetail extends RunSummary {
         maxHr: j['max_hr'] as int?,
         notes: j['notes'] as String?,
         isInvalid: (j['is_invalid'] as bool?) ?? false,
+        avgCadence: j['avg_cadence'] as int?,
+        avgStrideM: (j['avg_stride_m'] as num?)?.toDouble(),
         route: (j['route'] as List)
             .map((e) => RunPoint.fromJson(e as Map<String, dynamic>))
             .toList(),

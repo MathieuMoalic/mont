@@ -1,0 +1,2 @@
+ALTER TABLE runs ADD COLUMN avg_cadence INTEGER;
+ALTER TABLE runs ADD COLUMN avg_stride_m REAL;

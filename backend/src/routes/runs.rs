@@ -20,6 +20,8 @@ pub struct RunSummary {
     pub max_hr: Option<i64>,
     pub notes: Option<String>,
     pub is_invalid: bool,
+    pub avg_cadence: Option<i64>,
+    pub avg_stride_m: Option<f64>,
 }
 
 #[derive(Serialize)]
@@ -55,6 +57,8 @@ struct TrackPoint {
     ele: Option<f64>,
     time_secs: Option<i64>,
     hr: Option<i64>,
+    cad: Option<i64>,
+    speed: Option<f64>,
 }
 
 struct ParsedRun {
@@ -64,6 +68,8 @@ struct ParsedRun {
     elevation_gain_m: Option<f64>,
     avg_hr: Option<i64>,
     max_hr: Option<i64>,
+    avg_cadence: Option<i64>,
+    avg_stride_m: Option<f64>,
     route: Vec<RoutePoint>,
     activity_type: Option<String>,
 }
@@ -90,56 +96,67 @@ fn haversine_m(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
     R * 2.0 * a.sqrt().asin()
 }
 
-fn parse_gpx(data: &[u8]) -> anyhow::Result<ParsedRun> {
-    let text = std::str::from_utf8(data)?;
-    let doc = roxmltree::Document::parse(text)?;
+struct RunStats {
+    avg_hr: Option<i64>,
+    max_hr: Option<i64>,
+    avg_cadence: Option<i64>,
+    avg_stride_m: Option<f64>,
+}
 
-    // Extract activity type from <trk><type> (e.g. "running", "cycling")
-    let activity_type = doc
-        .descendants()
-        .find(|n| n.tag_name().name() == "trk")
-        .and_then(|trk| trk.children().find(|n| n.tag_name().name() == "type"))
-        .and_then(|n| n.text())
-        .map(|t| t.trim().to_lowercase());
+fn compute_run_stats(points: &[TrackPoint]) -> RunStats {
+    let hr_values: Vec<i64> = points.iter().filter_map(|p| p.hr).collect();
+    let avg_hr = if hr_values.is_empty() {
+        None
+    } else {
+        #[allow(clippy::cast_possible_truncation)]
+        Some(hr_values.iter().sum::<i64>() / i64::try_from(hr_values.len()).unwrap_or(1))
+    };
+    let max_hr = hr_values.into_iter().max();
 
-    let mut points: Vec<TrackPoint> = Vec::new();
+    let cad_values: Vec<i64> = points.iter().filter_map(|p| p.cad).collect();
+    let avg_cadence = if cad_values.is_empty() {
+        None
+    } else {
+        #[allow(clippy::cast_possible_truncation)]
+        Some(cad_values.iter().sum::<i64>() / i64::try_from(cad_values.len()).unwrap_or(1))
+    };
 
-    for node in doc.descendants() {
-        if node.tag_name().name() != "trkpt" {
-            continue;
+    // Stride length (m) = speed_m_s * 120 / cadence_spm  (cadence = total steps/min)
+    let avg_stride_m = avg_cadence.and_then(|cad| {
+        let speed_values: Vec<f64> = points.iter().filter_map(|p| p.speed).collect();
+        if speed_values.is_empty() || cad == 0 {
+            None
+        } else {
+            let avg_speed = speed_values.iter().sum::<f64>()
+                / f64::from(u32::try_from(speed_values.len()).unwrap_or(1));
+            #[allow(clippy::cast_precision_loss)]
+            Some(avg_speed * 120.0 / cad as f64)
         }
-        let lat: f64 = node
-            .attribute("lat")
-            .ok_or_else(|| anyhow::anyhow!("trkpt missing lat"))?
-            .parse()?;
-        let lon: f64 = node
-            .attribute("lon")
-            .ok_or_else(|| anyhow::anyhow!("trkpt missing lon"))?
-            .parse()?;
+    });
 
-        let ele = node
-            .children()
-            .find(|n| n.tag_name().name() == "ele")
-            .and_then(|n| n.text())
-            .and_then(|t| t.parse::<f64>().ok());
+    RunStats { avg_hr, max_hr, avg_cadence, avg_stride_m }
+}
 
-        let time_secs = node
-            .children()
-            .find(|n| n.tag_name().name() == "time")
-            .and_then(|n| n.text())
-            .and_then(|t| parse_timestamp(t).ok());
+fn parse_trkpt(node: roxmltree::Node<'_, '_>) -> anyhow::Result<TrackPoint> {
+    let lat: f64 = node
+        .attribute("lat")
+        .ok_or_else(|| anyhow::anyhow!("trkpt missing lat"))?
+        .parse()?;
+    let lon: f64 = node
+        .attribute("lon")
+        .ok_or_else(|| anyhow::anyhow!("trkpt missing lon"))?
+        .parse()?;
+    let child_text = |name: &str| node.children().find(|n| n.tag_name().name() == name).and_then(|n| n.text());
+    let ext_text = |name: &str| node.descendants().find(|n| n.tag_name().name() == name).and_then(|n| n.text());
+    let ele = child_text("ele").and_then(|t| t.parse::<f64>().ok());
+    let time_secs = child_text("time").and_then(|t| parse_timestamp(t).ok());
+    let hr = ext_text("hr").and_then(|t| t.parse::<i64>().ok());
+    let cad = ext_text("cad").and_then(|t| t.parse::<i64>().ok()).filter(|&c| c > 0);
+    let speed = ext_text("speed").and_then(|t| t.parse::<f64>().ok()).filter(|&s| s > 0.0);
+    Ok(TrackPoint { lat, lon, ele, time_secs, hr, cad, speed })
+}
 
-        let hr = node
-            .descendants()
-            .find(|n| n.tag_name().name() == "hr")
-            .and_then(|n| n.text())
-            .and_then(|t| t.parse::<i64>().ok());
-
-        points.push(TrackPoint { lat, lon, ele, time_secs, hr });
-    }
-
-    anyhow::ensure!(!points.is_empty(), "GPX contains no track points");
-
+fn compute_timing(points: &[TrackPoint]) -> (String, i64) {
     let started_at = points
         .first()
         .and_then(|p| p.time_secs)
@@ -150,60 +167,61 @@ fn parse_gpx(data: &[u8]) -> anyhow::Result<ParsedRun> {
                 .unwrap_or_default()
         })
         .unwrap_or_default();
-
-    let duration_s = match (
-        points.first().and_then(|p| p.time_secs),
-        points.last().and_then(|p| p.time_secs),
-    ) {
-        (Some(start), Some(end)) => (end - start).max(0),
+    let duration_s = match (points.first().and_then(|p| p.time_secs), points.last().and_then(|p| p.time_secs)) {
+        (Some(s), Some(e)) => (e - s).max(0),
         _ => 0,
     };
+    (started_at, duration_s)
+}
 
-    let distance_m: f64 = points
-        .windows(2)
+fn compute_elevation_gain(points: &[TrackPoint]) -> Option<f64> {
+    let elevations: Vec<f64> = points.iter().filter_map(|p| p.ele).collect();
+    if elevations.len() < 2 { return None; }
+    let gain: f64 = elevations.windows(2)
+        .filter_map(|w| { let d = w[1] - w[0]; if d > 0.0 { Some(d) } else { None } })
+        .sum();
+    Some(gain)
+}
+
+fn parse_gpx(data: &[u8]) -> anyhow::Result<ParsedRun> {
+    let text = std::str::from_utf8(data)?;
+    let doc = roxmltree::Document::parse(text)?;
+
+    let activity_type = doc
+        .descendants()
+        .find(|n| n.tag_name().name() == "trk")
+        .and_then(|trk| trk.children().find(|n| n.tag_name().name() == "type"))
+        .and_then(|n| n.text())
+        .map(|t| t.trim().to_lowercase());
+
+    let points = doc.descendants()
+        .filter(|n| n.tag_name().name() == "trkpt")
+        .map(parse_trkpt)
+        .collect::<anyhow::Result<Vec<_>>>()?;
+
+    anyhow::ensure!(!points.is_empty(), "GPX contains no track points");
+
+    let (started_at, duration_s) = compute_timing(&points);
+    let distance_m: f64 = points.windows(2)
         .map(|w| haversine_m(w[0].lat, w[0].lon, w[1].lat, w[1].lon))
         .sum();
-
-    let elevation_gain_m: Option<f64> = {
-        let elevations: Vec<f64> = points.iter().filter_map(|p| p.ele).collect();
-        if elevations.len() >= 2 {
-            let gain: f64 = elevations
-                .windows(2)
-                .filter_map(|w| {
-                    let d = w[1] - w[0];
-                    if d > 0.0 { Some(d) } else { None }
-                })
-                .sum();
-            Some(gain)
-        } else {
-            None
-        }
-    };
-
-    let hr_values: Vec<i64> = points.iter().filter_map(|p| p.hr).collect();
-    let avg_hr = if hr_values.is_empty() {
-        None
-    } else {
-        #[allow(clippy::cast_possible_truncation)]
-        Some(hr_values.iter().sum::<i64>() / i64::try_from(hr_values.len()).unwrap_or(1))
-    };
-    let max_hr = hr_values.into_iter().max();
+    let elevation_gain_m = compute_elevation_gain(&points);
+    let stats = compute_run_stats(&points);
 
     let route = {
         let t0 = points.first().and_then(|p| p.time_secs);
-        points
-            .into_iter()
-            .map(|p| RoutePoint {
-                lat: p.lat,
-                lon: p.lon,
-                ele: p.ele,
-                hr: p.hr,
-                t: p.time_secs.and_then(|ts| t0.map(|t0| ts - t0)),
-            })
-            .collect()
+        points.into_iter().map(|p| RoutePoint {
+            lat: p.lat, lon: p.lon, ele: p.ele, hr: p.hr,
+            t: p.time_secs.and_then(|ts| t0.map(|t0| ts - t0)),
+        }).collect()
     };
 
-    Ok(ParsedRun { started_at, duration_s, distance_m, elevation_gain_m, avg_hr, max_hr, route, activity_type })
+    Ok(ParsedRun {
+        started_at, duration_s, distance_m, elevation_gain_m,
+        avg_hr: stats.avg_hr, max_hr: stats.max_hr,
+        avg_cadence: stats.avg_cadence, avg_stride_m: stats.avg_stride_m,
+        route, activity_type,
+    })
 }
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
@@ -254,9 +272,9 @@ pub async fn import_run(
 
     let run = sqlx::query_as::<_, RunSummary>(
         "INSERT INTO runs \
-         (started_at, duration_s, distance_m, elevation_gain_m, avg_hr, max_hr, route_json) \
-         VALUES (?, ?, ?, ?, ?, ?, ?) \
-         RETURNING id, started_at, duration_s, distance_m, elevation_gain_m, avg_hr, max_hr, notes, is_invalid",
+         (started_at, duration_s, distance_m, elevation_gain_m, avg_hr, max_hr, route_json, avg_cadence, avg_stride_m) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) \
+         RETURNING id, started_at, duration_s, distance_m, elevation_gain_m, avg_hr, max_hr, notes, is_invalid, avg_cadence, avg_stride_m",
     )
     .bind(&parsed.started_at)
     .bind(parsed.duration_s)
@@ -265,6 +283,8 @@ pub async fn import_run(
     .bind(parsed.avg_hr)
     .bind(parsed.max_hr)
     .bind(&route_json)
+    .bind(parsed.avg_cadence)
+    .bind(parsed.avg_stride_m)
     .fetch_one(&state.pool)
     .await?;
 
@@ -275,7 +295,7 @@ pub async fn import_run(
 /// Returns an error if the database query fails.
 pub async fn list_runs(State(state): State<AppState>) -> AppResult<Json<Vec<RunSummary>>> {
     let runs = sqlx::query_as::<_, RunSummary>(
-        "SELECT id, started_at, duration_s, distance_m, elevation_gain_m, avg_hr, max_hr, notes, is_invalid \
+        "SELECT id, started_at, duration_s, distance_m, elevation_gain_m, avg_hr, max_hr, notes, is_invalid, avg_cadence, avg_stride_m \
          FROM runs ORDER BY started_at DESC",
     )
     .fetch_all(&state.pool)
@@ -610,8 +630,8 @@ async fn import_gpx_run(
         .map_err(|e| format!("{name}: {e}"))?;
     sqlx::query(
         "INSERT INTO runs \
-         (started_at, duration_s, distance_m, elevation_gain_m, avg_hr, max_hr, route_json, source_file) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?) \
+         (started_at, duration_s, distance_m, elevation_gain_m, avg_hr, max_hr, route_json, source_file, avg_cadence, avg_stride_m) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
          ON CONFLICT(source_file) WHERE source_file IS NOT NULL DO UPDATE SET \
            started_at = excluded.started_at, \
            duration_s = excluded.duration_s, \
@@ -619,7 +639,9 @@ async fn import_gpx_run(
            elevation_gain_m = excluded.elevation_gain_m, \
            avg_hr = excluded.avg_hr, \
            max_hr = excluded.max_hr, \
-           route_json = excluded.route_json",
+           route_json = excluded.route_json, \
+           avg_cadence = excluded.avg_cadence, \
+           avg_stride_m = excluded.avg_stride_m",
     )
     .bind(&parsed.started_at)
     .bind(parsed.duration_s)
@@ -629,6 +651,8 @@ async fn import_gpx_run(
     .bind(parsed.max_hr)
     .bind(&route_json)
     .bind(name)
+    .bind(parsed.avg_cadence)
+    .bind(parsed.avg_stride_m)
     .execute(pool)
     .await
     .map_err(|e| format!("{name}: {e}"))?;
