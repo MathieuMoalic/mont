@@ -1,4 +1,4 @@
-use crate::routes::{auth, exercises, runs, templates, weight, workouts};
+use crate::routes::{auth, exercises, runs, weight, workouts};
 use crate::{
     auth_middleware::require_auth,
     config::Config,
@@ -59,9 +59,6 @@ pub fn build_app(state: AppState) -> Router {
     let protected_routes = Router::new()
         .route("/exercises", get(exercises::list_exercises).post(exercises::create_exercise))
         .route("/exercises/{id}/history", get(exercises::exercise_history))
-        .route("/templates", get(templates::list_templates).post(templates::create_template))
-        .route("/templates/{id}", get(templates::get_template).delete(templates::delete_template))
-        .route("/templates/{id}/apply/{workout_id}", post(templates::apply_template))
         .route("/workouts", get(workouts::list_workouts).post(workouts::create_workout))
         .route("/workouts/{id}", get(workouts::get_workout))
         .route("/workouts/{id}/finish", patch(workouts::finish_workout))
