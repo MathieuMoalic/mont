@@ -14,6 +14,7 @@ class HealthScreen extends StatefulWidget {
 class _HealthScreenState extends State<HealthScreen> {
   List<DailyHealth>? _days;
   String? _error;
+  bool _syncing = false;
 
   @override
   void initState() {
@@ -27,6 +28,28 @@ class _HealthScreenState extends State<HealthScreen> {
       if (mounted) setState(() { _days = days; _error = null; });
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
+    }
+  }
+
+  Future<void> _sync() async {
+    setState(() => _syncing = true);
+    try {
+      final result = await api.syncGadgetbridge();
+      final healthDays = result['health_days'] as int? ?? 0;
+      final imported = result['imported'] as int? ?? 0;
+      final errors = (result['errors'] as List?)?.cast<String>() ?? [];
+      await _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Synced: $imported runs, $healthDays health days${errors.isNotEmpty ? ', ${errors.length} errors' : ''}'),
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Sync failed: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _syncing = false);
     }
   }
 
@@ -50,9 +73,22 @@ class _HealthScreenState extends State<HealthScreen> {
     final days = _days!;
     return CustomScrollView(
       slivers: [
-        const SliverAppBar(
-          title: Text('Health data'),
+        SliverAppBar(
+          title: const Text('Health data'),
           floating: true,
+          actions: [
+            if (_syncing)
+              const Padding(
+                padding: EdgeInsets.all(14),
+                child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+              )
+            else
+              IconButton(
+                icon: const Icon(Icons.sync),
+                tooltip: 'Sync from Gadgetbridge',
+                onPressed: _sync,
+              ),
+          ],
         ),
         SliverToBoxAdapter(child: _buildHrChart(days)),
         SliverToBoxAdapter(child: _buildHrvChart(days)),
