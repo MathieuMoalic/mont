@@ -43,7 +43,7 @@ class RunSummary {
     this.avgStrideM,
   });
 
-  factory RunSummary.fromJson(Map<String, dynamic> j) => RunSummary(
+   factory RunSummary.fromJson(Map<String, dynamic> j) => RunSummary(
         id: j['id'] as int,
         startedAt: DateTime.parse(j['started_at'] as String),
         durationS: j['duration_s'] as int,
@@ -53,7 +53,7 @@ class RunSummary {
         maxHr: j['max_hr'] as int?,
         notes: j['notes'] as String?,
         isInvalid: (j['is_invalid'] as bool?) ?? false,
-        avgCadence: j['avg_cadence'] as int?,
+        avgCadence: (j['avg_cadence'] as num?)?.toInt(),
         avgStrideM: (j['avg_stride_m'] as num?)?.toDouble(),
       );
 }
@@ -86,7 +86,7 @@ class RunDetail extends RunSummary {
         maxHr: j['max_hr'] as int?,
         notes: j['notes'] as String?,
         isInvalid: (j['is_invalid'] as bool?) ?? false,
-        avgCadence: j['avg_cadence'] as int?,
+        avgCadence: (j['avg_cadence'] as num?)?.toInt(),
         avgStrideM: (j['avg_stride_m'] as num?)?.toDouble(),
         route: (j['route'] as List)
             .map((e) => RunPoint.fromJson(e as Map<String, dynamic>))
