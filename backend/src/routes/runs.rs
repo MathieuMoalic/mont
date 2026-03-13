@@ -635,17 +635,15 @@ async fn import_gpx_run(
     Ok(())
 }
 
+/// Core sync logic. Called by the HTTP handler and the background scheduler.
 /// # Errors
-/// Returns `SERVICE_UNAVAILABLE` if `MONT_GADGETBRIDGE_ZIP` is not configured,
-/// or a database error.
-pub async fn sync_gadgetbridge(
-    State(state): State<AppState>,
-) -> AppResult<Json<SyncResult>> {
+/// Returns an error string if the zip cannot be opened or parsed.
+pub async fn perform_sync(state: &AppState) -> Result<SyncResult, String> {
     let zip_path = state
         .config
         .gadgetbridge_zip
         .clone()
-        .ok_or_else(|| (StatusCode::SERVICE_UNAVAILABLE, "MONT_GADGETBRIDGE_ZIP not configured".to_string()))?;
+        .ok_or_else(|| "MONT_GADGETBRIDGE_ZIP not configured".to_string())?;
 
     let (running_filenames, gpx_files, health_rows) = tokio::task::spawn_blocking(move || -> Result<_, String> {
         let file = std::fs::File::open(&zip_path)
@@ -689,8 +687,7 @@ pub async fn sync_gadgetbridge(
         Ok((running_filenames, gpx_files, health_rows))
     })
     .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-    .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+    .map_err(|e| e.to_string())??;
 
     let mut imported = 0usize;
     let mut errors: Vec<String> = Vec::new();
@@ -741,7 +738,22 @@ pub async fn sync_gadgetbridge(
         .await;
     }
 
-    Ok(Json(SyncResult { imported, health_days: health_rows.len(), errors }))
+    Ok(SyncResult { imported, health_days: health_rows.len(), errors })
+}
+
+/// # Errors
+/// Returns `SERVICE_UNAVAILABLE` if `MONT_GADGETBRIDGE_ZIP` is not configured,
+/// or a database error.
+pub async fn sync_gadgetbridge(
+    State(state): State<AppState>,
+) -> AppResult<Json<SyncResult>> {
+    if state.config.gadgetbridge_zip.is_none() {
+        return Err((StatusCode::SERVICE_UNAVAILABLE, "MONT_GADGETBRIDGE_ZIP not configured".to_string()).into());
+    }
+    perform_sync(&state)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e).into())
 }
 
 // ── Heatmap ───────────────────────────────────────────────────────────────────

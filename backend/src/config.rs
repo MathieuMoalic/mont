@@ -45,6 +45,10 @@ pub struct Config {
 
     #[arg(long, env = "MONT_GADGETBRIDGE_ZIP")]
     pub gadgetbridge_zip: Option<PathBuf>,
+
+    /// Daily auto-sync time in HH:MM format (local time).
+    #[arg(long, env = "MONT_SYNC_TIME", default_value = "05:00")]
+    pub sync_time: String,
 }
 
 impl Config {
