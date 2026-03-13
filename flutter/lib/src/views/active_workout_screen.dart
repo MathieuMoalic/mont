@@ -61,10 +61,31 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     );
     if (exercise == null || !mounted) return;
 
-    final setNum =
-        _workout!.sets.where((s) => s.exerciseId == exercise.id).length + 1;
+    final setsForExercise =
+        _workout!.sets.where((s) => s.exerciseId == exercise.id).toList();
+    final setNum = setsForExercise.length + 1;
 
-    final result = await _showAddSetDialog(exercise.name, setNum);
+    // Pre-fill with last logged values for this exercise
+    int defaultReps = 8;
+    double defaultWeight = 0;
+    if (setsForExercise.isNotEmpty) {
+      final last = setsForExercise.last;
+      defaultReps = last.reps;
+      defaultWeight = last.weightKg;
+    } else {
+      try {
+        final history = await api.getExerciseHistory(exercise.id);
+        if (history.isNotEmpty) {
+          final last = history.last;
+          defaultReps = last.repsAtMax;
+          defaultWeight = last.maxWeightKg;
+        }
+      } catch (_) {}
+    }
+    if (!mounted) return;
+
+    final result = await _showAddSetDialog(exercise.name, setNum,
+        defaultReps: defaultReps, defaultWeight: defaultWeight);
     if (result == null || !mounted) return;
 
     try {
@@ -84,9 +105,12 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     }
   }
 
-  Future<(int, double)?> _showAddSetDialog(String exerciseName, int setNum) {
-    final repsCtrl = TextEditingController(text: '8');
-    final weightCtrl = TextEditingController(text: '0');
+  Future<(int, double)?> _showAddSetDialog(String exerciseName, int setNum,
+      {int defaultReps = 8, double defaultWeight = 0}) {
+    String _fmt(double v) =>
+        v % 1 == 0 ? v.toInt().toString() : v.toStringAsFixed(1);
+    final repsCtrl = TextEditingController(text: defaultReps.toString());
+    final weightCtrl = TextEditingController(text: _fmt(defaultWeight));
 
     void bump(TextEditingController ctrl, double delta) {
       final v = (double.tryParse(ctrl.text) ?? 0) + delta;
