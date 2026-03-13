@@ -123,7 +123,7 @@ fn compute_run_stats(points: &[TrackPoint]) -> RunStats {
         Some(cad_values.iter().sum::<i64>() / i64::try_from(cad_values.len()).unwrap_or(1))
     };
 
-    // Stride length (m) = speed_m_s * 120 / cadence_spm  (cadence = total steps/min)
+    // Step length (m) = speed_m_s * 60 / cadence_spm  (cadence = total steps/min)
     let avg_stride_m = avg_cadence.and_then(|cad| {
         let speed_values: Vec<f64> = points.iter().filter_map(|p| p.speed).collect();
         if speed_values.is_empty() || cad == 0 {
@@ -132,7 +132,7 @@ fn compute_run_stats(points: &[TrackPoint]) -> RunStats {
             let avg_speed = speed_values.iter().sum::<f64>()
                 / f64::from(u32::try_from(speed_values.len()).unwrap_or(1));
             #[allow(clippy::cast_precision_loss)]
-            Some(avg_speed * 120.0 / cad as f64)
+            Some(avg_speed * 60.0 / cad as f64)
         }
     });
 

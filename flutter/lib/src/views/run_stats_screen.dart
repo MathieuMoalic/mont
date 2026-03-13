@@ -312,7 +312,7 @@ class _RunStatsScreenState extends State<RunStatsScreen> {
     final pad = (maxY - minY) * 0.15;
 
     return _Card(
-      title: 'Stride length trend (m)',
+      title: 'Step length trend (m)',
       child: LineChart(LineChartData(
         minY: minY - pad,
         maxY: maxY + pad,

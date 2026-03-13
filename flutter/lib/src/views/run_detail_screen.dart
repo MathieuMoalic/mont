@@ -97,7 +97,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
             _statCard('Elevation', '+${run.elevationGainM!.round()} m'),
           if (run.avgHr != null) _statCard('Avg HR', '${run.avgHr} bpm'),
           if (run.avgCadence != null) _statCard('Avg Cadence', '${run.avgCadence} spm'),
-          if (run.avgStrideM != null) _statCard('Avg Stride', '${run.avgStrideM!.toStringAsFixed(2)} m'),
+          if (run.avgStrideM != null) _statCard('Avg Step', '${run.avgStrideM!.toStringAsFixed(2)} m'),
         ],
       ),
     );
@@ -399,13 +399,13 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
       final dm = _haversine(
           pts[i - 1].lat, pts[i - 1].lon, pts[i].lat, pts[i].lon);
       if (dm < 0.1) continue;
-      final stride = (dm / dt) * 120.0 / ca;
-      if (stride < 0.5 || stride > 3.5) continue;
+      final stride = (dm / dt) * 60.0 / ca;
+      if (stride < 0.25 || stride > 1.75) continue;
       spots.add(FlSpot(allKm[i], stride));
     }
     if (spots.isEmpty) return const SizedBox.shrink();
     return _chartCard(
-      title: 'Stride length (m)',
+      title: 'Step length (m)',
       color: Colors.purple,
       spots: _smooth(spots, _smoothing),
       leftLabel: (v) => v.toStringAsFixed(2),
@@ -583,7 +583,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                       if (hasHr) _th('HR'),
                       if (hasEle) _th('Elev.'),
                       if (hasCad) _th('Cad.'),
-                      if (hasStride) _th('Stride'),
+                      if (hasStride) _th('Step'),
                     ],
                   ),
                   ...splits.map((s) => TableRow(
