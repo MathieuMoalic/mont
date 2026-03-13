@@ -12,19 +12,26 @@ pub struct Exercise {
     pub id: i64,
     pub name: String,
     pub notes: Option<String>,
+    pub muscle_group: Option<String>,
 }
 
 #[derive(Deserialize)]
 pub struct CreateExercise {
     pub name: String,
     pub notes: Option<String>,
+    pub muscle_group: Option<String>,
 }
 
 /// # Errors
 /// Returns an error if the database query fails.
 pub async fn list_exercises(State(state): State<AppState>) -> AppResult<Json<Vec<Exercise>>> {
     let exercises = sqlx::query_as::<_, Exercise>(
-        "SELECT id, name, notes FROM exercises ORDER BY name COLLATE NOCASE",
+        r"SELECT e.id, e.name, e.notes, e.muscle_group
+          FROM exercises e
+          LEFT JOIN workout_sets s ON s.exercise_id = e.id
+          LEFT JOIN workouts w ON w.id = s.workout_id
+          GROUP BY e.id
+          ORDER BY MAX(w.started_at) DESC NULLS LAST, e.name COLLATE NOCASE",
     )
     .fetch_all(&state.pool)
     .await?;
@@ -38,10 +45,11 @@ pub async fn create_exercise(
     Json(body): Json<CreateExercise>,
 ) -> AppResult<(StatusCode, Json<Exercise>)> {
     let exercise = sqlx::query_as::<_, Exercise>(
-        "INSERT INTO exercises (name, notes) VALUES (?, ?) RETURNING id, name, notes",
+        "INSERT INTO exercises (name, notes, muscle_group) VALUES (?, ?, ?) RETURNING id, name, notes, muscle_group",
     )
     .bind(&body.name)
     .bind(&body.notes)
+    .bind(&body.muscle_group)
     .fetch_one(&state.pool)
     .await?;
     Ok((StatusCode::CREATED, Json(exercise)))
