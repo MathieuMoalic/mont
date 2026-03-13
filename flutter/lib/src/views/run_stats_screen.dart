@@ -611,8 +611,8 @@ class _RunStatsScreenState extends State<RunStatsScreen> {
       final best = vo2pts.reduce((a, b) => a.$2 > b.$2 ? a : b);
       records.add((
         '🫁',
-        'Best VO₂max est.',
-        '${best.$2.toStringAsFixed(1)} ml/kg/min',
+        'Best VO₂max (ml/kg/min)',
+        best.$2.toStringAsFixed(1),
         fmtDate(best.$1.startedAt),
         best.$1.id,
       ));
@@ -694,15 +694,16 @@ class _RunStatsScreenState extends State<RunStatsScreen> {
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
+      child: Wrap(
+        alignment: WrapAlignment.spaceAround,
+        runSpacing: 8,
         children: [
           _StatChip(label: 'Total runs', value: '${_validRuns.length}'),
           _StatChip(label: 'Total km', value: totalKm.toStringAsFixed(1)),
           _StatChip(label: 'Total hours', value: totalH.toStringAsFixed(1)),
           if (avgHr != null) _StatChip(label: 'Avg HR', value: '$avgHr bpm'),
           if (bestVo2 != null)
-            _StatChip(label: 'Best VO₂max', value: '${bestVo2.toStringAsFixed(1)} ml/kg/min'),
+            _StatChip(label: 'Best VO₂max', value: bestVo2.toStringAsFixed(1), unit: 'ml/kg/min'),
         ],
       ),
     );
@@ -770,19 +771,25 @@ class _Card extends StatelessWidget {
 }
 
 class _StatChip extends StatelessWidget {
-  const _StatChip({required this.label, required this.value});
+  const _StatChip({required this.label, required this.value, this.unit});
 
   final String label;
   final String value;
+  final String? unit;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Text(value,
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-        Text(label, style: const TextStyle(fontSize: 11, color: Colors.grey)),
-      ],
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: Column(
+        children: [
+          Text(value,
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          if (unit != null)
+            Text(unit!, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+          Text(label, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+        ],
+      ),
     );
   }
 }
