@@ -243,6 +243,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                       if (_hasHr(run)) _hrChart(context, run),
                       if (_hasPace(run)) _paceChart(context, run),
                       if (_hasEle(run)) _eleChart(context, run),
+                      if (_hasCad(run)) _cadChart(context, run),
                       _lapSplitsTable(context, run),
                       const SizedBox(height: 16),
                     ],
@@ -264,6 +265,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
               if (_hasHr(run)) _hrChart(context, run),
               if (_hasPace(run)) _paceChart(context, run),
               if (_hasEle(run)) _eleChart(context, run),
+              if (_hasCad(run)) _cadChart(context, run),
               _lapSplitsTable(context, run),
               const SizedBox(height: 16),
             ],
@@ -279,6 +281,8 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
       run.route.length >= 2 && run.route.any((p) => p.t != null);
   static bool _hasEle(RunDetail run) =>
       run.route.any((p) => p.ele != null);
+  static bool _hasCad(RunDetail run) =>
+      run.route.any((p) => p.cad != null);
 
   // Cumulative distance in km for each point in the route
   static List<double> _cumKm(List<RunPoint> pts) {
@@ -354,6 +358,20 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
     return _chartCard(
       title: 'Elevation (m)',
       color: Colors.green,
+      spots: _smooth(spots, _smoothing),
+      leftLabel: (v) => v.round().toString(),
+      bottomLabel: _fmtKm,
+    );
+  }
+
+  Widget _cadChart(BuildContext context, RunDetail run) {
+    final pts = run.route.where((p) => p.cad != null).toList();
+    final km = _cumKm(pts);
+    final spots = List.generate(pts.length,
+        (i) => FlSpot(km[i], pts[i].cad!.toDouble()));
+    return _chartCard(
+      title: 'Cadence (spm)',
+      color: Colors.orange,
       spots: _smooth(spots, _smoothing),
       leftLabel: (v) => v.round().toString(),
       bottomLabel: _fmtKm,
