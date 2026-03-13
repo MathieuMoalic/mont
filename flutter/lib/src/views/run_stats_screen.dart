@@ -372,7 +372,110 @@ class _RunStatsScreenState extends State<RunStatsScreen> {
     );
   }
 
-  // ── HR vs Pace scatter ───────────────────────────────────────────────────────
+  // ── VO₂max helpers ──────────────────────────────────────────────────────────
+  // ACSM running equation: VO₂ (ml/kg/min) = 0.2 × speed_m_per_min + 3.5 (flat)
+  // Scale to max: VO₂max ≈ VO₂_at_pace / (avg_hr / hr_max)
+  // Only valid for steady aerobic runs ≥ 15 min, ≥ 2 km, avg HR ≥ 100 bpm.
+  static double? _vo2maxForRun(RunSummary run, int hrMax) {
+    if (run.avgHr == null) return null;
+    if (run.durationS < 900 || run.distanceM < 2000) return null;
+    if (run.avgHr! < 100 || run.avgHr! >= hrMax) return null;
+    final speedMperMin = (run.distanceM / run.durationS) * 60.0;
+    final vo2AtPace = 0.2 * speedMperMin + 3.5;
+    return vo2AtPace / (run.avgHr! / hrMax);
+  }
+
+  int get _hrMax {
+    final vals = _validRuns.map((r) => r.maxHr ?? 0);
+    return vals.isEmpty ? 0 : vals.reduce(math.max);
+  }
+
+  List<(RunSummary, double)> get _vo2maxPoints {
+    final hrMax = _hrMax;
+    if (hrMax == 0) return [];
+    final sorted = _validRuns.toList()
+      ..sort((a, b) => a.startedAt.compareTo(b.startedAt));
+    return sorted
+        .map((r) => (r, _vo2maxForRun(r, hrMax)))
+        .where((p) => p.$2 != null)
+        .map((p) => (p.$1, p.$2!))
+        .toList();
+  }
+
+  // ── VO₂max trend ────────────────────────────────────────────────────────────
+  Widget _vo2maxTrend(BuildContext context) {
+    final pts = _vo2maxPoints;
+    if (pts.length < 2) return const SizedBox.shrink();
+
+    final spots = pts.asMap().entries
+        .map((e) => FlSpot(e.key.toDouble(), e.value.$2))
+        .toList();
+    final minY = spots.map((s) => s.y).fold(double.infinity, math.min);
+    final maxY = spots.map((s) => s.y).fold(0.0, math.max);
+    final pad = (maxY - minY) * 0.15;
+
+    return _Card(
+      title: 'VO₂max estimate trend (ml/kg/min)',
+      child: LineChart(LineChartData(
+        minY: minY - pad,
+        maxY: maxY + pad,
+        lineTouchData: LineTouchData(
+          touchTooltipData: LineTouchTooltipData(
+            getTooltipItems: (spots) => spots.map((s) => LineTooltipItem(
+              '${s.y.toStringAsFixed(1)} ml/kg/min',
+              const TextStyle(fontSize: 11),
+            )).toList(),
+          ),
+        ),
+        lineBarsData: [
+          LineChartBarData(
+            spots: spots,
+            isCurved: true,
+            color: Colors.teal,
+            dotData: FlDotData(show: spots.length <= 30),
+            barWidth: 2,
+            belowBarData: BarAreaData(
+              show: true,
+              color: Colors.teal.withValues(alpha: 0.1),
+            ),
+          ),
+        ],
+        titlesData: FlTitlesData(
+          leftTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 40,
+              getTitlesWidget: (v, meta) {
+                if (v == meta.min || v == meta.max) return const SizedBox.shrink();
+                return Text(v.toStringAsFixed(0), style: const TextStyle(fontSize: 9));
+              },
+            ),
+          ),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 20,
+              interval: math.max(1, (pts.length / 5).ceilToDouble()),
+              getTitlesWidget: (v, _) {
+                final idx = v.toInt();
+                if (idx >= pts.length) return const SizedBox.shrink();
+                return Text(
+                  pts[idx].$1.startedAt.toLocal().toString().substring(5, 10),
+                  style: const TextStyle(fontSize: 8),
+                );
+              },
+            ),
+          ),
+          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        ),
+        gridData: const FlGridData(show: true),
+        borderData: FlBorderData(show: false),
+      )),
+    );
+  }
+
+
   Widget _hrVsPace(BuildContext context) {
     final valid = _validRuns
         .where((r) => r.avgHr != null && r.distanceM > 100)
@@ -502,6 +605,19 @@ class _RunStatsScreenState extends State<RunStatsScreen> {
       ('📅', 'Best week', '${bestWeekKm.toStringAsFixed(1)} km', null, null),
     ];
 
+    // Best VO₂max estimate
+    final vo2pts = _vo2maxPoints;
+    if (vo2pts.isNotEmpty) {
+      final best = vo2pts.reduce((a, b) => a.$2 > b.$2 ? a : b);
+      records.add((
+        '🫁',
+        'Best VO₂max est.',
+        '${best.$2.toStringAsFixed(1)} ml/kg/min',
+        fmtDate(best.$1.startedAt),
+        best.$1.id,
+      ));
+    }
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
       child: Card(
@@ -571,6 +687,11 @@ class _RunStatsScreenState extends State<RunStatsScreen> {
         ? null
         : hrsWithHr.fold(0, (s, r) => s + r.avgHr!) ~/ hrsWithHr.length;
 
+    final vo2pts = _vo2maxPoints;
+    final bestVo2 = vo2pts.isEmpty
+        ? null
+        : vo2pts.map((p) => p.$2).fold(0.0, math.max);
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
       child: Row(
@@ -580,6 +701,8 @@ class _RunStatsScreenState extends State<RunStatsScreen> {
           _StatChip(label: 'Total km', value: totalKm.toStringAsFixed(1)),
           _StatChip(label: 'Total hours', value: totalH.toStringAsFixed(1)),
           if (avgHr != null) _StatChip(label: 'Avg HR', value: '$avgHr bpm'),
+          if (bestVo2 != null)
+            _StatChip(label: 'Best VO₂max', value: '${bestVo2.toStringAsFixed(1)} ml/kg/min'),
         ],
       ),
     );
@@ -605,6 +728,7 @@ class _RunStatsScreenState extends State<RunStatsScreen> {
           _paceTrend(context),
           _cadenceTrend(context),
           _strideTrend(context),
+          _vo2maxTrend(context),
           _hrVsPace(context),
         ],
       ),
