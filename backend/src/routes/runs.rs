@@ -414,21 +414,40 @@ fn extract_daily_health(db_path: &std::path::Path) -> Vec<GbHealthRow> {
         if !hr_accum.is_empty() { break; } // use first available table
     }
 
-    // ── HRV: HUAMI_EXTENDED_ACTIVITY_SAMPLE.HRV_SLEEP ────────────────────────
+    // ── HRV: try Zepp OS dedicated table first, fall back to Huami extended ──
     let mut hrv_accum: std::collections::HashMap<String, (f64, f64)> =
         std::collections::HashMap::default();
-    if let Ok(mut stmt) = conn.prepare(
-        "SELECT DATE(TIMESTAMP, 'unixepoch'), HRV_SLEEP \
-         FROM HUAMI_EXTENDED_ACTIVITY_SAMPLE WHERE HRV_SLEEP > 0",
-    ) && let Ok(rows) = stmt.query_map([], |r| {
-            Ok((r.get::<_, Option<String>>(0)?, r.get::<_, f64>(1)?))
-        })
-    {
-        for row in rows.flatten() {
-            let (Some(date), hrv) = row else { continue };
-            let e = hrv_accum.entry(date).or_insert((0.0, 0.0));
-            e.0 += hrv;
-            e.1 += 1.0;
+
+    // Zepp OS 2/3 (Amazfit Cheetah Pro, GTR 4, GTS 4, etc.) stores nightly HRV
+    // in a dedicated table. Try each known variant.
+    let hrv_queries: &[(&str, &str)] = &[
+        // table, column
+        ("ZEPP_OS_HRV_SAMPLE", "RMSSD"),
+        ("ZEPP_OS_HRV_SAMPLE", "HRV"),
+        ("ZEPP_OS_HRV_SAMPLE", "HRV_VALUE"),
+        // Older Huami / Mi Band fallback
+        ("HUAMI_EXTENDED_ACTIVITY_SAMPLE", "HRV_SLEEP"),
+    ];
+    'hrv: for (table, col) in hrv_queries {
+        // Try unix-second timestamps
+        for ts_expr in &[
+            "DATE(TIMESTAMP, 'unixepoch')",
+            "DATE(TIMESTAMP/1000, 'unixepoch')",
+        ] {
+            let sql = format!(
+                "SELECT {ts_expr}, {col} FROM {table} WHERE {col} > 0"
+            );
+            let Ok(mut stmt) = conn.prepare(&sql) else { continue };
+            let Ok(rows) = stmt.query_map([], |r| {
+                Ok((r.get::<_, Option<String>>(0)?, r.get::<_, f64>(1)?))
+            }) else { continue };
+            for row in rows.flatten() {
+                let (Some(date), hrv) = row else { continue };
+                let e = hrv_accum.entry(date).or_insert((0.0, 0.0));
+                e.0 += hrv;
+                e.1 += 1.0;
+            }
+            if !hrv_accum.is_empty() { break 'hrv; }
         }
     }
 
