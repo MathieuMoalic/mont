@@ -160,6 +160,40 @@ pub async fn add_set(
 }
 
 /// # Errors
+/// Returns `NOT_FOUND` if the workout doesn't exist.
+pub async fn delete_workout(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> AppResult<StatusCode> {
+    let result = sqlx::query("DELETE FROM workouts WHERE id = ?")
+        .bind(id)
+        .execute(&state.pool)
+        .await?;
+    if result.rows_affected() == 0 {
+        return Err(StatusCode::NOT_FOUND.into());
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// # Errors
+/// Returns `NOT_FOUND` if the workout doesn't exist or is still active.
+pub async fn restart_workout(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> AppResult<StatusCode> {
+    let result = sqlx::query(
+        "UPDATE workouts SET finished_at = NULL WHERE id = ? AND finished_at IS NOT NULL",
+    )
+    .bind(id)
+    .execute(&state.pool)
+    .await?;
+    if result.rows_affected() == 0 {
+        return Err(StatusCode::NOT_FOUND.into());
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// # Errors
 /// Returns `NOT_FOUND` if the set doesn't exist in that workout.
 pub async fn delete_set(
     State(state): State<AppState>,

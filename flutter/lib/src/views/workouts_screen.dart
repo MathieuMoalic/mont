@@ -85,6 +85,18 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
     return '${d.day}/${d.month}/${d.year}, $time';
   }
 
+  Future<void> _deleteWorkout(int id) async {
+    try {
+      await api.deleteWorkout(id);
+      _load();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.toString())));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -151,7 +163,32 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
         itemCount: _workouts!.length,
         itemBuilder: (ctx, i) {
           final w = _workouts![i];
-          return ListTile(
+          return Dismissible(
+            key: ValueKey(w.id),
+            direction: DismissDirection.endToStart,
+            background: Container(
+              alignment: Alignment.centerRight,
+              padding: const EdgeInsets.only(right: 20),
+              color: Theme.of(context).colorScheme.error,
+              child: const Icon(Icons.delete_outline, color: Colors.white),
+            ),
+            confirmDismiss: (_) => showDialog<bool>(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                title: const Text('Delete workout?'),
+                content: const Text('This cannot be undone.'),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      child: const Text('Cancel')),
+                  FilledButton(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      child: const Text('Delete')),
+                ],
+              ),
+            ),
+            onDismissed: (_) => _deleteWorkout(w.id),
+            child: ListTile(
             leading: CircleAvatar(
               child: Icon(w.isActive ? Icons.fitness_center : Icons.check),
             ),
@@ -168,6 +205,7 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
               );
               _load();
             },
+          ),
           );
         },
       ),

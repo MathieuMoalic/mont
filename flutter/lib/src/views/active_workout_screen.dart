@@ -193,6 +193,18 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     }
   }
 
+  Future<void> _restartWorkout() async {
+    try {
+      await api.restartWorkout(widget.workoutId);
+      _load();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.toString())));
+      }
+    }
+  }
+
   Future<void> _deleteSet(int setId) async {
     try {
       await api.deleteSet(workoutId: widget.workoutId, setId: setId);
@@ -230,6 +242,14 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
               child: FilledButton(
                 onPressed: _finishWorkout,
                 child: const Text('Finish'),
+              ),
+            ),
+          if (!isActive && _workout != null)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: FilledButton.tonal(
+                onPressed: _restartWorkout,
+                child: const Text('Restart'),
               ),
             ),
         ],
