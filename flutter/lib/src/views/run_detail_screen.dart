@@ -96,6 +96,8 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
           if (run.elevationGainM != null)
             _statCard('Elevation', '+${run.elevationGainM!.round()} m'),
           if (run.avgHr != null) _statCard('Avg HR', '${run.avgHr} bpm'),
+          if (run.avgCadence != null) _statCard('Avg Cadence', '${run.avgCadence} spm'),
+          if (run.avgStrideM != null) _statCard('Avg Stride', '${run.avgStrideM!.toStringAsFixed(2)} m'),
         ],
       ),
     );
@@ -244,6 +246,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                       if (_hasPace(run)) _paceChart(context, run),
                       if (_hasEle(run)) _eleChart(context, run),
                       if (_hasCad(run)) _cadChart(context, run),
+                      if (_hasStride(run)) _strideChart(context, run),
                       _lapSplitsTable(context, run),
                       const SizedBox(height: 16),
                     ],
@@ -266,6 +269,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
               if (_hasPace(run)) _paceChart(context, run),
               if (_hasEle(run)) _eleChart(context, run),
               if (_hasCad(run)) _cadChart(context, run),
+              if (_hasStride(run)) _strideChart(context, run),
               _lapSplitsTable(context, run),
               const SizedBox(height: 16),
             ],
@@ -283,6 +287,9 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
       run.route.any((p) => p.ele != null);
   static bool _hasCad(RunDetail run) =>
       run.route.any((p) => p.cad != null);
+  static bool _hasStride(RunDetail run) =>
+      run.route.length >= 2 &&
+      run.route.any((p) => p.cad != null && p.t != null);
 
   // Cumulative distance in km for each point in the route
   static List<double> _cumKm(List<RunPoint> pts) {
@@ -374,6 +381,34 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
       color: Colors.orange,
       spots: _smooth(spots, _smoothing),
       leftLabel: (v) => v.round().toString(),
+      bottomLabel: _fmtKm,
+    );
+  }
+
+  Widget _strideChart(BuildContext context, RunDetail run) {
+    final pts = run.route;
+    final allKm = _cumKm(pts);
+    final spots = <FlSpot>[];
+    for (int i = 1; i < pts.length; i++) {
+      final ca = pts[i].cad;
+      final ta = pts[i - 1].t;
+      final tb = pts[i].t;
+      if (ca == null || ca == 0 || ta == null || tb == null) continue;
+      final dt = (tb - ta).toDouble();
+      if (dt <= 0) continue;
+      final dm = _haversine(
+          pts[i - 1].lat, pts[i - 1].lon, pts[i].lat, pts[i].lon);
+      if (dm < 0.1) continue;
+      final stride = (dm / dt) * 120.0 / ca;
+      if (stride < 0.5 || stride > 3.5) continue;
+      spots.add(FlSpot(allKm[i], stride));
+    }
+    if (spots.isEmpty) return const SizedBox.shrink();
+    return _chartCard(
+      title: 'Stride length (m)',
+      color: Colors.purple,
+      spots: _smooth(spots, _smoothing),
+      leftLabel: (v) => v.toStringAsFixed(2),
       bottomLabel: _fmtKm,
     );
   }
@@ -512,6 +547,8 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
 
     final hasHr = splits.any((s) => s.avgHr != null);
     final hasEle = splits.any((s) => s.elevationDelta != null);
+    final hasCad = splits.any((s) => s.avgCadence != null);
+    final hasStride = splits.any((s) => s.avgStrideM != null);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
@@ -525,11 +562,13 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
               const SizedBox(height: 8),
               Table(
-                columnWidths: {
-                  0: const FlexColumnWidth(1),
-                  1: const FlexColumnWidth(2),
-                  if (hasHr) 2: const FlexColumnWidth(2),
-                  if (hasEle) (hasHr ? 3 : 2): const FlexColumnWidth(2),
+                columnWidths: const {
+                  0: FlexColumnWidth(1),
+                  1: FlexColumnWidth(2),
+                  2: FlexColumnWidth(2),
+                  3: FlexColumnWidth(2),
+                  4: FlexColumnWidth(2),
+                  5: FlexColumnWidth(2),
                 },
                 children: [
                   TableRow(
@@ -541,8 +580,10 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                     children: [
                       _th('Km'),
                       _th('Pace'),
-                      if (hasHr) _th('Avg HR'),
+                      if (hasHr) _th('HR'),
                       if (hasEle) _th('Elev.'),
+                      if (hasCad) _th('Cad.'),
+                      if (hasStride) _th('Stride'),
                     ],
                   ),
                   ...splits.map((s) => TableRow(
@@ -557,6 +598,10 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                             _td(s.elevationDelta != null
                                 ? '${s.elevationDelta! >= 0 ? '+' : ''}${s.elevationDelta!.round()} m'
                                 : '—'),
+                          if (hasCad)
+                            _td(s.avgCadence != null ? '${s.avgCadence!.round()} spm' : '—'),
+                          if (hasStride)
+                            _td(s.avgStrideM != null ? '${s.avgStrideM!.toStringAsFixed(2)} m' : '—'),
                         ],
                       )),
                 ],
