@@ -814,14 +814,28 @@ pub async fn patch_ble_route(
         None
     };
 
+    // Fetch weather using first route point + run start time.
+    let weather = if let Some(first) = body.route.first()
+        && let Ok(ts) = parse_timestamp(&body.started_at)
+    {
+        crate::weather::fetch_weather(&state.http, first.lat, first.lon, ts).await
+    } else {
+        None
+    };
+
     let rows = sqlx::query(
-        "UPDATE runs SET route_json = ?, elevation_gain_m = ?, avg_cadence = ?, avg_stride_m = ? \
+        "UPDATE runs SET route_json = ?, elevation_gain_m = ?, avg_cadence = ?, avg_stride_m = ?, \
+         weather_temp_c = ?, weather_wind_kph = ?, weather_precip_mm = ?, weather_code = ? \
          WHERE started_at = ?",
     )
     .bind(&route_json)
     .bind(elevation_gain_m)
     .bind(body.avg_cadence)
     .bind(body.avg_stride_m)
+    .bind(weather.as_ref().map(|w| w.temp_c))
+    .bind(weather.as_ref().map(|w| w.wind_kph))
+    .bind(weather.as_ref().map(|w| w.precip_mm))
+    .bind(weather.as_ref().map(|w| w.code))
     .bind(&body.started_at)
     .execute(&state.pool)
     .await?
