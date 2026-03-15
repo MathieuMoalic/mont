@@ -449,9 +449,12 @@ class WatchSyncService {
         }
 
         // Advance "since" past the END of this workout so the next fetch
-        // request returns the following workout.
-        final next = summary.startTime
-            .add(Duration(seconds: summary.durationSeconds + 1));
+        // request returns the following workout. Use at least 1 h to guard
+        // against a zero/missing duration causing an infinite loop.
+        final advanceSecs = summary.durationSeconds > 60
+            ? summary.durationSeconds + 1
+            : 3600;
+        final next = summary.startTime.add(Duration(seconds: advanceSecs));
         sinceYear  = next.year;
         sinceMonth = next.month;
         sinceDay   = next.day;
