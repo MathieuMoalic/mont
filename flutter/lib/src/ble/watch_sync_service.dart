@@ -330,12 +330,7 @@ class WatchSyncService {
 
     // Fetch all workouts in a loop. Each iteration gets the oldest remaining
     // workout. After ACK, re-request from (lastStart + 1 s) to advance.
-    var sinceYear = 2000;
-    var sinceMonth = 1;
-    var sinceDay = 1;
-    var sinceHour = 0;
-    var sinceMin = 0;
-    var sinceSec = 0;
+    var since = DateTime.utc(2000);
 
     while (true) {
       if (_cancelled) return;
@@ -343,8 +338,8 @@ class WatchSyncService {
       // ── 1. Request next workout ───────────────────────────────────────────
       await send(buildSportsFetchRequest(
         seq,
-        sinceYear: sinceYear, sinceMonth: sinceMonth, sinceDay: sinceDay,
-        sinceHour: sinceHour, sinceMin: sinceMin, sinceSec: sinceSec,
+        sinceYear: since.year, sinceMonth: since.month, sinceDay: since.day,
+        sinceHour: since.hour, sinceMin: since.minute, sinceSec: since.second,
       ));
       final rawResp = await receiveResponse();
       print('[BLE] RX: ${hex(rawResp)}');
@@ -411,24 +406,16 @@ class WatchSyncService {
 
       final summary = parseSportsSummary(rawDataChunks);
       if (summary == null) {
-        // Parsing failed — dump hex for diagnosis, then advance past this
-        // workout using the timestamp the watch reported in the fetch response.
+        // Parsing failed — dump hex for diagnosis, then skip forward.
         final assembled = rawDataChunks
             .where((c) => c.length >= 2)
             .expand((c) => c.skip(1))
             .toList();
         print('[BLE] Parse failed. Raw assembled (${assembled.length} B): '
             '${assembled.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}');
-        // Fall back: advance 24 h past the reported workout timestamp so we
-        // don't loop forever on an unparseable workout.
-        final fallback = (fetchResp.sinceTimestamp ?? DateTime.now().toUtc())
-            .add(const Duration(hours: 24));
-        sinceYear  = fallback.year;
-        sinceMonth = fallback.month;
-        sinceDay   = fallback.day;
-        sinceHour  = fallback.hour;
-        sinceMin   = fallback.minute;
-        sinceSec   = fallback.second;
+        // Advance 24h past the current since (NOT the workout timestamp) to
+        // guarantee forward progress even if the same parse failure repeats.
+        since = since.add(const Duration(hours: 24));
       } else {
         print('[BLE] sport_type=${summary.sportType} start=${summary.startTime} '
             'dur=${summary.durationSeconds}s dist=${summary.distanceMeters}m '
@@ -448,19 +435,16 @@ class WatchSyncService {
           print('[BLE] Skipping non-outdoor-run (sport_type=${summary.sportType})');
         }
 
-        // Advance "since" past the END of this workout so the next fetch
-        // request returns the following workout. Use at least 1 h to guard
-        // against a zero/missing duration causing an infinite loop.
+        // Advance "since" past the END of this workout. Always advance from
+        // whichever is later: the computed end time OR current since + 1 h.
+        // This guarantees forward progress even when durationSeconds == 0.
         final advanceSecs = summary.durationSeconds > 60
             ? summary.durationSeconds + 1
             : 3600;
-        final next = summary.startTime.add(Duration(seconds: advanceSecs));
-        sinceYear  = next.year;
-        sinceMonth = next.month;
-        sinceDay   = next.day;
-        sinceHour  = next.hour;
-        sinceMin   = next.minute;
-        sinceSec   = next.second;
+        final fromSummary = summary.startTime.add(Duration(seconds: advanceSecs));
+        final fromSince = since.add(const Duration(hours: 1));
+        since = fromSummary.isAfter(fromSince) ? fromSummary : fromSince;
+        print('[BLE] Next since: $since');
       }
     }
 
