@@ -10,12 +10,19 @@
 //   field 2  (message) : start info
 //     field 1 (varint) : start_timestamp (Unix seconds, UTC)
 //     field 3 (varint) : sport_type (8 = outdoor run on Cheetah Pro)
-//     field 13(varint) : duration_minutes
+//     field 13(varint) : duration_minutes (rounded, use field7 for accuracy)
+//   field 7  (message) : accurate duration
+//     field 1 (varint) : moving_duration_seconds
+//     field 2 (varint) : total_duration_seconds
+//   field 11 (message) : speed / distance
+//     field 1 (float)  : avg_speed (m/s)
+//     field 2 (float)  : max_speed (m/s)
+//     field 4 (varint) : total_distance (meters)
 //   field 19 (message) : heart-rate stats
 //     field 1 (varint) : avg_hr
 //     field 2 (varint) : max_hr
-//   field 40 (message) : distance / step data
-//     field 3 (varint) : total_distance in 0.1 m units
+//   field 40 (message) : totals (used as fallback for non-GPS runs)
+//     field 3 (varint) : total_distance in 0.1 m units (non-GPS only)
 
 import 'dart:typed_data';
 
@@ -75,17 +82,40 @@ SportsSummary? parseSportsSummary(List<List<int>> chunks) {
   if (tsRaw == null) return null;
   final startTime = DateTime.fromMillisecondsSinceEpoch(tsRaw * 1000, isUtc: true);
 
-  // duration in minutes → seconds
+  // duration in minutes (f13) — used as fallback if field7 absent
   final durationMin = startInfo[13]?.firstOrNull ?? 0;
-  final durationSeconds = durationMin * 60;
 
-  // field 40: totals sub-message — field 3 = total distance in 0.1 m units
+  // field 7: accurate duration in seconds (f1=moving, f2=total)
+  // Falls back to f13*60 if not present (treadmill / older firmware).
+  final field7Bytes = top[7]?.firstOrNull;
+  int durationSeconds;
+  if (field7Bytes != null) {
+    final f7 = _decodeMessage(Uint8List.fromList(field7Bytes), 0, field7Bytes.length);
+    final secs = f7[1]?.firstOrNull;
+    durationSeconds = (secs != null && secs > 0) ? secs : durationMin * 60;
+  } else {
+    durationSeconds = durationMin * 60;
+  }
+
+  // field 11: speed/distance sub-message
+  //   f1 = avg speed (float32, m/s), f2 = max speed (float32, m/s)
+  //   f3 = training score, f4 = total distance (int, meters)
   double distanceMeters = 0;
-  final field40Bytes = top[40]?.firstOrNull;
-  if (field40Bytes != null) {
-    final totals = _decodeMessage(Uint8List.fromList(field40Bytes), 0, field40Bytes.length);
-    final distRaw = totals[3]?.firstOrNull ?? 0;
-    distanceMeters = distRaw * 0.1;
+  final field11Bytes = top[11]?.firstOrNull;
+  if (field11Bytes != null) {
+    final f11 = _decodeMessage(Uint8List.fromList(field11Bytes), 0, field11Bytes.length);
+    final distRaw = f11[4]?.firstOrNull;
+    if (distRaw != null && distRaw > 0) distanceMeters = distRaw.toDouble();
+  }
+
+  // Fall back to field 40 for non-GPS runs (treadmill, indoor).
+  if (distanceMeters == 0) {
+    final field40Bytes = top[40]?.firstOrNull;
+    if (field40Bytes != null) {
+      final totals = _decodeMessage(Uint8List.fromList(field40Bytes), 0, field40Bytes.length);
+      final distRaw = totals[3]?.firstOrNull ?? 0;
+      distanceMeters = distRaw * 0.1;
+    }
   }
 
   // field 19: HR sub-message
@@ -147,7 +177,11 @@ Map<int, List<dynamic>> _decodeMessage(Uint8List data, int start, int len) {
         pos += msgLen;
       case 1: // 64-bit — skip
         pos += 8;
-      case 5: // 32-bit — skip
+      case 5: // 32-bit (float) — record as int
+        if (pos + 4 <= end) {
+          final v = (data[pos]) | (data[pos+1] << 8) | (data[pos+2] << 16) | (data[pos+3] << 24);
+          add(fieldNumber, v);
+        }
         pos += 4;
       default:
         // Unknown wire type — stop parsing this message.
