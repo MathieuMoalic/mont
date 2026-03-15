@@ -96,10 +96,10 @@ class FetchResponse {
 ///
 /// Returns null on unrecognised payload.
 FetchResponse? parseFetchResponse(Uint8List payload) {
-  // Expected: [0x10, 0x01, status, count, ???, ???, ???, year_lo, year_hi, month, day, hour, min, sec, 0x04, 0x00]
-  if (payload.length < 4) return null;
+  if (payload.length < 5) return null;
   if (payload[0] != 0x10 || payload[1] != 0x01) return null;
-  final count = payload[3];
+  // bytes 3-4: LE uint16 = byte count of incoming data (0 = nothing to send)
+  final count = ByteData.sublistView(payload).getUint16(3, Endian.little);
   DateTime? ts;
   if (payload.length >= 14) {
     final bd = ByteData.sublistView(payload);
