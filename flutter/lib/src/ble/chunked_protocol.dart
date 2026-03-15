@@ -1,14 +1,22 @@
-// Amazfit / ZeppOS (Huami 2021) chunked BLE protocol constants and codec.
+// Amazfit / ZeppOS (Huami 2021) BLE protocol constants and codec.
+//
+// Verified from Gadgetbridge logcat while syncing Amazfit Cheetah Pro (ZeppOS 3.x).
 //
 // BLE service:       0000fee0-0000-1000-8000-00805f9b34fb
-// Chunked write:     00000005-0000-3512-2118-0009af100700  (write without response)
-// Chunked notify:    00000004-0000-3512-2118-0009af100700  (notify)
-// Auth char:         00000009-0000-3512-2118-0009af100700
+// Command write:     00000016-0000-3512-2118-0009af100700  (writeWithoutResponse)
+// Command notify:    00000017-0000-3512-2118-0009af100700  (notify — command responses)
+// Data stream:       00000005-0000-3512-2118-0009af100700  (notify — raw activity bytes)
+// Auth char:         00000001-0000-3512-2118-0009af100700
 //
-// Packet format (little-endian):
-//   [endpoint_lo, endpoint_hi, seq_lo, seq_hi, flags, len_lo, len_hi, payload…]
-//
-// flags: 0x00 = continuation, 0x06 = first (with full length), 0x04 = last
+// Packet format on 0x0016/0x0017 (10-byte header, little-endian):
+//   byte  0    : 0x03 (type, always)
+//   byte  1    : 0x07 (flags for request) / 0x03 (for response)
+//   byte  2    : 0x00 (encryption = none)
+//   byte  3    : seq  (uint8, per-connection counter, wraps at 0xff)
+//   bytes 4–5  : payload_len (uint16 LE)
+//   bytes 6–7  : 0x00 0x00 (reserved)
+//   bytes 8–9  : endpoint (uint16 LE)
+//   bytes 10+  : payload
 
 import 'dart:typed_data';
 
@@ -16,112 +24,54 @@ class BleUuids {
   BleUuids._();
 
   static const String service = '0000fee0-0000-1000-8000-00805f9b34fb';
-  static const String chunkedWrite = '00000005-0000-3512-2118-0009af100700';
-  static const String chunkedNotify = '00000004-0000-3512-2118-0009af100700';
-  static const String auth = '00000009-0000-3512-2118-0009af100700';
+  // Chunked command channel — verified from Gadgetbridge logcat (0x0016/0x0017).
+  static const String chunkedWrite = '00000016-0000-3512-2118-0009af100700';
+  static const String chunkedNotify = '00000017-0000-3512-2118-0009af100700';
+  // Raw actigraphy / workout data stream.
+  static const String dataStream = '00000005-0000-3512-2118-0009af100700';
+  static const String auth = '00000001-0000-3512-2118-0009af100700';
 }
 
 class BleEndpoints {
   BleEndpoints._();
 
-  static const int authEndpoint = 0x0082;
-  static const int fileTransfer = 0x000d;
-  static const int activityList = 0x0019;
+  // Endpoint 0x004B handles all data fetch operations (ACTIVITY, SPORTS_SUMMARIES,
+  // STRESS, etc.). The data type is specified in the payload, not the endpoint.
+  static const int huamiData = 0x004B;
 }
 
-/// Maximum payload bytes that fit in one BLE MTU packet (MTU 23 → 20 usable,
-/// minus 7 header bytes = 13, but in practice the watch negotiates MTU 512).
-/// We cap chunks at 509 bytes (512 – 3 ATT overhead) to be safe.
-const int kMaxChunkPayload = 509;
-
-const int _flagFirst = 0x06;
-const int _flagMiddle = 0x00;
-const int _flagLast = 0x04;
-
-/// Split [payload] into chunked BLE packets for [endpoint] starting at [seq].
+/// Encode a single Huami2021 command packet for [endpoint] with [seq] counter.
 ///
-/// Returns a list of raw byte arrays ready to write to [BleUuids.chunkedWrite].
-List<Uint8List> encodeChunked(int endpoint, int seq, Uint8List payload) {
-  final List<Uint8List> packets = [];
-  final int total = payload.length;
-  int offset = 0;
-  bool first = true;
-
-  while (offset < total || first) {
-    final int remaining = total - offset;
-    final int chunkLen = remaining > kMaxChunkPayload ? kMaxChunkPayload : remaining;
-    final bool isLast = (offset + chunkLen) >= total;
-
-    int flag;
-    if (first && isLast) {
-      flag = _flagFirst | _flagLast; // 0x07 – only packet
-    } else if (first) {
-      flag = _flagFirst; // 0x06
-    } else if (isLast) {
-      flag = _flagLast; // 0x04
-    } else {
-      flag = _flagMiddle; // 0x00
-    }
-
-    final ByteData header = ByteData(7);
-    header.setUint16(0, endpoint, Endian.little);
-    header.setUint16(2, seq & 0xffff, Endian.little);
-    header.setUint8(4, flag);
-    header.setUint16(5, first ? total : chunkLen, Endian.little);
-
-    final Uint8List chunk = payload.sublist(offset, offset + chunkLen);
-    final Uint8List packet = Uint8List(7 + chunkLen);
-    packet.setRange(0, 7, header.buffer.asUint8List());
-    packet.setRange(7, 7 + chunkLen, chunk);
-    packets.add(packet);
-
-    offset += chunkLen;
-    first = false;
-  }
-
-  return packets;
+/// All our requests fit in a single BLE packet (small payloads), so no
+/// multi-packet fragmentation is needed.
+Uint8List encodeHuami2021(int endpoint, int seq, Uint8List payload) {
+  final header = ByteData(10);
+  header.setUint8(0, 0x03);
+  header.setUint8(1, 0x07); // request flag
+  header.setUint8(2, 0x00); // no encryption
+  header.setUint8(3, seq & 0xff);
+  header.setUint16(4, payload.length, Endian.little);
+  header.setUint16(6, 0, Endian.little);
+  header.setUint16(8, endpoint, Endian.little);
+  final result = Uint8List(10 + payload.length);
+  result.setRange(0, 10, header.buffer.asUint8List());
+  result.setRange(10, result.length, payload);
+  return result;
 }
 
-/// Reassemble chunked BLE notification packets into the original payload.
+/// Decode a Huami2021 response packet from characteristic 0x0017.
 ///
-/// Accumulate raw notification bytes with [ChunkedReader.feed]; call
-/// [ChunkedReader.take] when [ChunkedReader.isComplete] is true.
-class ChunkedReader {
-  int? _endpoint;
-  int _expectedLen = 0;
-  final List<int> _buf = [];
-
-  bool get isComplete => _buf.length >= _expectedLen && _expectedLen > 0;
-
-  int? get endpoint => _endpoint;
-
-  /// Feed a raw notification packet. Returns true when a complete message
-  /// has been assembled.
-  bool feed(Uint8List packet) {
-    if (packet.length < 7) return false;
-    final ByteData bd = ByteData.sublistView(packet);
-    final int ep = bd.getUint16(0, Endian.little);
-    final int flag = bd.getUint8(4);
-    final int lenField = bd.getUint16(5, Endian.little);
-    final Uint8List payload = packet.sublist(7);
-
-    final bool isFirst = (flag & 0x02) != 0; // bit 1 set → first
-    if (isFirst) {
-      _endpoint = ep;
-      _expectedLen = lenField;
-      _buf.clear();
-    }
-
-    _buf.addAll(payload);
-    return isComplete;
+/// Returns `(endpoint, payload)`.
+(int, Uint8List) decodeHuami2021(Uint8List packet) {
+  if (packet.length < 10) {
+    throw FormatException('Huami2021 packet too short: ${packet.length} bytes');
   }
-
-  /// Return the assembled payload and reset the reader.
-  Uint8List take() {
-    final Uint8List result = Uint8List.fromList(_buf.sublist(0, _expectedLen));
-    _buf.clear();
-    _expectedLen = 0;
-    _endpoint = null;
-    return result;
+  final bd = ByteData.sublistView(packet);
+  final payloadLen = bd.getUint16(4, Endian.little);
+  final endpoint = bd.getUint16(8, Endian.little);
+  final end = 10 + payloadLen;
+  if (end > packet.length) {
+    throw FormatException('Huami2021 payload length $payloadLen exceeds packet size ${packet.length}');
   }
+  return (endpoint, packet.sublist(10, end));
 }
