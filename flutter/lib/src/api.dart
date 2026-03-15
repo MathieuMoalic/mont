@@ -282,15 +282,22 @@ Future<RunSummary> importBleSummary({
 /// Update the GPS route for a run that was previously imported via BLE summary.
 ///
 /// [startedAt] must exactly match the value used in [importBleSummary].
-/// [route] is a list of GPS points as JSON maps (lat, lon, optional ele/hr/t).
+/// [route] is a list of GPS points as JSON maps (lat, lon, optional ele/hr/cad/t).
 Future<void> updateBleRoute({
   required String startedAt,
   required List<Map<String, dynamic>> route,
+  int? avgCadence,
+  double? avgStrideM,
 }) async {
   final res = await http.patch(
     _u('/runs/ble-route'),
     headers: _headers(),
-    body: jsonEncode({'started_at': startedAt, 'route': route}),
+    body: jsonEncode({
+      'started_at': startedAt,
+      'route': route,
+      if (avgCadence != null) 'avg_cadence': avgCadence,
+      if (avgStrideM != null) 'avg_stride_m': avgStrideM,
+    }),
   );
   if (res.statusCode != 204) {
     throw Exception('HTTP ${res.statusCode}: ${res.body}');
