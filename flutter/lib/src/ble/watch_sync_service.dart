@@ -411,7 +411,24 @@ class WatchSyncService {
 
       final summary = parseSportsSummary(rawDataChunks);
       if (summary == null) {
-        print('[BLE] Could not parse protobuf — skipping.');
+        // Parsing failed — dump hex for diagnosis, then advance past this
+        // workout using the timestamp the watch reported in the fetch response.
+        final assembled = rawDataChunks
+            .where((c) => c.length >= 2)
+            .expand((c) => c.skip(1))
+            .toList();
+        print('[BLE] Parse failed. Raw assembled (${assembled.length} B): '
+            '${assembled.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}');
+        // Fall back: advance 24 h past the reported workout timestamp so we
+        // don't loop forever on an unparseable workout.
+        final fallback = (fetchResp.sinceTimestamp ?? DateTime.now().toUtc())
+            .add(const Duration(hours: 24));
+        sinceYear  = fallback.year;
+        sinceMonth = fallback.month;
+        sinceDay   = fallback.day;
+        sinceHour  = fallback.hour;
+        sinceMin   = fallback.minute;
+        sinceSec   = fallback.second;
       } else {
         print('[BLE] sport_type=${summary.sportType} start=${summary.startTime} '
             'dur=${summary.durationSeconds}s dist=${summary.distanceMeters}m '
