@@ -305,6 +305,7 @@ class WatchSyncService {
     void Function(Completer<void>?) setDataWaiter,
   ) async {
     int seq = 0;
+    final sportTypeCounts = <int, int>{};
 
     Future<Uint8List> receiveResponse({Duration timeout = const Duration(seconds: 15)}) async {
       while (true) {
@@ -434,6 +435,7 @@ class WatchSyncService {
         } else {
           print('[BLE] Skipping non-outdoor-run (sport_type=${summary.sportType})');
         }
+        sportTypeCounts[summary.sportType] = (sportTypeCounts[summary.sportType] ?? 0) + 1;
 
         // Advance "since" past the END of this workout. Always advance from
         // whichever is later: the computed end time OR current since + 1 h.
@@ -448,10 +450,13 @@ class WatchSyncService {
       }
     }
 
+    final typeSummary = sportTypeCounts.entries
+        .map((e) => 'type${e.key}×${e.value}')
+        .join(', ');
     if (_syncedCount == 0) {
-      _notify(SyncStatus.done, 'No outdoor runs found on watch.');
+      _notify(SyncStatus.done, 'No outdoor runs found.\nSport types seen: $typeSummary');
     } else {
-      _notify(SyncStatus.done, 'Synced $_syncedCount outdoor run(s).');
+      _notify(SyncStatus.done, 'Synced $_syncedCount outdoor run(s).\nAll types: $typeSummary');
     }
   }
 }
