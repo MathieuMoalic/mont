@@ -11,11 +11,11 @@ import 'dart:typed_data';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+// ignore: unused_import
 import '../api.dart' as api;
 import 'activity_list.dart';
 import 'auth.dart';
 import 'chunked_protocol.dart';
-import 'file_transfer.dart';
 import 'settings.dart';
 
 enum SyncStatus { idle, requestingPermissions, scanning, connecting, authenticating, syncing, done, error }
@@ -63,7 +63,8 @@ class WatchSyncService {
 
     try {
       await _sync();
-    } catch (e) {
+    } catch (e, st) {
+      print('[BLE] sync error: $e\n$st');
       _lastError = e.toString();
       _notify(SyncStatus.error, 'Error: $e');
     }
@@ -116,36 +117,43 @@ class WatchSyncService {
   }
 
   Future<BluetoothDevice> _findDevice() async {
-    // Try reconnecting to previously paired device first.
+    // Try reconnecting to previously saved device first.
     final savedId = await loadDeviceRemoteId();
     if (savedId != null) {
       final connected = FlutterBluePlus.connectedDevices;
       for (final d in connected) {
         if (d.remoteId.str == savedId) return d;
       }
-      // Not currently connected but we know the ID — return a handle directly.
       return BluetoothDevice(remoteId: DeviceIdentifier(savedId));
     }
 
-    // Scan for the watch by service UUID.
+    // Check already bonded (OS-paired) devices — fastest path.
+    final bonded = await FlutterBluePlus.bondedDevices;
+    for (final d in bonded) {
+      final name = d.platformName.toLowerCase();
+      if (name.contains('amazfit') || name.contains('cheetah')) {
+        await saveDeviceRemoteId(d.remoteId.str);
+        return d;
+      }
+    }
+
+    // Fall back to scanning.
     _notify(SyncStatus.scanning, 'Scanning for Amazfit Cheetah Pro…');
     final Completer<BluetoothDevice> found = Completer();
     StreamSubscription<List<ScanResult>>? sub;
 
     sub = FlutterBluePlus.onScanResults.listen((results) {
       for (final r in results) {
-        if (r.advertisementData.serviceUuids
-                .any((u) => u.str.toLowerCase() == BleUuids.service) ||
-            r.advertisementData.advName.toLowerCase().contains('cheetah')) {
+        final name = r.advertisementData.advName.toLowerCase();
+        final serviceMatch = r.advertisementData.serviceUuids
+            .any((u) => u.str.toLowerCase() == BleUuids.service);
+        if (serviceMatch || name.contains('amazfit') || name.contains('cheetah')) {
           if (!found.isCompleted) found.complete(r.device);
         }
       }
     });
 
-    await FlutterBluePlus.startScan(
-      withServices: [Guid(BleUuids.service)],
-      timeout: const Duration(seconds: 20),
-    );
+    await FlutterBluePlus.startScan(timeout: const Duration(seconds: 20));
 
     try {
       final device = await found.future.timeout(const Duration(seconds: 22));
@@ -162,117 +170,231 @@ class WatchSyncService {
     // ── Discover services ────────────────────────────────────────────────────
     final services = await device.discoverServices();
     BluetoothCharacteristic? authChar;
-    BluetoothCharacteristic? writeChar;
-    BluetoothCharacteristic? notifyChar;
+    BluetoothCharacteristic? writeChar;   // 0x0016
+    BluetoothCharacteristic? notifyChar;  // 0x0017
+    BluetoothCharacteristic? dataChar;    // 0x0005 (raw data stream)
 
     for (final s in services) {
-      if (s.uuid.str.toLowerCase() != BleUuids.service) continue;
       for (final c in s.characteristics) {
         final uuid = c.uuid.str.toLowerCase();
         if (uuid == BleUuids.auth) authChar = c;
         if (uuid == BleUuids.chunkedWrite) writeChar = c;
         if (uuid == BleUuids.chunkedNotify) notifyChar = c;
+        if (uuid == BleUuids.dataStream) dataChar = c;
       }
     }
 
     if (authChar == null || writeChar == null || notifyChar == null) {
-      throw Exception('Required BLE characteristics not found. Is this the right device?');
+      final found = services.map((s) => s.uuid.str).join(', ');
+      throw Exception('Required BLE characteristics not found.\nServices: $found\nauthChar=$authChar writeChar=$writeChar notifyChar=$notifyChar');
     }
 
-    // ── Subscribe to notifications ───────────────────────────────────────────
-    await notifyChar.setNotifyValue(true);
+    // Subscribe to auth notifications.
     await authChar.setNotifyValue(true);
+    // Subscribe to command responses (0x0017).
+    await notifyChar.setNotifyValue(true);
+    // Subscribe to raw data stream (0x0005) if present.
+    if (dataChar != null) {
+      await dataChar.setNotifyValue(true);
+    }
+
+    // Start buffering 0x0017 events immediately so we don't miss responses.
+    final notifyEvents = <List<int>>[];
+    Completer<void>? notifyWaiter;
+    final notifySub = notifyChar.onValueReceived.listen((v) {
+      notifyEvents.add(v);
+      notifyWaiter?.complete();
+      notifyWaiter = null;
+    });
+
+    // Buffer raw data stream events (0x0005).
+    final dataEvents = <List<int>>[];
+    Completer<void>? dataWaiter;
+    StreamSubscription<List<int>>? dataSub;
+    if (dataChar != null) {
+      dataSub = dataChar.onValueReceived.listen((v) {
+        dataEvents.add(v);
+        dataWaiter?.complete();
+        dataWaiter = null;
+      });
+    }
 
     // ── Auth handshake ───────────────────────────────────────────────────────
     _notify(SyncStatus.authenticating, 'Authenticating…');
     await _authenticate(authChar, deviceKey);
-    if (_cancelled) return;
+    if (_cancelled) {
+      await notifySub.cancel();
+      await dataSub?.cancel();
+      return;
+    }
 
     // ── Sync activities ──────────────────────────────────────────────────────
     _notify(SyncStatus.syncing, 'Fetching activity list…');
-    await _syncActivities(writeChar, notifyChar);
+    try {
+      await _syncActivities(
+        writeChar,
+        notifyEvents,
+        (w) => notifyWaiter = w,
+        dataEvents,
+        (w) => dataWaiter = w,
+      );
+    } finally {
+      await notifySub.cancel();
+      await dataSub?.cancel();
+    }
   }
 
   Future<void> _authenticate(BluetoothCharacteristic authChar, Uint8List deviceKey) async {
-    // Send challenge request
-    await authChar.write(buildAuthRequest(), withoutResponse: false);
+    // Manual queue so no notification is ever dropped, regardless of timing.
+    final events = <List<int>>[];
+    Completer<void>? waiter;
 
-    // Wait for nonce notification
-    Uint8List? nonce;
-    await for (final value in authChar.onValueReceived.timeout(const Duration(seconds: 10))) {
-      final bytes = Uint8List.fromList(value);
-      nonce = parseAuthNonce(bytes);
-      if (nonce != null) break;
-      if (isAuthSuccess(bytes)) return; // Already authed (some firmwares skip nonce)
+    final sub = authChar.onValueReceived.listen((v) {
+      events.add(v);
+      waiter?.complete();
+      waiter = null;
+    });
+
+    Future<Uint8List> next({Duration timeout = const Duration(seconds: 10)}) async {
+      if (events.isNotEmpty) return Uint8List.fromList(events.removeAt(0));
+      waiter = Completer<void>();
+      await waiter!.future.timeout(timeout, onTimeout: () {
+        throw Exception('Auth timed out waiting for watch response.');
+      });
+      return Uint8List.fromList(events.removeAt(0));
     }
 
-    if (nonce == null) throw Exception('Auth timed out waiting for challenge from watch.');
+    try {
+      await authChar.write(buildAuthRequest(), withoutResponse: false);
 
-    // Send encrypted response
-    final response = buildAuthResponsePayload(nonce, deviceKey);
-    await authChar.write(response, withoutResponse: false);
+      final resp1 = await next();
+      print('[BLE] Auth response bytes: ${resp1.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}');
 
-    // Wait for success
-    await for (final value in authChar.onValueReceived.timeout(const Duration(seconds: 10))) {
-      if (isAuthSuccess(Uint8List.fromList(value))) return;
+      if (isAuthSuccess(resp1)) return;
+
+      // ZeppOS 3.x: watch sends [10 01 03 ...] = "send me the encrypted key".
+      // Older firmware: sends a 16-byte nonce.
+      final Uint8List? nonce = isAuthSendKeyRequest(resp1) ? null : parseAuthNonce(resp1);
+
+      final response = buildAuthResponsePayload(nonce, deviceKey);
+      print('[BLE] Sending auth response: ${response.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}');
+      await authChar.write(response, withoutResponse: false);
+
+      final resp2 = await next();
+      print('[BLE] Auth result bytes: ${resp2.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}');
+
+      if (isAuthSuccess(resp2)) return;
+      if (resp2.length >= 3 && resp2[0] == 0x10 && resp2[2] == 0x02) {
+        throw Exception('Authentication failed — wrong device key.');
+      }
+      throw Exception('Unexpected auth response: ${resp2.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}');
+    } finally {
+      await sub.cancel();
     }
-    throw Exception('Authentication failed. Check that the device key is correct.');
   }
 
   Future<void> _syncActivities(
     BluetoothCharacteristic writeChar,
-    BluetoothCharacteristic notifyChar,
+    List<List<int>> notifyEvents,
+    void Function(Completer<void>?) setNotifyWaiter,
+    List<List<int>> dataEvents,
+    void Function(Completer<void>?) setDataWaiter,
   ) async {
     int seq = 0;
 
-    Future<Uint8List> receiveChunked() async {
-      final reader = ChunkedReader();
-      await for (final value in notifyChar.onValueReceived.timeout(const Duration(seconds: 30))) {
-        if (reader.feed(Uint8List.fromList(value))) return reader.take();
+    Future<Uint8List> receiveResponse({Duration timeout = const Duration(seconds: 15)}) async {
+      while (true) {
+        if (notifyEvents.isNotEmpty) {
+          return Uint8List.fromList(notifyEvents.removeAt(0));
+        }
+        final waiter = Completer<void>();
+        setNotifyWaiter(waiter);
+        await waiter.future.timeout(
+          timeout,
+          onTimeout: () => throw Exception('Timed out waiting for watch response (0x0017).'),
+        );
       }
-      throw Exception('Chunked receive timed out.');
     }
 
-    Future<void> sendChunked(List<Uint8List> packets) async {
-      for (final p in packets) {
-        await writeChar.write(p, withoutResponse: true);
-        await Future<void>.delayed(const Duration(milliseconds: 10));
-      }
-      seq++;
+    Future<void> send(Uint8List packet) async {
+      print('[BLE] TX: ${packet.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}');
+      await writeChar.write(packet, withoutResponse: true);
+      seq = (seq + 1) & 0xff;
     }
 
-    // Request activity list (up to 50 recent activities)
-    await sendChunked(buildActivityListRequest(50, seq));
-    final listPayload = await receiveChunked();
-    final activities = parseActivityListResponse(listPayload);
+    String hex(List<int> b) => b.map((x) => x.toRadixString(16).padLeft(2, '0')).join(' ');
 
-    if (activities.isEmpty) {
-      _notify(SyncStatus.done, 'No new activities found.');
+    // ── 1. Request sports summaries (all workouts since 2000-01-01) ──────────
+    await send(buildSportsFetchRequest(seq, sinceYear: 2000));
+    final rawResp = await receiveResponse();
+    print('[BLE] RX: ${hex(rawResp)}');
+
+    final (int ep, Uint8List payload) = decodeHuami2021(rawResp);
+    print('[BLE] Decoded endpoint=0x${ep.toRadixString(16)} payload=${hex(payload)}');
+
+    final fetchResp = parseFetchResponse(payload);
+    if (fetchResp == null) {
+      throw Exception('Unexpected fetch response: ${hex(payload)}');
+    }
+
+    print('[BLE] Fetch response: count=${fetchResp.count} since=${fetchResp.sinceTimestamp}');
+
+    if (!fetchResp.hasData) {
+      _notify(SyncStatus.done, 'No new workouts on watch.');
       return;
     }
 
-    _notify(SyncStatus.syncing, 'Found ${activities.length} activities. Downloading…');
+    _notify(SyncStatus.syncing, 'Found ${fetchResp.count} workout(s). Downloading…');
 
-    for (int i = 0; i < activities.length; i++) {
-      if (_cancelled) return;
-      final activity = activities[i];
-      _notify(SyncStatus.syncing, 'Downloading activity ${i + 1}/${activities.length}…');
+    // ── 2. Start transfer ────────────────────────────────────────────────────
+    await send(buildStartTransfer(seq));
 
-      // Request FIT file
-      await sendChunked(buildFileRequest(activity.fileId, seq));
-      final fitBytes = await receiveChunked();
-
-      // Upload to backend
-      try {
-        await api.importFit(fitBytes);
-        _syncedCount++;
-      } catch (e) {
-        // Non-fatal: log and continue (e.g. duplicate already imported)
-        _notify(SyncStatus.syncing, 'Skipped activity ${i + 1}: $e');
-        await Future<void>.delayed(const Duration(milliseconds: 200));
+    // ── 3. Receive raw data on 0x0005 ────────────────────────────────────────
+    // Collect all data chunks until the watch sends the transfer-complete
+    // response on 0x0017 ([0x10, 0x02, ...]).
+    final rawDataChunks = <List<int>>[];
+    while (true) {
+      // Drain any buffered data chunks first.
+      while (dataEvents.isNotEmpty) {
+        rawDataChunks.add(dataEvents.removeAt(0));
       }
+      // Check for transfer-complete on 0x0017.
+      if (notifyEvents.isNotEmpty) {
+        final packet = Uint8List.fromList(notifyEvents.removeAt(0));
+        print('[BLE] RX: ${hex(packet)}');
+        if (packet.length >= 11) {
+          final (int ep2, Uint8List p2) = decodeHuami2021(packet);
+          if (ep2 == BleEndpoints.huamiData && p2.isNotEmpty && p2[0] == 0x10 && p2.length >= 2 && p2[1] == 0x02) {
+            print('[BLE] Transfer complete. Total data chunks: ${rawDataChunks.length}');
+            break;
+          }
+        }
+      }
+      // Wait for either more data or transfer-complete.
+      final waiter = Completer<void>();
+      // Notify whenever data or command arrives.
+      setDataWaiter(waiter);
+      setNotifyWaiter(waiter);
+      await waiter.future.timeout(
+        const Duration(seconds: 30),
+        onTimeout: () => throw Exception('Timed out waiting for data transfer.'),
+      );
     }
 
-    _notify(SyncStatus.done, 'Synced $_syncedCount/${activities.length} activities.');
+    // ── 4. Send ACK (keep data on watch for now — safe default) ─────────────
+    await send(buildAckTransfer(seq, deleteFromWatch: false));
+    final ackResp = await receiveResponse();
+    print('[BLE] ACK response: ${hex(ackResp)}');
+
+    // ── 5. Log raw data for analysis (format TBD) ────────────────────────────
+    int totalBytes = 0;
+    for (final chunk in rawDataChunks) {
+      totalBytes += chunk.length;
+      print('[BLE] DATA chunk (${chunk.length}B): ${hex(chunk)}');
+    }
+    print('[BLE] Total raw sports data: $totalBytes bytes in ${rawDataChunks.length} chunks');
+
+    // TODO: parse raw sports summary data and upload to backend.
+    _notify(SyncStatus.done, 'Received ${fetchResp.count} workout(s) (${totalBytes}B). Upload not yet implemented.');
   }
 }

@@ -39,7 +39,7 @@ Future<void> clearBleSettings() async {
 /// Convert a hex string (e.g. "deadbeef...") to bytes.
 /// Throws [FormatException] if the string is not valid hex or not 32 chars (16 bytes).
 List<int> hexToBytes(String hex) {
-  final cleaned = hex.replaceAll(' ', '').toLowerCase();
+  final cleaned = hex.replaceAll(' ', '').toLowerCase().replaceFirst(RegExp(r'^0x'), '');
   if (cleaned.length != 32) {
     throw FormatException('Device key must be 32 hex chars (16 bytes), got ${cleaned.length}');
   }
