@@ -16,6 +16,7 @@ import '../api.dart' as api;
 import 'activity_list.dart';
 import 'auth.dart';
 import 'chunked_protocol.dart';
+import 'health_parser.dart';
 import 'settings.dart';
 import 'sports_parser.dart';
 
@@ -238,6 +239,13 @@ class WatchSyncService {
     _notify(SyncStatus.syncing, 'Fetching activity list…');
     try {
       await _syncActivities(
+        writeChar,
+        notifyEvents,
+        (w) => notifyWaiter = w,
+        dataEvents,
+        (w) => dataWaiter = w,
+      );
+      await _fetchHealthData(
         writeChar,
         notifyEvents,
         (w) => notifyWaiter = w,
@@ -483,9 +491,139 @@ class WatchSyncService {
         .map((e) => 'type${e.key}×${e.value}')
         .join(', ');
     if (_syncedCount == 0) {
-      _notify(SyncStatus.done, 'No outdoor runs found.\nSport types seen: $typeSummary');
+      _notify(SyncStatus.syncing, 'Activities done. No outdoor runs found.\nSport types seen: $typeSummary');
     } else {
-      _notify(SyncStatus.done, 'Synced $_syncedCount outdoor run(s).\nAll types: $typeSummary');
+      _notify(SyncStatus.syncing, 'Activities done. Synced $_syncedCount outdoor run(s).\nAll types: $typeSummary');
+    }
+  }
+
+  /// Fetch ACTIVITY health data (type 0x01) — per-minute step/HR samples.
+  ///
+  /// Aggregates samples into daily [DailyHealthData] and uploads to the backend.
+  Future<void> _fetchHealthData(
+    BluetoothCharacteristic writeChar,
+    List<List<int>> notifyEvents,
+    void Function(Completer<void>?) setNotifyWaiter,
+    List<List<int>> dataEvents,
+    void Function(Completer<void>?) setDataWaiter,
+  ) async {
+    int localSeq = 0x40;
+
+    Future<Uint8List> receiveResponse() async {
+      while (true) {
+        if (notifyEvents.isNotEmpty) {
+          return Uint8List.fromList(notifyEvents.removeAt(0));
+        }
+        final waiter = Completer<void>();
+        setNotifyWaiter(waiter);
+        await waiter.future.timeout(
+          const Duration(seconds: 15),
+          onTimeout: () => throw Exception('Timed out waiting for health response.'),
+        );
+      }
+    }
+
+    Future<void> send(Uint8List packet) async {
+      print('[BLE] Health TX: ${packet.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}');
+      await writeChar.write(packet, withoutResponse: true);
+      localSeq = (localSeq + 1) & 0xff;
+    }
+
+    var since = DateTime.utc(2000);
+    final allDailyData = <String, DailyHealthData>{};
+
+    while (true) {
+      if (_cancelled) break;
+
+      // 1. Request next batch of activity data.
+      await send(buildActivityFetchRequest(localSeq, since));
+      final rawResp = await receiveResponse();
+      final (int _, Uint8List payload) = decodeHuami2021(rawResp);
+      final fetchResp = parseFetchResponse(payload);
+      if (fetchResp == null) {
+        print('[BLE] Health: unexpected fetch response, stopping.');
+        break;
+      }
+
+      if (!fetchResp.hasData) {
+        print('[BLE] Health: no more data since $since');
+        break;
+      }
+
+      final batchStart = (fetchResp.sinceTimestamp ?? since).toUtc();
+      final dateLabel =
+          '${batchStart.year}-${batchStart.month.toString().padLeft(2, '0')}-${batchStart.day.toString().padLeft(2, '0')}';
+      _notify(SyncStatus.syncing, 'Syncing health data from $dateLabel…');
+
+      // 2. Start transfer.
+      await send(buildStartTransfer(localSeq));
+
+      // 3. Collect data chunks until transfer-complete on 0x0017.
+      final chunks = <List<int>>[];
+      while (true) {
+        while (dataEvents.isNotEmpty) {
+          chunks.add(dataEvents.removeAt(0));
+        }
+        if (notifyEvents.isNotEmpty) {
+          final packet = Uint8List.fromList(notifyEvents.removeAt(0));
+          if (packet.length >= 11) {
+            final (int ep2, Uint8List p2) = decodeHuami2021(packet);
+            if (ep2 == BleEndpoints.huamiData &&
+                p2.length >= 2 &&
+                p2[0] == 0x10 &&
+                p2[1] == 0x02) {
+              print('[BLE] Health transfer complete. Chunks: ${chunks.length}');
+              break;
+            }
+          }
+          continue;
+        }
+        final waiter = Completer<void>();
+        setDataWaiter(waiter);
+        setNotifyWaiter(waiter);
+        await waiter.future.timeout(
+          const Duration(seconds: 30),
+          onTimeout: () => throw Exception('Timed out waiting for health data.'),
+        );
+      }
+
+      // 4. ACK — keep data on watch.
+      await send(buildAckTransfer(localSeq, deleteFromWatch: false));
+      await receiveResponse();
+
+      // 5. Parse and accumulate.
+      final dayData = parseActivitySamples(chunks, batchStart);
+      for (final d in dayData) {
+        allDailyData[d.date] = d;
+      }
+
+      // Advance since past the last sample in this batch.
+      final assembledLen =
+          chunks.fold(0, (s, c) => c.length >= 2 ? s + c.length - 1 : s);
+      final sampleCount = assembledLen ~/ 8;
+      print('[BLE] Health: $sampleCount samples from $batchStart, ${dayData.length} day(s)');
+      if (sampleCount == 0) {
+        since = batchStart.add(const Duration(hours: 24));
+      } else {
+        since = batchStart.add(Duration(minutes: sampleCount));
+      }
+    }
+
+    if (allDailyData.isEmpty) {
+      _notify(SyncStatus.done,
+          'Sync complete. $_syncedCount run(s) imported.\nNo health data found.');
+      return;
+    }
+
+    try {
+      await api.importHealthBle(
+          allDailyData.values.map((d) => d.toJson()).toList());
+      _notify(SyncStatus.done,
+          'Sync complete. $_syncedCount run(s) imported.\nHealth data for ${allDailyData.length} day(s) synced.');
+    } catch (e) {
+      print('[BLE] Health data upload failed: $e');
+      _notify(SyncStatus.done,
+          'Sync complete. $_syncedCount run(s) imported.\nHealth upload failed: $e');
     }
   }
 

@@ -4,7 +4,7 @@ use axum::{
     Json,
 };
 use chrono::{DateTime, Utc};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::{error::AppResult, models::AppState};
@@ -238,4 +238,53 @@ pub async fn list_daily_health(
     .fetch_all(&state.pool)
     .await?;
     Ok(Json(rows))
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct BleHealthItem {
+    pub date: String,
+    pub avg_hr: Option<i64>,
+    pub min_hr: Option<i64>,
+    pub max_hr: Option<i64>,
+    pub steps: Option<i64>,
+}
+
+#[derive(Deserialize)]
+pub struct BleHealthInput {
+    pub items: Vec<BleHealthItem>,
+}
+
+/// Import daily health data synced from the watch over BLE.
+///
+/// Each item is upserted into `daily_health`. `hrv_rmssd` is not touched
+/// (preserve any value imported from FIT monitoring files).
+///
+/// # Errors
+/// Returns an error if the database upsert fails.
+pub async fn import_health_ble(
+    State(state): State<AppState>,
+    Json(body): Json<BleHealthInput>,
+) -> AppResult<(StatusCode, Json<serde_json::Value>)> {
+    let count = body.items.len();
+    for item in body.items {
+        sqlx::query(
+            "INSERT INTO daily_health (date, avg_hr, min_hr, max_hr, steps) \
+             VALUES (?, ?, ?, ?, ?) \
+             ON CONFLICT(date) DO UPDATE SET \
+               avg_hr = excluded.avg_hr, \
+               min_hr = excluded.min_hr, \
+               max_hr = excluded.max_hr, \
+               steps  = excluded.steps",
+        )
+        .bind(&item.date)
+        .bind(item.avg_hr)
+        .bind(item.min_hr)
+        .bind(item.max_hr)
+        .bind(item.steps)
+        .execute(&state.pool)
+        .await?;
+    }
+    Ok((StatusCode::CREATED, Json(serde_json::json!({ "imported": count }))))
 }
