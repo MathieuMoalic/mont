@@ -43,5 +43,5 @@ fn serve_asset(path: &str, content: Vec<u8>) -> Response<Body> {
             HeaderValue::from_str(&mime).unwrap_or(HeaderValue::from_static("application/octet-stream")),
         )
         .body(Body::from(content))
-        .unwrap()
+        .expect("response builder with known-good status and header is infallible")
 }

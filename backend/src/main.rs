@@ -64,7 +64,7 @@ async fn main() -> anyhow::Result<()> {
 
     let pool = make_pool(config.database_path.clone()).await?;
 
-    let jwt_secret = config.jwt_secret.as_ref().unwrap();
+    let jwt_secret = config.jwt_secret.as_ref().expect("jwt_secret is set above");
     let state = AppState {
         pool,
         jwt_encoding: jsonwebtoken::EncodingKey::from_secret(jwt_secret.as_bytes()),
