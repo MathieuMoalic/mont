@@ -722,6 +722,62 @@ pub struct SetInvalidBody {
 
 /// Toggle the `is_invalid` flag on a run (keeps it in the DB so re-import won't duplicate it).
 ///
+// ── BLE summary import ────────────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct BleSummaryInput {
+    /// ISO 8601 UTC, e.g. "2025-11-28T07:19:42Z"
+    pub started_at: String,
+    pub duration_seconds: i64,
+    pub distance_meters: f64,
+    pub avg_hr: Option<i64>,
+    pub max_hr: Option<i64>,
+}
+
+/// Import a run from a BLE sports-summary (Amazfit Cheetah Pro).
+///
+/// If a run with the same `started_at` already exists it is returned as-is
+/// (idempotent — safe to call multiple times for the same workout).
+///
+/// # Errors
+/// Returns `BAD_REQUEST` if the body is malformed, or a database error.
+pub async fn import_ble_summary(
+    State(state): State<AppState>,
+    Json(body): Json<BleSummaryInput>,
+) -> AppResult<(StatusCode, Json<RunSummary>)> {
+    // Idempotency: return existing run if already imported.
+    let existing: Option<RunSummary> = sqlx::query_as(
+        "SELECT id, started_at, duration_s, distance_m, elevation_gain_m, avg_hr, max_hr, \
+                notes, is_invalid, avg_cadence, avg_stride_m, \
+                weather_temp_c, weather_wind_kph, weather_precip_mm, weather_code \
+         FROM runs WHERE started_at = ? LIMIT 1",
+    )
+    .bind(&body.started_at)
+    .fetch_optional(&state.pool)
+    .await?;
+
+    if let Some(run) = existing {
+        return Ok((StatusCode::OK, Json(run)));
+    }
+
+    let run = sqlx::query_as::<_, RunSummary>(
+        "INSERT INTO runs (started_at, duration_s, distance_m, avg_hr, max_hr, route_json) \
+         VALUES (?, ?, ?, ?, ?, '[]') \
+         RETURNING id, started_at, duration_s, distance_m, elevation_gain_m, avg_hr, max_hr, \
+                   notes, is_invalid, avg_cadence, avg_stride_m, \
+                   weather_temp_c, weather_wind_kph, weather_precip_mm, weather_code",
+    )
+    .bind(&body.started_at)
+    .bind(body.duration_seconds)
+    .bind(body.distance_meters)
+    .bind(body.avg_hr)
+    .bind(body.max_hr)
+    .fetch_one(&state.pool)
+    .await?;
+
+    Ok((StatusCode::CREATED, Json(run)))
+}
+
 /// # Errors
 /// Returns `NOT_FOUND` if the run doesn't exist, or a database error.
 pub async fn set_invalid(

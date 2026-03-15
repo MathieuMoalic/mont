@@ -17,6 +17,7 @@ import 'activity_list.dart';
 import 'auth.dart';
 import 'chunked_protocol.dart';
 import 'settings.dart';
+import 'sports_parser.dart';
 
 enum SyncStatus { idle, requestingPermissions, scanning, connecting, authenticating, syncing, done, error }
 
@@ -386,15 +387,33 @@ class WatchSyncService {
     final ackResp = await receiveResponse();
     print('[BLE] ACK response: ${hex(ackResp)}');
 
-    // ── 5. Log raw data for analysis (format TBD) ────────────────────────────
+    // ── 5. Parse protobuf and upload to backend ───────────────────────────────
     int totalBytes = 0;
     for (final chunk in rawDataChunks) {
       totalBytes += chunk.length;
-      print('[BLE] DATA chunk (${chunk.length}B): ${hex(chunk)}');
     }
     print('[BLE] Total raw sports data: $totalBytes bytes in ${rawDataChunks.length} chunks');
 
-    // TODO: parse raw sports summary data and upload to backend.
-    _notify(SyncStatus.done, 'Received ${fetchResp.count} workout(s) (${totalBytes}B). Upload not yet implemented.');
+    final summary = parseSportsSummary(rawDataChunks);
+    if (summary == null) {
+      _notify(SyncStatus.done, 'Received data ($totalBytes B) but could not parse as a running activity.');
+      return;
+    }
+
+    print('[BLE] Parsed run: start=${summary.startTime} '
+        'dur=${summary.durationSeconds}s dist=${summary.distanceMeters}m '
+        'avgHr=${summary.avgHr}');
+
+    _notify(SyncStatus.syncing, 'Uploading run to backend…');
+    final startedAt = summary.startTime.toIso8601String();
+    await api.importBleSummary(
+      startedAt: startedAt,
+      durationSeconds: summary.durationSeconds,
+      distanceMeters: summary.distanceMeters,
+      avgHr: summary.avgHr,
+      maxHr: summary.maxHr,
+    );
+    _syncedCount++;
+    _notify(SyncStatus.done, 'Synced 1 run (${(summary.distanceMeters / 1000).toStringAsFixed(2)} km).');
   }
 }

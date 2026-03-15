@@ -255,6 +255,30 @@ Future<RunSummary> importFit(List<int> bytes) async {
   return RunSummary.fromJson(jsonDecode(body) as Map<String, dynamic>);
 }
 
+Future<RunSummary> importBleSummary({
+  required String startedAt,
+  required int durationSeconds,
+  required double distanceMeters,
+  int? avgHr,
+  int? maxHr,
+}) async {
+  final res = await http.post(
+    _u('/runs/ble'),
+    headers: _headers(),
+    body: jsonEncode({
+      'started_at': startedAt,
+      'duration_seconds': durationSeconds,
+      'distance_meters': distanceMeters,
+      if (avgHr != null) 'avg_hr': avgHr,
+      if (maxHr != null) 'max_hr': maxHr,
+    }),
+  );
+  if (res.statusCode != 201 && res.statusCode != 200) {
+    throw Exception('HTTP ${res.statusCode}: ${res.body}');
+  }
+  return RunSummary.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+}
+
 Future<void> importHealthFit(List<int> bytes) async {
   final token = _authToken;
   if (token == null) throw Exception('Not authenticated');
