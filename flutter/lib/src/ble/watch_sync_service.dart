@@ -325,95 +325,119 @@ class WatchSyncService {
 
     String hex(List<int> b) => b.map((x) => x.toRadixString(16).padLeft(2, '0')).join(' ');
 
-    // ── 1. Request sports summaries (all workouts since 2000-01-01) ──────────
-    await send(buildSportsFetchRequest(seq, sinceYear: 2000));
-    final rawResp = await receiveResponse();
-    print('[BLE] RX: ${hex(rawResp)}');
+    // Fetch all workouts in a loop. Each iteration gets the oldest remaining
+    // workout. After ACK, re-request from (lastStart + 1 s) to advance.
+    var sinceYear = 2000;
+    var sinceMonth = 1;
+    var sinceDay = 1;
+    var sinceHour = 0;
+    var sinceMin = 0;
+    var sinceSec = 0;
 
-    final (int ep, Uint8List payload) = decodeHuami2021(rawResp);
-    print('[BLE] Decoded endpoint=0x${ep.toRadixString(16)} payload=${hex(payload)}');
-
-    final fetchResp = parseFetchResponse(payload);
-    if (fetchResp == null) {
-      throw Exception('Unexpected fetch response: ${hex(payload)}');
-    }
-
-    print('[BLE] Fetch response: count=${fetchResp.count} since=${fetchResp.sinceTimestamp}');
-
-    if (!fetchResp.hasData) {
-      _notify(SyncStatus.done, 'No new workouts on watch.');
-      return;
-    }
-
-    _notify(SyncStatus.syncing, 'Found ${fetchResp.count} workout(s). Downloading…');
-
-    // ── 2. Start transfer ────────────────────────────────────────────────────
-    await send(buildStartTransfer(seq));
-
-    // ── 3. Receive raw data on 0x0005 ────────────────────────────────────────
-    // Collect all data chunks until the watch sends the transfer-complete
-    // response on 0x0017 ([0x10, 0x02, ...]).
-    final rawDataChunks = <List<int>>[];
     while (true) {
-      // Drain any buffered data chunks first.
-      while (dataEvents.isNotEmpty) {
-        rawDataChunks.add(dataEvents.removeAt(0));
+      if (_cancelled) return;
+
+      // ── 1. Request next workout ───────────────────────────────────────────
+      await send(buildSportsFetchRequest(
+        seq,
+        sinceYear: sinceYear, sinceMonth: sinceMonth, sinceDay: sinceDay,
+        sinceHour: sinceHour, sinceMin: sinceMin, sinceSec: sinceSec,
+      ));
+      final rawResp = await receiveResponse();
+      print('[BLE] RX: ${hex(rawResp)}');
+
+      final (int ep, Uint8List payload) = decodeHuami2021(rawResp);
+      print('[BLE] Decoded endpoint=0x${ep.toRadixString(16)} payload=${hex(payload)}');
+
+      final fetchResp = parseFetchResponse(payload);
+      if (fetchResp == null) {
+        throw Exception('Unexpected fetch response: ${hex(payload)}');
       }
-      // Check for transfer-complete on 0x0017.
-      if (notifyEvents.isNotEmpty) {
-        final packet = Uint8List.fromList(notifyEvents.removeAt(0));
-        print('[BLE] RX: ${hex(packet)}');
-        if (packet.length >= 11) {
-          final (int ep2, Uint8List p2) = decodeHuami2021(packet);
-          if (ep2 == BleEndpoints.huamiData && p2.isNotEmpty && p2[0] == 0x10 && p2.length >= 2 && p2[1] == 0x02) {
-            print('[BLE] Transfer complete. Total data chunks: ${rawDataChunks.length}');
-            break;
-          }
+      print('[BLE] Fetch: count=${fetchResp.count} ts=${fetchResp.sinceTimestamp}');
+
+      if (!fetchResp.hasData) break; // no more workouts
+
+      _notify(SyncStatus.syncing, 'Downloading workout…');
+
+      // ── 2. Start transfer ─────────────────────────────────────────────────
+      await send(buildStartTransfer(seq));
+
+      // ── 3. Collect data on 0x0005 until transfer-complete on 0x0017 ──────
+      final rawDataChunks = <List<int>>[];
+      while (true) {
+        while (dataEvents.isNotEmpty) {
+          rawDataChunks.add(dataEvents.removeAt(0));
         }
+        if (notifyEvents.isNotEmpty) {
+          final packet = Uint8List.fromList(notifyEvents.removeAt(0));
+          print('[BLE] RX: ${hex(packet)}');
+          if (packet.length >= 11) {
+            final (int ep2, Uint8List p2) = decodeHuami2021(packet);
+            if (ep2 == BleEndpoints.huamiData && p2.length >= 2 && p2[0] == 0x10 && p2[1] == 0x02) {
+              print('[BLE] Transfer complete. Chunks: ${rawDataChunks.length}');
+              break;
+            }
+          }
+          continue;
+        }
+        final waiter = Completer<void>();
+        setDataWaiter(waiter);
+        setNotifyWaiter(waiter);
+        await waiter.future.timeout(
+          const Duration(seconds: 30),
+          onTimeout: () => throw Exception('Timed out waiting for data transfer.'),
+        );
       }
-      // Wait for either more data or transfer-complete.
-      final waiter = Completer<void>();
-      // Notify whenever data or command arrives.
-      setDataWaiter(waiter);
-      setNotifyWaiter(waiter);
-      await waiter.future.timeout(
-        const Duration(seconds: 30),
-        onTimeout: () => throw Exception('Timed out waiting for data transfer.'),
-      );
+
+      // ── 4. ACK (keep on watch — safe to re-sync) ──────────────────────────
+      await send(buildAckTransfer(seq, deleteFromWatch: false));
+      final ackResp = await receiveResponse();
+      print('[BLE] ACK response: ${hex(ackResp)}');
+
+      // ── 5. Parse and upload ───────────────────────────────────────────────
+      int totalBytes = rawDataChunks.fold(0, (s, c) => s + c.length);
+      print('[BLE] Total raw data: $totalBytes B in ${rawDataChunks.length} chunks');
+
+      final summary = parseSportsSummary(rawDataChunks);
+      if (summary == null) {
+        print('[BLE] Could not parse protobuf — skipping.');
+      } else {
+        print('[BLE] sport_type=${summary.sportType} start=${summary.startTime} '
+            'dur=${summary.durationSeconds}s dist=${summary.distanceMeters}m '
+            'avgHr=${summary.avgHr}');
+
+        if (summary.isOutdoorRun) {
+          final startedAt = summary.startTime.toIso8601String();
+          await api.importBleSummary(
+            startedAt: startedAt,
+            durationSeconds: summary.durationSeconds,
+            distanceMeters: summary.distanceMeters,
+            avgHr: summary.avgHr,
+            maxHr: summary.maxHr,
+          );
+          _syncedCount++;
+          _notify(SyncStatus.syncing,
+              'Synced $_syncedCount run(s)…');
+        } else {
+          print('[BLE] Skipping non-outdoor-run (sport_type=${summary.sportType})');
+        }
+
+        // Advance "since" to one second past this workout's start time so
+        // the next fetch request returns the following workout.
+        final next = summary.startTime.add(const Duration(seconds: 1));
+        sinceYear  = next.year;
+        sinceMonth = next.month;
+        sinceDay   = next.day;
+        sinceHour  = next.hour;
+        sinceMin   = next.minute;
+        sinceSec   = next.second;
+      }
     }
 
-    // ── 4. Send ACK (keep data on watch for now — safe default) ─────────────
-    await send(buildAckTransfer(seq, deleteFromWatch: false));
-    final ackResp = await receiveResponse();
-    print('[BLE] ACK response: ${hex(ackResp)}');
-
-    // ── 5. Parse protobuf and upload to backend ───────────────────────────────
-    int totalBytes = 0;
-    for (final chunk in rawDataChunks) {
-      totalBytes += chunk.length;
+    if (_syncedCount == 0) {
+      _notify(SyncStatus.done, 'No outdoor runs found on watch.');
+    } else {
+      _notify(SyncStatus.done, 'Synced $_syncedCount outdoor run(s).');
     }
-    print('[BLE] Total raw sports data: $totalBytes bytes in ${rawDataChunks.length} chunks');
-
-    final summary = parseSportsSummary(rawDataChunks);
-    if (summary == null) {
-      _notify(SyncStatus.done, 'Received data ($totalBytes B) but could not parse as a running activity.');
-      return;
-    }
-
-    print('[BLE] Parsed run: start=${summary.startTime} '
-        'dur=${summary.durationSeconds}s dist=${summary.distanceMeters}m '
-        'avgHr=${summary.avgHr}');
-
-    _notify(SyncStatus.syncing, 'Uploading run to backend…');
-    final startedAt = summary.startTime.toIso8601String();
-    await api.importBleSummary(
-      startedAt: startedAt,
-      durationSeconds: summary.durationSeconds,
-      distanceMeters: summary.distanceMeters,
-      avgHr: summary.avgHr,
-      maxHr: summary.maxHr,
-    );
-    _syncedCount++;
-    _notify(SyncStatus.done, 'Synced 1 run (${(summary.distanceMeters / 1000).toStringAsFixed(2)} km).');
   }
 }

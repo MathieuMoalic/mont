@@ -19,13 +19,14 @@
 
 import 'dart:typed_data';
 
-const int _sportTypeOutdoorRunning = 8;
+const int _sportTypeOutdoorRunning = 6;
 
 class SportsSummary {
   const SportsSummary({
     required this.startTime,
     required this.durationSeconds,
     required this.distanceMeters,
+    required this.sportType,
     this.avgHr,
     this.maxHr,
   });
@@ -33,8 +34,11 @@ class SportsSummary {
   final DateTime startTime;       // UTC
   final int durationSeconds;
   final double distanceMeters;
+  final int sportType;
   final int? avgHr;
   final int? maxHr;
+
+  bool get isOutdoorRun => sportType == _sportTypeOutdoorRunning;
 }
 
 /// Assemble and parse a single sports-summary protobuf from BLE data chunks.
@@ -63,9 +67,8 @@ SportsSummary? parseSportsSummary(List<List<int>> chunks) {
   if (field2Bytes == null) return null;
   final startInfo = _decodeMessage(Uint8List.fromList(field2Bytes), 0, field2Bytes.length);
 
-  // sport_type must be outdoor running.
-  final sportType = startInfo[3]?.firstOrNull;
-  if (sportType == null || sportType != _sportTypeOutdoorRunning) return null;
+  // sport_type — always present, caller decides whether to keep
+  final sportType = startInfo[3]?.firstOrNull ?? 0;
 
   // start timestamp
   final tsRaw = startInfo[1]?.firstOrNull;
@@ -99,6 +102,7 @@ SportsSummary? parseSportsSummary(List<List<int>> chunks) {
     startTime: startTime,
     durationSeconds: durationSeconds,
     distanceMeters: distanceMeters,
+    sportType: sportType,
     avgHr: avgHr,
     maxHr: maxHr,
   );
