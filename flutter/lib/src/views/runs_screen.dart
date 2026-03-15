@@ -59,54 +59,6 @@ class _RunsScreenState extends State<RunsScreen> {
     return "$m'${s.toString().padLeft(2, '0')}\"/km";
   }
 
-  Future<void> _syncGadgetbridge() async {
-    try {
-      final result = await api.syncGadgetbridge();
-      await _load();
-      if (!mounted) return;
-      final imported = result['imported'] as int;
-      final errs = (result['errors'] as List?)?.length ?? 0;
-      final msg = errs > 0
-          ? 'Synced: $imported runs, $errs errors'
-          : 'Synced: $imported runs updated';
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Sync failed: $e')),
-      );
-    }
-  }
-
-  Future<void> _resetAndResync() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Reset all runs?'),
-        content: const Text(
-            'This will delete every run and reimport them from Gadgetbridge. Continue?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Reset & Reimport'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-    try {
-      await api.deleteAllRuns();
-      await _syncGadgetbridge();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Reset failed: $e')),
-      );
-    }
-  }
-
   Set<int> get _prRunIds => _prs.map((p) => p.runId).toSet();
 
   @override
@@ -149,22 +101,12 @@ class _RunsScreenState extends State<RunsScreen> {
                   ),
                 ),
           ),
-          IconButton(
-            icon: const Icon(Icons.sync),
-            tooltip: 'Sync Gadgetbridge',
-            onPressed: _syncGadgetbridge,
-          ),
-          IconButton(
-            icon: const Icon(Icons.delete_sweep_outlined),
-            tooltip: 'Reset & Reimport',
-            onPressed: _resetAndResync,
-          ),
         ],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _runs.isEmpty
-              ? const Center(child: Text('No runs yet. Tap ↻ to sync from Gadgetbridge.'))
+              ? const Center(child: Text('No runs yet. Use the Watch tab to sync.'))
               : RefreshIndicator(
                   onRefresh: _load,
                   child: ListView.builder(

@@ -243,22 +243,6 @@ Future<RunDetail> getRun(int id) async {
   return RunDetail.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
 }
 
-Future<RunSummary> importGpx(List<int> bytes, String filename) async {
-  final token = _authToken;
-  if (token == null) throw Exception('Not authenticated');
-  final req = http.MultipartRequest('POST', _u('/runs/import'))
-    ..headers['Authorization'] = 'Bearer $token'
-    ..files.add(http.MultipartFile.fromBytes(
-      'file',
-      bytes,
-      filename: filename,
-    ));
-  final streamed = await req.send();
-  final body = await streamed.stream.bytesToString();
-  if (streamed.statusCode != 201) throw Exception('HTTP ${streamed.statusCode}');
-  return RunSummary.fromJson(jsonDecode(body) as Map<String, dynamic>);
-}
-
 Future<RunSummary> importFit(List<int> bytes) async {
   final token = _authToken;
   if (token == null) throw Exception('Not authenticated');
@@ -298,11 +282,6 @@ Future<void> deleteRun(int id) async {
   if (res.statusCode != 204) throw Exception('HTTP ${res.statusCode}');
 }
 
-Future<void> deleteAllRuns() async {
-  final res = await http.delete(_u('/runs'), headers: _headers());
-  if (res.statusCode != 204) throw Exception('HTTP ${res.statusCode}');
-}
-
 Future<void> markRunInvalid(int id, {required bool isInvalid}) async {
   final res = await http.patch(
     _u('/runs/$id'),
@@ -310,12 +289,6 @@ Future<void> markRunInvalid(int id, {required bool isInvalid}) async {
     body: jsonEncode({'is_invalid': isInvalid}),
   );
   if (res.statusCode != 204) throw Exception('HTTP ${res.statusCode}');
-}
-
-Future<Map<String, dynamic>> syncGadgetbridge() async {
-  final res = await http.post(_u('/runs/sync'), headers: _headers());
-  if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
-  return jsonDecode(res.body) as Map<String, dynamic>;
 }
 
 Future<List<ExerciseHistoryPoint>> getExerciseHistory(int exerciseId) async {

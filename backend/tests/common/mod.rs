@@ -28,18 +28,14 @@ pub struct TestApp {
 
 impl TestApp {
     pub async fn spawn() -> Self {
-        Self::spawn_inner(None, None).await
+        Self::spawn_inner(None).await
     }
 
     pub async fn spawn_with_password_hash(hash: String) -> Self {
-        Self::spawn_inner(Some(hash), None).await
+        Self::spawn_inner(Some(hash)).await
     }
 
-    pub async fn spawn_with_zip(zip_path: PathBuf) -> Self {
-        Self::spawn_inner(None, Some(zip_path)).await
-    }
-
-    async fn spawn_inner(password_hash: Option<String>, gadgetbridge_zip: Option<PathBuf>) -> Self {
+    async fn spawn_inner(password_hash: Option<String>) -> Self {
         let db = tempfile::NamedTempFile::new().expect("temp db");
         let pool = make_pool(db.path().to_str().unwrap().to_string())
             .await
@@ -54,8 +50,6 @@ impl TestApp {
             cors_origin: None,
             jwt_secret: Some(TEST_JWT_SECRET.to_string()),
             password_hash,
-            gadgetbridge_zip,
-            sync_time: "05:00".to_string(),
         };
 
         let pool2 = pool.clone();
