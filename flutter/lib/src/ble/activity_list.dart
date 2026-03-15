@@ -86,6 +86,24 @@ Uint8List buildSportsDetailRequest(
   return encodeHuami2021(BleEndpoints.huamiData, seq, payload);
 }
 
+/// Build an ACTIVITY fetch request since [since].
+///
+/// ACTIVITY data (type 0x01) streams 8-byte per-minute samples:
+/// [kind, intensity, steps, hr, unknown1, sleep, deepSleep, remSleep]
+Uint8List buildActivityFetchRequest(int seq, DateTime since) {
+  final payload = Uint8List(10);
+  payload[0] = 0x01; // fetch command
+  payload[1] = HuamiDataType.activity;
+  ByteData.sublistView(payload).setUint16(2, since.year, Endian.little);
+  payload[4] = since.month;
+  payload[5] = since.day;
+  payload[6] = since.hour;
+  payload[7] = since.minute;
+  payload[8] = since.second;
+  payload[9] = 0x04;
+  return encodeHuami2021(BleEndpoints.huamiData, seq, payload);
+}
+
 /// Build a START_TRANSFER command (send to 0x0016 after watch says count > 0).
 Uint8List buildStartTransfer(int seq) {
   return encodeHuami2021(BleEndpoints.huamiData, seq, Uint8List.fromList([0x02]));

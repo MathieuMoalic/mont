@@ -351,6 +351,17 @@ Future<List<ExerciseHistoryPoint>> getExerciseHistory(int exerciseId) async {
 
 // ── Health ────────────────────────────────────────────────────────────────────
 
+Future<void> importHealthBle(List<Map<String, dynamic>> items) async {
+  final token = _authToken;
+  if (token == null) throw Exception('Not authenticated');
+  final res = await http.post(
+    _u('/health/ble'),
+    headers: _headers(),
+    body: jsonEncode({'items': items}),
+  );
+  if (res.statusCode != 201) throw Exception('HTTP ${res.statusCode}: ${res.body}');
+}
+
 Future<List<DailyHealth>> listDailyHealth() async {
   final res = await http.get(_u('/health/daily'), headers: _headers());
   if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
