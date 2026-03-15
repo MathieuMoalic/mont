@@ -24,12 +24,14 @@
 //   field 40 (message) : totals (used as fallback for non-GPS runs)
 //     field 3 (varint) : total_distance in 0.1 m units (non-GPS only)
 //
-// GPS detail protobuf layout (data type 0x06):
-//   The GPS track data comes in the sports-detail response.
-//   The exact field layout is device/firmware-specific.
-//   All received data is logged as hex for debugging.
-//   GPS points are extracted from sub-messages and validated by lat/lon range.
-//   Lat/lon are stored as int32 × 1e-7 degrees (zigzag-encoded varints).
+// GPS detail format (data type 0x06):
+//   The GPS track data uses the "psmh" binary format (not protobuf).
+//   Header: 18 bytes (4-byte "psmh" magic + 14 bytes of flags/timestamp).
+//   TLV records: [type:1B][length:1B][data:length B]
+//   - Type 2 (GPS_COORDS, len=20): absolute anchor lat/lon
+//   - Type 3 (GPS_DELTA, len=8): incremental lon/lat deltas
+//   - Type 7 (ALTITUDE, len=6): GPS altitude in centimetres
+//   Coordinates: decimal_degrees = int32_value / 3_000_000.0
 
 import 'dart:typed_data';
 
@@ -173,9 +175,20 @@ SportsSummary? parseSportsSummary(List<List<int>> chunks) {
 
 /// Parse GPS track points from a sports-detail BLE transfer (data type 0x06).
 ///
-/// Same chunk format as summary: 1-byte seq prefix per chunk, 2-byte header.
-/// Logs all decoded field values for debugging unknown firmware formats.
-/// Returns an empty list if no valid GPS points are found.
+/// The data uses the "psmh" binary format (Huami/ZeppOS activity detail file).
+///
+/// File structure:
+///   - 2-byte BLE header (stripped by caller, same as sports summary)
+///   - 4-byte magic: "psmh" (0x70 0x73 0x6d 0x68)
+///   - 14-byte header fields (flags, timestamp, etc.)
+///   - TLV records: [type:1B][length:1B][data:length B]
+///
+/// Relevant record types (matching Gadgetbridge ZeppOsActivityDetailsParser):
+///   - 2  (GPS_COORDS, len=20): [6B skip][int32 LE lon][int32 LE lat][6B skip]
+///   - 3  (GPS_DELTA,  len=8):  [int16 LE offset][int16 LE lon_delta][int16 LE lat_delta][int16 const=2]
+///   - 7  (ALTITUDE,  len=6):  [int16 LE offset][int32 LE alt_cm]
+///
+/// Coordinate conversion: decimal_degrees = huami_int32_value / 3_000_000.0
 List<GpsPoint> parseGpsDetail(List<List<int>> chunks) {
   if (chunks.isEmpty) return [];
 
@@ -187,91 +200,62 @@ List<GpsPoint> parseGpsDetail(List<List<int>> chunks) {
   if (assembled.length < 3) return [];
   final proto = Uint8List.fromList(assembled.skip(2).toList());
 
-  // Log raw hex for debugging.
-  final hexStr = proto.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ');
-  print('[BLE][GPS-RAW] ${proto.length} B: $hexStr');
+  print('[BLE][GPS-RAW] ${proto.length} B: ${proto.take(64).map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}...');
 
-  final top = _decodeMessage(proto, 0, proto.length);
-  print('[BLE][GPS-FIELDS] top-level fields: ${top.keys.toList()}');
+  // Validate psmh magic.
+  if (proto.length < 18 ||
+      proto[0] != 0x70 || proto[1] != 0x73 ||
+      proto[2] != 0x6d || proto[3] != 0x68) {
+    print('[BLE][GPS] No psmh magic, skipping GPS parse');
+    return [];
+  }
 
+  final bd     = ByteData.sublistView(proto);
   final points = <GpsPoint>[];
+  var lonRaw   = 0;
+  var latRaw   = 0;
+  var hasAnchor = false;
+  double? currentAlt;
+  var pos = 18; // skip 18-byte psmh header
 
-  // Try every length-delimited top-level field as a container for GPS points.
-  for (final fieldNum in top.keys.toList()..sort()) {
-    final values = top[fieldNum];
-    if (values == null) continue;
-    for (final v in values) {
-      if (v is! List) continue; // skip varint fields
-      // Try to decode as a GPS point or as a container of GPS points.
-      final bytes = Uint8List.fromList(v as List<int>);
-      final sub = _decodeMessage(bytes, 0, bytes.length);
+  while (pos + 1 < proto.length) {
+    final rtype = proto[pos];
+    final rlen  = proto[pos + 1];
+    final end   = pos + 2 + rlen;
+    if (end > proto.length) break;
+    final base = pos + 2; // offset of record data within proto
+    pos = end;
 
-      // Case A: this sub-message has lat/lon directly (fields 1,2 as large varints)
-      final pt = _tryGpsPoint(sub);
-      if (pt != null) {
-        points.add(pt);
-        continue;
-      }
+    switch (rtype) {
+      case 2 when rlen == 20: // GPS_COORDS — absolute anchor
+        // Layout: [6B skip][int32 LE lon][int32 LE lat][6B skip]
+        lonRaw    = bd.getInt32(base + 6, Endian.little);
+        latRaw    = bd.getInt32(base + 10, Endian.little);
+        hasAnchor = lonRaw != 0 || latRaw != 0;
 
-      // Case B: this sub-message contains repeated GPS point sub-messages.
-      for (final innerFieldNum in sub.keys) {
-        final innerValues = sub[innerFieldNum];
-        if (innerValues == null) continue;
-        for (final iv in innerValues) {
-          if (iv is! List) continue;
-          final innerBytes = Uint8List.fromList(iv as List<int>);
-          final innerSub = _decodeMessage(innerBytes, 0, innerBytes.length);
-          final ipt = _tryGpsPoint(innerSub);
-          if (ipt != null) points.add(ipt);
+      case 3 when rlen == 8: // GPS_DELTA — incremental update
+        // Layout: [int16 LE time_offset][int16 LE lon_delta][int16 LE lat_delta][int16 const=2]
+        if (!hasAnchor) break;
+        lonRaw += bd.getInt16(base + 2, Endian.little);
+        latRaw += bd.getInt16(base + 4, Endian.little);
+        final lon = lonRaw / 3000000.0;
+        final lat = latRaw / 3000000.0;
+        if (lat != 0.0 || lon != 0.0) {
+          points.add(GpsPoint(lat: lat, lon: lon, ele: currentAlt));
         }
-      }
+
+      case 7 when (rlen == 6 || rlen == 7): // ALTITUDE — GPS altitude in centimetres
+        // Layout: [int16 LE time_offset][int32 LE alt_cm]
+        final altRaw = bd.getInt32(base + 2, Endian.little);
+        if (altRaw != -1) {
+          currentAlt = altRaw / 100.0;
+        }
     }
   }
 
   print('[BLE][GPS] Parsed ${points.length} GPS point(s)');
   return points;
 }
-
-/// Try to interpret a decoded sub-message as a GPS point.
-///
-/// Expects:
-///   field 1 = latitude  as zigzag sint32 × 1e-7 degrees
-///   field 2 = longitude as zigzag sint32 × 1e-7 degrees
-///   field 3 = altitude  as varint (meters, optional)
-///   field 5 = time_offset (seconds from run start, optional)
-///   field 6 = heart rate (bpm, optional)
-///
-/// Returns null if lat/lon are absent or out of plausible range.
-GpsPoint? _tryGpsPoint(Map<int, List<dynamic>> msg) {
-  final rawLat = msg[1]?.firstOrNull;
-  final rawLon = msg[2]?.firstOrNull;
-  if (rawLat == null || rawLon == null) return null;
-  if (rawLat is! int || rawLon is! int) return null;
-
-  // ZeppOS stores lat/lon as zigzag-encoded signed int32 × 1e7.
-  final lat = _zigzagDecode(rawLat) / 1e7;
-  final lon = _zigzagDecode(rawLon) / 1e7;
-
-  // Validate plausible GPS range.
-  if (lat < -90 || lat > 90 || lon < -180 || lon > 180) return null;
-  // Reject (0, 0) placeholder points.
-  if (lat == 0 && lon == 0) return null;
-
-  final rawAlt = msg[3]?.firstOrNull;
-  final rawT   = msg[5]?.firstOrNull;
-  final rawHr  = msg[6]?.firstOrNull;
-
-  return GpsPoint(
-    lat: lat,
-    lon: lon,
-    ele: (rawAlt is int) ? rawAlt.toDouble() : null,
-    t:   (rawT is int)   ? rawT              : null,
-    hr:  (rawHr is int)  ? rawHr             : null,
-  );
-}
-
-/// Decode a zigzag-encoded sint32/sint64 varint.
-int _zigzagDecode(int n) => (n >> 1) ^ -(n & 1);
 
 // Decodes a protobuf message from [data[start..start+len]] into a map of
 // field_number → list of values.
