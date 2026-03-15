@@ -422,9 +422,10 @@ class WatchSyncService {
           print('[BLE] Skipping non-outdoor-run (sport_type=${summary.sportType})');
         }
 
-        // Advance "since" to one second past this workout's start time so
-        // the next fetch request returns the following workout.
-        final next = summary.startTime.add(const Duration(seconds: 1));
+        // Advance "since" past the END of this workout so the next fetch
+        // request returns the following workout.
+        final next = summary.startTime
+            .add(Duration(seconds: summary.durationSeconds + 1));
         sinceYear  = next.year;
         sinceMonth = next.month;
         sinceDay   = next.day;
