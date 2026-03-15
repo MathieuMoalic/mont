@@ -29,23 +29,25 @@ void main() {
       2, 0, // const = 2
     ];
 
-    test('returns empty list for empty input', () {
-      expect(parseGpsDetail([]), isEmpty);
+    final runStart = DateTime.utc(2025, 11, 28, 7, 19, 42);
+
+    test('returns empty points for empty input', () {
+      expect(parseGpsDetail([], runStart).points, isEmpty);
     });
 
-    test('returns empty list for non-psmh data', () {
-      expect(parseGpsDetail([[0, 0, 0x00, 0x80, 0x01, 0x02, 0x03, 0x04]]), isEmpty);
+    test('returns empty points for non-psmh data', () {
+      expect(parseGpsDetail([[0, 0, 0x00, 0x80, 0x01, 0x02, 0x03, 0x04]], runStart).points, isEmpty);
     });
 
     test('decodes 2 GPS points from valid psmh data', () {
-      final points = parseGpsDetail([testChunk]);
-      expect(points.length, 2);
+      final result = parseGpsDetail([testChunk], runStart);
+      expect(result.points.length, 2);
 
-      expect(points[0].lon, closeTo(16.950100, 1e-5));
-      expect(points[0].lat, closeTo(52.438200, 1e-5));
+      expect(result.points[0].lon, closeTo(16.950100, 1e-5));
+      expect(result.points[0].lat, closeTo(52.438200, 1e-5));
 
-      expect(points[1].lon, closeTo(16.950300, 1e-5));
-      expect(points[1].lat, closeTo(52.438500, 1e-5));
+      expect(result.points[1].lon, closeTo(16.950300, 1e-5));
+      expect(result.points[1].lat, closeTo(52.438500, 1e-5));
     });
 
     test('GPS points include altitude when type7 record is present', () {
@@ -57,9 +59,9 @@ void main() {
       final altRecord = [7, 6, 0xF4, 0x01, 0xF0, 0x55, 0x00, 0x00];
       final chunkWithAlt = List<int>.from(testChunk)..insertAll(43, altRecord);
 
-      final points = parseGpsDetail([chunkWithAlt]);
-      expect(points.length, 2);
-      expect(points[0].ele, closeTo(220.0, 0.1)); // 22000 cm = 220 m
+      final result = parseGpsDetail([chunkWithAlt], runStart);
+      expect(result.points.length, 2);
+      expect(result.points[0].ele, closeTo(220.0, 0.1)); // 22000 cm = 220 m
     });
 
     test('GPS_DELTA before GPS_COORDS is ignored', () {
@@ -70,7 +72,32 @@ void main() {
         0, 0, 0, 0, 0, 0, 0, 0, 4, 4, 1, 0, 1, 0, // header
         3, 8, 232, 3, 44, 1, 88, 2, 2, 0, // GPS_DELTA without anchor
       ];
-      expect(parseGpsDetail([noAnchorChunk]), isEmpty);
+      expect(parseGpsDetail([noAnchorChunk], runStart).points, isEmpty);
+    });
+
+    test('HR carried forward to GPS points from type8 records', () {
+      // Insert type8 HEARTRATE [int16 offset=0, uint8 bpm=142] before GPS_DELTA
+      final hrRecord = [8, 3, 0, 0, 142]; // bpm = 142
+      final chunkWithHr = List<int>.from(testChunk)..insertAll(43, hrRecord);
+
+      final result = parseGpsDetail([chunkWithHr], runStart);
+      expect(result.points.length, 2);
+      expect(result.points[0].hr, 142);
+      expect(result.points[1].hr, 142); // carried forward
+    });
+
+    test('cadence carried forward to GPS points from type5 records', () {
+      // Insert type5 SPEED [int16 offset=0, int16 cad=160, int16 stride=110cm, int16 pace=350]
+      // 160 LE int16 → [160, 0]; 110 LE int16 → [110, 0]; 350 LE int16 → [94, 1]
+      final speedRecord = [5, 8, 0, 0, 160, 0, 110, 0, 94, 1];
+      final chunkWithSpeed = List<int>.from(testChunk)..insertAll(43, speedRecord);
+
+      final result = parseGpsDetail([chunkWithSpeed], runStart);
+      expect(result.points.length, 2);
+      expect(result.points[0].cad, 160);
+      expect(result.points[1].cad, 160); // carried forward
+      expect(result.avgCadenceSpm, 160);
+      expect(result.avgStrideM, closeTo(1.10, 0.01)); // 110cm = 1.10m
     });
   });
 }

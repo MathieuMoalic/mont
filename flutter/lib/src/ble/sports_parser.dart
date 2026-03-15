@@ -28,9 +28,12 @@
 //   The GPS track data uses the "psmh" binary format (not protobuf).
 //   Header: 18 bytes (4-byte "psmh" magic + 14 bytes of flags/timestamp).
 //   TLV records: [type:1B][length:1B][data:length B]
-//   - Type 2 (GPS_COORDS, len=20): absolute anchor lat/lon
-//   - Type 3 (GPS_DELTA, len=8): incremental lon/lat deltas
-//   - Type 7 (ALTITUDE, len=6): GPS altitude in centimetres
+//   - Type 1 (TIMESTAMP, len=12): [int32 skip][int64 LE unix_ms] — sets time anchor
+//   - Type 2 (GPS_COORDS, len=20): [6B skip][int32 LE lon][int32 LE lat][6B skip]
+//   - Type 3 (GPS_DELTA, len=8):  [int16 LE time_offset_ms][int16 LE lon_delta][int16 LE lat_delta][int16 const=2]
+//   - Type 5 (SPEED,    len=8):   [int16 LE time_offset_ms][int16 LE cadence_spm][int16 LE stride_cm][int16 LE pace_s_per_km]
+//   - Type 7 (ALTITUDE, len=6):   [int16 LE time_offset_ms][int32 LE alt_cm]
+//   - Type 8 (HEARTRATE, len=3):  [int16 LE time_offset_ms][uint8 hr_bpm]
 //   Coordinates: decimal_degrees = int32_value / 3_000_000.0
 
 import 'dart:typed_data';
@@ -43,6 +46,7 @@ class GpsPoint {
     required this.lon,
     this.ele,
     this.hr,
+    this.cad,
     this.t,
   });
 
@@ -50,6 +54,7 @@ class GpsPoint {
   final double lon;   // degrees
   final double? ele;  // meters
   final int? hr;      // bpm
+  final int? cad;     // steps per minute
   final int? t;       // seconds since run start
 
   Map<String, dynamic> toJson() => {
@@ -57,8 +62,22 @@ class GpsPoint {
     'lon': lon,
     if (ele != null) 'ele': ele,
     if (hr != null) 'hr': hr,
+    if (cad != null) 'cad': cad,
     if (t != null) 't': t,
   };
+}
+
+/// Result of parsing a GPS detail transfer.
+class GpsDetailResult {
+  const GpsDetailResult({
+    required this.points,
+    this.avgCadenceSpm,
+    this.avgStrideM,
+  });
+
+  final List<GpsPoint> points;
+  final int? avgCadenceSpm;   // average cadence in steps per minute
+  final double? avgStrideM;   // average stride length in metres
 }
 
 class SportsSummary {
@@ -176,28 +195,23 @@ SportsSummary? parseSportsSummary(List<List<int>> chunks) {
 /// Parse GPS track points from a sports-detail BLE transfer (data type 0x06).
 ///
 /// The data uses the "psmh" binary format (Huami/ZeppOS activity detail file).
+/// [runStartUtc] is used to compute per-point `t` (seconds since run start).
 ///
-/// File structure:
-///   - 2-byte BLE header (stripped by caller, same as sports summary)
-///   - 4-byte magic: "psmh" (0x70 0x73 0x6d 0x68)
-///   - 14-byte header fields (flags, timestamp, etc.)
-///   - TLV records: [type:1B][length:1B][data:length B]
-///
-/// Relevant record types (matching Gadgetbridge ZeppOsActivityDetailsParser):
-///   - 2  (GPS_COORDS, len=20): [6B skip][int32 LE lon][int32 LE lat][6B skip]
-///   - 3  (GPS_DELTA,  len=8):  [int16 LE offset][int16 LE lon_delta][int16 LE lat_delta][int16 const=2]
-///   - 7  (ALTITUDE,  len=6):  [int16 LE offset][int32 LE alt_cm]
-///
-/// Coordinate conversion: decimal_degrees = huami_int32_value / 3_000_000.0
-List<GpsPoint> parseGpsDetail(List<List<int>> chunks) {
-  if (chunks.isEmpty) return [];
+/// Returns a [GpsDetailResult] with:
+/// - [GpsDetailResult.points]: GPS track with per-point ele, hr, cad, t
+/// - [GpsDetailResult.avgCadenceSpm]: run-level average cadence (steps/min)
+/// - [GpsDetailResult.avgStrideM]: run-level average stride length (metres)
+GpsDetailResult parseGpsDetail(List<List<int>> chunks, DateTime runStartUtc) {
+  const empty = GpsDetailResult(points: []);
+
+  if (chunks.isEmpty) return empty;
 
   final assembled = <int>[];
   for (final chunk in chunks) {
     if (chunk.length < 2) continue;
     assembled.addAll(chunk.skip(1));
   }
-  if (assembled.length < 3) return [];
+  if (assembled.length < 3) return empty;
   final proto = Uint8List.fromList(assembled.skip(2).toList());
 
   print('[BLE][GPS-RAW] ${proto.length} B: ${proto.take(64).map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}...');
@@ -207,15 +221,25 @@ List<GpsPoint> parseGpsDetail(List<List<int>> chunks) {
       proto[0] != 0x70 || proto[1] != 0x73 ||
       proto[2] != 0x6d || proto[3] != 0x68) {
     print('[BLE][GPS] No psmh magic, skipping GPS parse');
-    return [];
+    return empty;
   }
 
-  final bd     = ByteData.sublistView(proto);
-  final points = <GpsPoint>[];
-  var lonRaw   = 0;
-  var latRaw   = 0;
-  var hasAnchor = false;
+  final bd            = ByteData.sublistView(proto);
+  final runStartMs    = runStartUtc.millisecondsSinceEpoch;
+  final points        = <GpsPoint>[];
+  var   lonRaw        = 0;
+  var   latRaw        = 0;
+  var   hasAnchor     = false;
   double? currentAlt;
+  int?    currentHr;
+  int?    currentCad;
+  double? currentStrideM;
+  int     timestampAnchorMs = 0; // set by TIMESTAMP records; 0 = not yet seen
+
+  // For computing run-level averages from SPEED records.
+  final cadSamples    = <int>[];
+  final strideSamples = <double>[];
+
   var pos = 18; // skip 18-byte psmh header
 
   while (pos + 1 < proto.length) {
@@ -227,6 +251,10 @@ List<GpsPoint> parseGpsDetail(List<List<int>> chunks) {
     pos = end;
 
     switch (rtype) {
+      case 1 when rlen == 12: // TIMESTAMP — absolute time anchor
+        // Layout: [int32 skip][int64 LE unix_ms]
+        timestampAnchorMs = bd.getInt64(base + 4, Endian.little);
+
       case 2 when rlen == 20: // GPS_COORDS — absolute anchor
         // Layout: [6B skip][int32 LE lon][int32 LE lat][6B skip]
         lonRaw    = bd.getInt32(base + 6, Endian.little);
@@ -234,14 +262,43 @@ List<GpsPoint> parseGpsDetail(List<List<int>> chunks) {
         hasAnchor = lonRaw != 0 || latRaw != 0;
 
       case 3 when rlen == 8: // GPS_DELTA — incremental update
-        // Layout: [int16 LE time_offset][int16 LE lon_delta][int16 LE lat_delta][int16 const=2]
+        // Layout: [int16 LE time_offset_ms][int16 LE lon_delta][int16 LE lat_delta][int16 const=2]
         if (!hasAnchor) break;
+        final offsetMs = bd.getInt16(base, Endian.little);
         lonRaw += bd.getInt16(base + 2, Endian.little);
         latRaw += bd.getInt16(base + 4, Endian.little);
         final lon = lonRaw / 3000000.0;
         final lat = latRaw / 3000000.0;
-        if (lat != 0.0 || lon != 0.0) {
-          points.add(GpsPoint(lat: lat, lon: lon, ele: currentAlt));
+        if (lat == 0.0 && lon == 0.0) break;
+
+        // Compute t = seconds since run start (null if no TIMESTAMP seen yet).
+        int? t;
+        if (timestampAnchorMs != 0) {
+          final absMs = timestampAnchorMs + offsetMs;
+          final tMs = absMs - runStartMs;
+          if (tMs >= 0) t = (tMs / 1000).round();
+        }
+
+        points.add(GpsPoint(
+          lat: lat,
+          lon: lon,
+          ele: currentAlt,
+          hr:  currentHr,
+          cad: currentCad,
+          t:   t,
+        ));
+
+      case 5 when rlen == 8: // SPEED — cadence and stride
+        // Layout: [int16 LE time_offset][int16 LE cadence_spm][int16 LE stride_cm][int16 LE pace_s/km]
+        final cad     = bd.getInt16(base + 2, Endian.little);
+        final strideCm = bd.getInt16(base + 4, Endian.little);
+        if (cad > 0) {
+          currentCad = cad;
+          cadSamples.add(cad);
+        }
+        if (strideCm > 0) {
+          currentStrideM = strideCm / 100.0;
+          strideSamples.add(currentStrideM);
         }
 
       case 7 when (rlen == 6 || rlen == 7): // ALTITUDE — GPS altitude in centimetres
@@ -250,11 +307,35 @@ List<GpsPoint> parseGpsDetail(List<List<int>> chunks) {
         if (altRaw != -1) {
           currentAlt = altRaw / 100.0;
         }
+
+      case 8 when rlen == 3: // HEARTRATE — heart rate in bpm
+        // Layout: [int16 LE time_offset][uint8 bpm]
+        final bpm = proto[base + 2];
+        if (bpm > 0) currentHr = bpm;
     }
   }
 
-  print('[BLE][GPS] Parsed ${points.length} GPS point(s)');
-  return points;
+  // Compute run-level averages from SPEED record samples.
+  int? avgCadenceSpm;
+  double? avgStrideM;
+  if (cadSamples.isNotEmpty) {
+    avgCadenceSpm = cadSamples.reduce((a, b) => a + b) ~/ cadSamples.length;
+  }
+  if (strideSamples.isNotEmpty) {
+    avgStrideM = strideSamples.reduce((a, b) => a + b) / strideSamples.length;
+  }
+
+  print('[BLE][GPS] Parsed ${points.length} GPS point(s), '
+      'avgCad=$avgCadenceSpm spm, avgStride=${avgStrideM?.toStringAsFixed(2)} m, '
+      'hasTime=${points.any((p) => p.t != null)}, '
+      'hasHr=${points.any((p) => p.hr != null)}, '
+      'hasCad=${points.any((p) => p.cad != null)}');
+
+  return GpsDetailResult(
+    points: points,
+    avgCadenceSpm: avgCadenceSpm,
+    avgStrideM: avgStrideM,
+  );
 }
 
 // Decodes a protobuf message from [data[start..start+len]] into a map of

@@ -784,12 +784,15 @@ pub async fn import_ble_summary(
 pub struct BleRouteInput {
     pub started_at: String,
     pub route: Vec<RoutePoint>,
+    pub avg_cadence: Option<i64>,
+    pub avg_stride_m: Option<f64>,
 }
 
 /// Update the GPS route for a run that was previously imported via BLE summary.
 ///
 /// Looks up the run by `started_at` (must match exactly).
-/// Replaces the existing `route_json` (even if it was `[]`).
+/// Replaces the existing `route_json` and computes `elevation_gain_m` from the
+/// route points. Also stores `avg_cadence` and `avg_stride_m` if provided.
 ///
 /// # Errors
 /// Returns `NOT_FOUND` if no run with that timestamp exists, or a database error.
@@ -800,12 +803,29 @@ pub async fn patch_ble_route(
     let route_json = serde_json::to_string(&body.route)
         .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
 
-    let rows = sqlx::query("UPDATE runs SET route_json = ? WHERE started_at = ?")
-        .bind(&route_json)
-        .bind(&body.started_at)
-        .execute(&state.pool)
-        .await?
-        .rows_affected();
+    // Compute elevation gain from the route points.
+    let elevations: Vec<f64> = body.route.iter().filter_map(|p| p.ele).collect();
+    let elevation_gain_m: Option<f64> = if elevations.len() >= 2 {
+        let gain: f64 = elevations.windows(2)
+            .filter_map(|w| { let d = w[1] - w[0]; if d > 0.0 { Some(d) } else { None } })
+            .sum();
+        Some(gain)
+    } else {
+        None
+    };
+
+    let rows = sqlx::query(
+        "UPDATE runs SET route_json = ?, elevation_gain_m = ?, avg_cadence = ?, avg_stride_m = ? \
+         WHERE started_at = ?",
+    )
+    .bind(&route_json)
+    .bind(elevation_gain_m)
+    .bind(body.avg_cadence)
+    .bind(body.avg_stride_m)
+    .bind(&body.started_at)
+    .execute(&state.pool)
+    .await?
+    .rows_affected();
 
     if rows == 0 {
         return Err((StatusCode::NOT_FOUND, "No run found with that started_at".to_string()).into());

@@ -434,7 +434,7 @@ class WatchSyncService {
           _syncedCount++;
 
           // ── Fetch GPS detail for this run ─────────────────────────────────
-          final gpsPoints = await _fetchGpsDetail(
+          final gpsResult = await _fetchGpsDetail(
             summary.startTime,
             send: send,
             receiveResponse: receiveResponse,
@@ -443,13 +443,15 @@ class WatchSyncService {
             setDataWaiter: setDataWaiter,
             setNotifyWaiter: setNotifyWaiter,
           );
-          if (gpsPoints.isNotEmpty) {
+          if (gpsResult.points.isNotEmpty) {
             try {
               await api.updateBleRoute(
                 startedAt: startedAt,
-                route: gpsPoints.map((p) => p.toJson()).toList(),
+                route: gpsResult.points.map((p) => p.toJson()).toList(),
+                avgCadence: gpsResult.avgCadenceSpm,
+                avgStrideM: gpsResult.avgStrideM,
               );
-              print('[BLE] Uploaded ${gpsPoints.length} GPS points for $startedAt');
+              print('[BLE] Uploaded ${gpsResult.points.length} GPS points for $startedAt');
             } catch (e) {
               print('[BLE] GPS route upload failed: $e');
             }
@@ -486,7 +488,7 @@ class WatchSyncService {
   ///
   /// Returns GPS points parsed from the detail payload, or an empty list if
   /// the watch has no detail for this workout, or if the format is unrecognised.
-  Future<List<GpsPoint>> _fetchGpsDetail(
+  Future<GpsDetailResult> _fetchGpsDetail(
     DateTime startTime, {
     required Future<void> Function(Uint8List) send,
     required Future<Uint8List> Function() receiveResponse,
@@ -495,6 +497,7 @@ class WatchSyncService {
     required void Function(Completer<void>?) setDataWaiter,
     required void Function(Completer<void>?) setNotifyWaiter,
   }) async {
+    const empty = GpsDetailResult(points: []);
     // Local seq counter — the watch does not enforce global seq continuity.
     int localSeq = 0x80; // start offset to distinguish from summary fetches
     Uint8List buildAndTick(Uint8List Function(int s) builder) {
@@ -508,11 +511,11 @@ class WatchSyncService {
       await send(buildAndTick((s) => buildSportsDetailRequest(s, startTime)));
       final rawResp = await receiveResponse();
       final (int ep, Uint8List p) = decodeHuami2021(rawResp);
-      if (ep != BleEndpoints.huamiData) return [];
+      if (ep != BleEndpoints.huamiData) return empty;
       final fetchResp = parseFetchResponse(p);
       if (fetchResp == null || !fetchResp.hasData) {
         print('[BLE] GPS detail: no data for $startTime');
-        return [];
+        return empty;
       }
       print('[BLE] GPS detail: count=${fetchResp.count} ts=${fetchResp.sinceTimestamp}');
 
@@ -552,10 +555,10 @@ class WatchSyncService {
 
       // 5. Parse.
       print('[BLE] GPS detail: ${chunks.fold(0, (s, c) => s + c.length)} B in ${chunks.length} chunks');
-      return parseGpsDetail(chunks);
+      return parseGpsDetail(chunks, startTime);
     } catch (e) {
       print('[BLE] GPS detail fetch failed (non-fatal): $e');
-      return [];
+      return empty;
     }
   }
 }
