@@ -117,7 +117,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
             onSubmitted: (_) => _saveKey(),
-            maxLength: 32,
+            maxLength: 34, // 32 hex + optional '0x' prefix
           ),
         ],
       ),

@@ -37,6 +37,7 @@ class HuamiDataType {
 
   static const int activity = 0x01;
   static const int sportsSummaries = 0x05;
+  static const int sportsDetails = 0x06; // GPS track + per-sample HR for one workout
   static const int stressAuto = 0x13;
 }
 
@@ -62,6 +63,26 @@ Uint8List buildSportsFetchRequest(
   payload[7] = sinceMin;
   payload[8] = sinceSec;
   payload[9] = 0x04; // unknown constant present in all requests
+  return encodeHuami2021(BleEndpoints.huamiData, seq, payload);
+}
+
+/// Build a SPORTS_DETAILS fetch request for the workout that started at the given time.
+///
+/// Use the exact start timestamp from the parsed SportsSummary.
+Uint8List buildSportsDetailRequest(
+  int seq,
+  DateTime startTime,
+) {
+  final payload = Uint8List(10);
+  payload[0] = 0x01; // fetch command
+  payload[1] = HuamiDataType.sportsDetails;
+  ByteData.sublistView(payload).setUint16(2, startTime.year, Endian.little);
+  payload[4] = startTime.month;
+  payload[5] = startTime.day;
+  payload[6] = startTime.hour;
+  payload[7] = startTime.minute;
+  payload[8] = startTime.second;
+  payload[9] = 0x04;
   return encodeHuami2021(BleEndpoints.huamiData, seq, payload);
 }
 

@@ -778,6 +778,41 @@ pub async fn import_ble_summary(
     Ok((StatusCode::CREATED, Json(run)))
 }
 
+// ── BLE route update ──────────────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct BleRouteInput {
+    pub started_at: String,
+    pub route: Vec<RoutePoint>,
+}
+
+/// Update the GPS route for a run that was previously imported via BLE summary.
+///
+/// Looks up the run by `started_at` (must match exactly).
+/// Replaces the existing `route_json` (even if it was `[]`).
+///
+/// # Errors
+/// Returns `NOT_FOUND` if no run with that timestamp exists, or a database error.
+pub async fn patch_ble_route(
+    State(state): State<AppState>,
+    Json(body): Json<BleRouteInput>,
+) -> AppResult<StatusCode> {
+    let route_json = serde_json::to_string(&body.route)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+
+    let rows = sqlx::query("UPDATE runs SET route_json = ? WHERE started_at = ?")
+        .bind(&route_json)
+        .bind(&body.started_at)
+        .execute(&state.pool)
+        .await?
+        .rows_affected();
+
+    if rows == 0 {
+        return Err((StatusCode::NOT_FOUND, "No run found with that started_at".to_string()).into());
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
 /// # Errors
 /// Returns `NOT_FOUND` if the run doesn't exist, or a database error.
 pub async fn set_invalid(

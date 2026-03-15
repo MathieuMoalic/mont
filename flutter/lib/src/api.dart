@@ -279,6 +279,24 @@ Future<RunSummary> importBleSummary({
   return RunSummary.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
 }
 
+/// Update the GPS route for a run that was previously imported via BLE summary.
+///
+/// [startedAt] must exactly match the value used in [importBleSummary].
+/// [route] is a list of GPS points as JSON maps (lat, lon, optional ele/hr/t).
+Future<void> updateBleRoute({
+  required String startedAt,
+  required List<Map<String, dynamic>> route,
+}) async {
+  final res = await http.patch(
+    _u('/runs/ble-route'),
+    headers: _headers(),
+    body: jsonEncode({'started_at': startedAt, 'route': route}),
+  );
+  if (res.statusCode != 204) {
+    throw Exception('HTTP ${res.statusCode}: ${res.body}');
+  }
+}
+
 Future<void> importHealthFit(List<int> bytes) async {
   final token = _authToken;
   if (token == null) throw Exception('Not authenticated');
