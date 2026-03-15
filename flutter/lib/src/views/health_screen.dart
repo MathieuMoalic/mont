@@ -26,7 +26,6 @@ class _HealthScreenState extends State<HealthScreen> {
   List<DailyHealth>? _days;
   List<WeightEntry>? _weights;
   String? _error;
-  bool _syncing = false;
   _Range _range = _Range.twoWeeks;
 
   @override
@@ -47,29 +46,6 @@ class _HealthScreenState extends State<HealthScreen> {
       }
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
-    }
-  }
-
-  Future<void> _sync() async {
-    setState(() => _syncing = true);
-    try {
-      final result = await api.syncGadgetbridge();
-      final healthDays = result['health_days'] as int? ?? 0;
-      final imported = result['imported'] as int? ?? 0;
-      final errors = (result['errors'] as List?)?.cast<String>() ?? [];
-      await _load();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Synced: $imported runs, $healthDays health days'
-              '${errors.isNotEmpty ? ', ${errors.length} errors' : ''}'),
-        ));
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Sync failed: $e')));
-      }
-    } finally {
-      if (mounted) setState(() => _syncing = false);
     }
   }
 
@@ -200,19 +176,7 @@ class _HealthScreenState extends State<HealthScreen> {
         SliverAppBar(
           title: const Text('Health'),
           floating: true,
-          actions: [
-            if (_syncing)
-              const Padding(
-                padding: EdgeInsets.all(14),
-                child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
-              )
-            else
-              IconButton(
-                icon: const Icon(Icons.sync),
-                tooltip: 'Sync from Gadgetbridge',
-                onPressed: _sync,
-              ),
-          ],
+          actions: const [],
         ),
         SliverToBoxAdapter(child: _buildRangeChips()),
         SliverToBoxAdapter(child: _buildHrChart(days)),

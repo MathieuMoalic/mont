@@ -16,7 +16,6 @@ use mont::{
     db::make_pool,
     logging::init_logging,
     models::AppState,
-    routes::runs::perform_sync,
 };
 
 #[tokio::main]
@@ -74,45 +73,9 @@ async fn main() -> anyhow::Result<()> {
 
     let app = build_app(state.clone());
 
-    // ── Daily auto-sync ───────────────────────────────────────────────────────
-    if state.config.gadgetbridge_zip.is_some() {
-        let sync_state = state.clone();
-        let sync_time = config.sync_time.clone();
-        tokio::spawn(async move {
-            loop {
-                let delay = secs_until(&sync_time);
-                tracing::info!("Next auto-sync in {delay}s (at {sync_time})");
-                tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
-                tracing::info!("Running scheduled Gadgetbridge sync");
-                match perform_sync(&sync_state).await {
-                    Ok(r) => tracing::info!(
-                        "Auto-sync done: {} runs, {} health days, {} errors",
-                        r.imported, r.health_days, r.errors.len()
-                    ),
-                    Err(e) => tracing::error!("Auto-sync failed: {e}"),
-                }
-            }
-        });
-    }
-
     let listener = TcpListener::bind(config.bind).await?;
     axum::serve(listener, app).await?;
     Ok(())
-}
-
-/// Returns seconds until the next occurrence of `hh:mm` in local time.
-fn secs_until(hhmm: &str) -> u64 {
-    use chrono::{Local, NaiveTime};
-    let now = Local::now();
-    let target = NaiveTime::parse_from_str(hhmm, "%H:%M")
-        .unwrap_or_else(|_| NaiveTime::from_hms_opt(5, 0, 0).expect("valid"));
-    let now_time = now.time();
-    let secs_today = if target > now_time {
-        (target - now_time).num_seconds()
-    } else {
-        86_400 - (now_time - target).num_seconds()
-    };
-    u64::try_from(secs_today).unwrap_or(0)
 }
 
 fn handle_command(command: Commands) -> anyhow::Result<()> {

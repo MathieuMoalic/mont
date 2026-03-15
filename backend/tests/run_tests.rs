@@ -307,63 +307,6 @@ async fn mark_nonexistent_run_invalid_returns_404() {
     assert_eq!(res.status(), 404);
 }
 
-// ── Gadgetbridge zip sync tests ───────────────────────────────────────────────
-
-#[tokio::test]
-async fn sync_without_zip_configured_returns_503() {
-    let app = common::TestApp::spawn().await;
-    let res = app.post_empty("/runs/sync").await;
-    assert_eq!(res.status(), 503);
-}
-
-#[tokio::test]
-async fn sync_from_zip_imports_running_activities() {
-    use std::io::Write;
-
-    // Build an in-memory zip with database/Gadgetbridge (SQLite) and files/run.gpx
-    let zip_bytes = {
-        let mut buf = std::io::Cursor::new(Vec::new());
-        let mut zip = zip::ZipWriter::new(&mut buf);
-        let options = zip::write::FileOptions::<()>::default()
-            .compression_method(zip::CompressionMethod::Stored);
-
-        // Create a minimal SQLite DB with one running activity pointing to run.gpx
-        let db_bytes = {
-            let tmp = tempfile::NamedTempFile::new().unwrap();
-            let conn = rusqlite::Connection::open(tmp.path()).unwrap();
-            conn.execute_batch(
-                "CREATE TABLE BASE_ACTIVITY_SUMMARY \
-                 (GPX_TRACK TEXT, ACTIVITY_KIND INTEGER); \
-                 INSERT INTO BASE_ACTIVITY_SUMMARY VALUES ('files/run.gpx', 1);",
-            )
-            .unwrap();
-            drop(conn);
-            std::fs::read(tmp.path()).unwrap()
-        };
-
-        zip.start_file("database/Gadgetbridge", options).unwrap();
-        zip.write_all(&db_bytes).unwrap();
-
-        zip.start_file("files/run.gpx", options).unwrap();
-        zip.write_all(SAMPLE_GPX.as_bytes()).unwrap();
-
-        zip.finish().unwrap();
-        buf.into_inner()
-    };
-
-    // Write the zip to a temp file and spawn an app that points to it.
-    let zip_file = tempfile::NamedTempFile::new().unwrap();
-    std::fs::write(zip_file.path(), &zip_bytes).unwrap();
-
-    let app = common::TestApp::spawn_with_zip(zip_file.path().to_path_buf()).await;
-
-    let res = app.post_empty("/runs/sync").await;
-    assert_eq!(res.status(), 200);
-    let body: serde_json::Value = res.json().await.unwrap();
-    assert_eq!(body["imported"], 1);
-    assert_eq!(body["errors"], serde_json::json!([]));
-}
-
 fn make_gpx_with_type(activity_type: &str) -> Vec<u8> {
     format!(r#"<?xml version="1.0" encoding="UTF-8"?>
 <gpx version="1.1" creator="GadgetBridge"
