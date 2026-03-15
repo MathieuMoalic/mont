@@ -9,7 +9,7 @@
 //   field 1  (string)  : version, e.g. "2.1"
 //   field 2  (message) : start info
 //     field 1 (varint) : start_timestamp (Unix seconds, UTC)
-//     field 3 (varint) : sport_type (8 = outdoor running on Cheetah Pro)
+//     field 3 (varint) : sport_type (8 = outdoor run on Cheetah Pro)
 //     field 13(varint) : duration_minutes
 //   field 19 (message) : heart-rate stats
 //     field 1 (varint) : avg_hr
@@ -19,7 +19,7 @@
 
 import 'dart:typed_data';
 
-const int _sportTypeOutdoorRunning = 6;
+const int _sportTypeOutdoorRunning = 8;
 
 class SportsSummary {
   const SportsSummary({
