@@ -5,8 +5,12 @@ linux:
   flutter run -d Linux 
 
 android:
+  #!/usr/bin/env bash
+  LOG=/home/mat/projects/mont/flutter-android.log
+  > "$LOG"
+  echo "Logs → $LOG"
   adb reverse tcp:8080 tcp:8080
-  flutter run -d CPH2465
+  flutter run -d CPH2465 2>&1 | tee "$LOG"
 
 test-watch:
   watchexec -e dart -c -w lib -w test -- flutter test --reporter compact

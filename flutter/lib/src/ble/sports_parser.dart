@@ -23,10 +23,41 @@
 //     field 2 (varint) : max_hr
 //   field 40 (message) : totals (used as fallback for non-GPS runs)
 //     field 3 (varint) : total_distance in 0.1 m units (non-GPS only)
+//
+// GPS detail protobuf layout (data type 0x06):
+//   The GPS track data comes in the sports-detail response.
+//   The exact field layout is device/firmware-specific.
+//   All received data is logged as hex for debugging.
+//   GPS points are extracted from sub-messages and validated by lat/lon range.
+//   Lat/lon are stored as int32 × 1e-7 degrees (zigzag-encoded varints).
 
 import 'dart:typed_data';
 
 const int _sportTypeOutdoorRunning = 8;
+
+class GpsPoint {
+  const GpsPoint({
+    required this.lat,
+    required this.lon,
+    this.ele,
+    this.hr,
+    this.t,
+  });
+
+  final double lat;   // degrees
+  final double lon;   // degrees
+  final double? ele;  // meters
+  final int? hr;      // bpm
+  final int? t;       // seconds since run start
+
+  Map<String, dynamic> toJson() => {
+    'lat': lat,
+    'lon': lon,
+    if (ele != null) 'ele': ele,
+    if (hr != null) 'hr': hr,
+    if (t != null) 't': t,
+  };
+}
 
 class SportsSummary {
   const SportsSummary({
@@ -138,7 +169,109 @@ SportsSummary? parseSportsSummary(List<List<int>> chunks) {
   );
 }
 
-// ── Minimal protobuf decoder ──────────────────────────────────────────────────
+// ── GPS detail parser ─────────────────────────────────────────────────────────
+
+/// Parse GPS track points from a sports-detail BLE transfer (data type 0x06).
+///
+/// Same chunk format as summary: 1-byte seq prefix per chunk, 2-byte header.
+/// Logs all decoded field values for debugging unknown firmware formats.
+/// Returns an empty list if no valid GPS points are found.
+List<GpsPoint> parseGpsDetail(List<List<int>> chunks) {
+  if (chunks.isEmpty) return [];
+
+  final assembled = <int>[];
+  for (final chunk in chunks) {
+    if (chunk.length < 2) continue;
+    assembled.addAll(chunk.skip(1));
+  }
+  if (assembled.length < 3) return [];
+  final proto = Uint8List.fromList(assembled.skip(2).toList());
+
+  // Log raw hex for debugging.
+  final hexStr = proto.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ');
+  print('[BLE][GPS-RAW] ${proto.length} B: $hexStr');
+
+  final top = _decodeMessage(proto, 0, proto.length);
+  print('[BLE][GPS-FIELDS] top-level fields: ${top.keys.toList()}');
+
+  final points = <GpsPoint>[];
+
+  // Try every length-delimited top-level field as a container for GPS points.
+  for (final fieldNum in top.keys.toList()..sort()) {
+    final values = top[fieldNum];
+    if (values == null) continue;
+    for (final v in values) {
+      if (v is! List) continue; // skip varint fields
+      // Try to decode as a GPS point or as a container of GPS points.
+      final bytes = Uint8List.fromList(v as List<int>);
+      final sub = _decodeMessage(bytes, 0, bytes.length);
+
+      // Case A: this sub-message has lat/lon directly (fields 1,2 as large varints)
+      final pt = _tryGpsPoint(sub);
+      if (pt != null) {
+        points.add(pt);
+        continue;
+      }
+
+      // Case B: this sub-message contains repeated GPS point sub-messages.
+      for (final innerFieldNum in sub.keys) {
+        final innerValues = sub[innerFieldNum];
+        if (innerValues == null) continue;
+        for (final iv in innerValues) {
+          if (iv is! List) continue;
+          final innerBytes = Uint8List.fromList(iv as List<int>);
+          final innerSub = _decodeMessage(innerBytes, 0, innerBytes.length);
+          final ipt = _tryGpsPoint(innerSub);
+          if (ipt != null) points.add(ipt);
+        }
+      }
+    }
+  }
+
+  print('[BLE][GPS] Parsed ${points.length} GPS point(s)');
+  return points;
+}
+
+/// Try to interpret a decoded sub-message as a GPS point.
+///
+/// Expects:
+///   field 1 = latitude  as zigzag sint32 × 1e-7 degrees
+///   field 2 = longitude as zigzag sint32 × 1e-7 degrees
+///   field 3 = altitude  as varint (meters, optional)
+///   field 5 = time_offset (seconds from run start, optional)
+///   field 6 = heart rate (bpm, optional)
+///
+/// Returns null if lat/lon are absent or out of plausible range.
+GpsPoint? _tryGpsPoint(Map<int, List<dynamic>> msg) {
+  final rawLat = msg[1]?.firstOrNull;
+  final rawLon = msg[2]?.firstOrNull;
+  if (rawLat == null || rawLon == null) return null;
+  if (rawLat is! int || rawLon is! int) return null;
+
+  // ZeppOS stores lat/lon as zigzag-encoded signed int32 × 1e7.
+  final lat = _zigzagDecode(rawLat) / 1e7;
+  final lon = _zigzagDecode(rawLon) / 1e7;
+
+  // Validate plausible GPS range.
+  if (lat < -90 || lat > 90 || lon < -180 || lon > 180) return null;
+  // Reject (0, 0) placeholder points.
+  if (lat == 0 && lon == 0) return null;
+
+  final rawAlt = msg[3]?.firstOrNull;
+  final rawT   = msg[5]?.firstOrNull;
+  final rawHr  = msg[6]?.firstOrNull;
+
+  return GpsPoint(
+    lat: lat,
+    lon: lon,
+    ele: (rawAlt is int) ? rawAlt.toDouble() : null,
+    t:   (rawT is int)   ? rawT              : null,
+    hr:  (rawHr is int)  ? rawHr             : null,
+  );
+}
+
+/// Decode a zigzag-encoded sint32/sint64 varint.
+int _zigzagDecode(int n) => (n >> 1) ^ -(n & 1);
 
 // Decodes a protobuf message from [data[start..start+len]] into a map of
 // field_number → list of values.

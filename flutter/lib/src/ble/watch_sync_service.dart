@@ -432,6 +432,28 @@ class WatchSyncService {
             maxHr: summary.maxHr,
           );
           _syncedCount++;
+
+          // ── Fetch GPS detail for this run ─────────────────────────────────
+          final gpsPoints = await _fetchGpsDetail(
+            summary.startTime,
+            send: send,
+            receiveResponse: receiveResponse,
+            notifyEvents: notifyEvents,
+            dataEvents: dataEvents,
+            setDataWaiter: setDataWaiter,
+            setNotifyWaiter: setNotifyWaiter,
+          );
+          if (gpsPoints.isNotEmpty) {
+            try {
+              await api.updateBleRoute(
+                startedAt: startedAt,
+                route: gpsPoints.map((p) => p.toJson()).toList(),
+              );
+              print('[BLE] Uploaded ${gpsPoints.length} GPS points for $startedAt');
+            } catch (e) {
+              print('[BLE] GPS route upload failed: $e');
+            }
+          }
         } else {
           print('[BLE] Skipping non-outdoor-run (sport_type=${summary.sportType})');
         }
@@ -457,6 +479,83 @@ class WatchSyncService {
       _notify(SyncStatus.done, 'No outdoor runs found.\nSport types seen: $typeSummary');
     } else {
       _notify(SyncStatus.done, 'Synced $_syncedCount outdoor run(s).\nAll types: $typeSummary');
+    }
+  }
+
+  /// Fetch GPS detail for a single outdoor run (data type 0x06).
+  ///
+  /// Returns GPS points parsed from the detail payload, or an empty list if
+  /// the watch has no detail for this workout, or if the format is unrecognised.
+  Future<List<GpsPoint>> _fetchGpsDetail(
+    DateTime startTime, {
+    required Future<void> Function(Uint8List) send,
+    required Future<Uint8List> Function() receiveResponse,
+    required List<List<int>> notifyEvents,
+    required List<List<int>> dataEvents,
+    required void Function(Completer<void>?) setDataWaiter,
+    required void Function(Completer<void>?) setNotifyWaiter,
+  }) async {
+    // Local seq counter — the watch does not enforce global seq continuity.
+    int localSeq = 0x80; // start offset to distinguish from summary fetches
+    Uint8List buildAndTick(Uint8List Function(int s) builder) {
+      final pkt = builder(localSeq);
+      localSeq = (localSeq + 1) & 0xff;
+      return pkt;
+    }
+
+    try {
+      // 1. Request GPS detail at the exact workout start time.
+      await send(buildAndTick((s) => buildSportsDetailRequest(s, startTime)));
+      final rawResp = await receiveResponse();
+      final (int ep, Uint8List p) = decodeHuami2021(rawResp);
+      if (ep != BleEndpoints.huamiData) return [];
+      final fetchResp = parseFetchResponse(p);
+      if (fetchResp == null || !fetchResp.hasData) {
+        print('[BLE] GPS detail: no data for $startTime');
+        return [];
+      }
+      print('[BLE] GPS detail: count=${fetchResp.count} ts=${fetchResp.sinceTimestamp}');
+
+      // 2. Start transfer.
+      await send(buildAndTick(buildStartTransfer));
+
+      // 3. Collect data chunks until transfer-complete on 0x0017.
+      final chunks = <List<int>>[];
+      while (true) {
+        while (dataEvents.isNotEmpty) {
+          chunks.add(dataEvents.removeAt(0));
+        }
+        if (notifyEvents.isNotEmpty) {
+          final packet = Uint8List.fromList(notifyEvents.removeAt(0));
+          if (packet.length >= 11) {
+            final (int ep2, Uint8List p2) = decodeHuami2021(packet);
+            if (ep2 == BleEndpoints.huamiData && p2.length >= 2 &&
+                p2[0] == 0x10 && p2[1] == 0x02) {
+              print('[BLE] GPS detail transfer complete. Chunks: ${chunks.length}');
+              break;
+            }
+          }
+          continue;
+        }
+        final waiter = Completer<void>();
+        setDataWaiter(waiter);
+        setNotifyWaiter(waiter);
+        await waiter.future.timeout(
+          const Duration(seconds: 30),
+          onTimeout: () => throw Exception('GPS detail transfer timed out'),
+        );
+      }
+
+      // 4. ACK — keep data on watch.
+      await send(buildAndTick((s) => buildAckTransfer(s, deleteFromWatch: false)));
+      await receiveResponse(); // consume ACK response
+
+      // 5. Parse.
+      print('[BLE] GPS detail: ${chunks.fold(0, (s, c) => s + c.length)} B in ${chunks.length} chunks');
+      return parseGpsDetail(chunks);
+    } catch (e) {
+      print('[BLE] GPS detail fetch failed (non-fatal): $e');
+      return [];
     }
   }
 }

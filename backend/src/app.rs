@@ -75,6 +75,7 @@ pub fn build_app(state: AppState) -> Router {
         .route("/runs/import", post(runs::import_run))
         .route("/runs/import/fit", post(runs::import_run_fit))
         .route("/runs/ble", post(runs::import_ble_summary))
+        .route("/runs/ble-route", patch(runs::patch_ble_route))
         .route("/runs/{id}", get(runs::get_run).delete(runs::delete_run).patch(runs::set_invalid))
         .route_layer(from_fn_with_state(state.clone(), require_auth));
 
