@@ -27,11 +27,13 @@ class WatchSyncService {
   SyncStatus _status = SyncStatus.idle;
   String _message = '';
   int _syncedCount = 0;
+  int _scannedCount = 0;
   String? _lastError;
 
   SyncStatus get status => _status;
   String get message => _message;
   int get syncedCount => _syncedCount;
+  int get scannedCount => _scannedCount;
   String? get lastError => _lastError;
   bool get isRunning => _status != SyncStatus.idle &&
       _status != SyncStatus.done &&
@@ -60,6 +62,7 @@ class WatchSyncService {
   Future<void> sync() async {
     _cancelled = false;
     _syncedCount = 0;
+    _scannedCount = 0;
     _lastError = null;
 
     try {
@@ -357,7 +360,15 @@ class WatchSyncService {
 
       if (!fetchResp.hasData) break; // no more workouts
 
-      _notify(SyncStatus.syncing, 'Downloading workout…');
+      // Show the date of the workout being downloaded.
+      final ts = fetchResp.sinceTimestamp;
+      final dateLabel = ts != null
+          ? '${ts.year}-${ts.month.toString().padLeft(2, '0')}-${ts.day.toString().padLeft(2, '0')}'
+          : '…';
+      _scannedCount++;
+      _notify(SyncStatus.syncing,
+          'Scanning #$_scannedCount  ($dateLabel)\n'
+          '$_syncedCount run(s) imported so far');
 
       // ── 2. Start transfer ─────────────────────────────────────────────────
       await send(buildStartTransfer(seq));
@@ -416,8 +427,6 @@ class WatchSyncService {
             maxHr: summary.maxHr,
           );
           _syncedCount++;
-          _notify(SyncStatus.syncing,
-              'Synced $_syncedCount run(s)…');
         } else {
           print('[BLE] Skipping non-outdoor-run (sport_type=${summary.sportType})');
         }
