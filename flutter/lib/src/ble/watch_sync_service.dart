@@ -53,14 +53,16 @@ class WatchSyncService {
   }
 
   bool _cancelled = false;
+  int? _maxRuns; // null = no limit (full sync)
 
   void cancel() {
     _cancelled = true;
   }
 
   /// Run a full sync cycle. Reads device key and remote ID from stored settings.
-  Future<void> sync() async {
+  Future<void> sync({int? maxRuns}) async {
     _cancelled = false;
+    _maxRuns = maxRuns;
     _syncedCount = 0;
     _scannedCount = 0;
     _lastError = null;
@@ -460,6 +462,9 @@ class WatchSyncService {
           print('[BLE] Skipping non-outdoor-run (sport_type=${summary.sportType})');
         }
         sportTypeCounts[summary.sportType] = (sportTypeCounts[summary.sportType] ?? 0) + 1;
+
+        // Stop early if a run limit was requested (debug mode).
+        if (_maxRuns != null && _syncedCount >= _maxRuns!) break;
 
         // Advance "since" past the END of this workout. Always advance from
         // whichever is later: the computed end time OR current since + 1 h.

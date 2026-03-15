@@ -32,6 +32,10 @@ class _WatchSyncScreenState extends State<WatchSyncScreen> {
     await _service.sync();
   }
 
+  Future<void> _startQuickSync() async {
+    await _service.sync(maxRuns: 5);
+  }
+
   void _cancel() => _service.cancel();
 
   @override
@@ -56,12 +60,19 @@ class _WatchSyncScreenState extends State<WatchSyncScreen> {
                 icon: const Icon(Icons.stop),
                 label: const Text('Cancel'),
               )
-            else
+            else ...[
               FilledButton.icon(
                 onPressed: _startSync,
                 icon: const Icon(Icons.sync),
                 label: const Text('Sync Now'),
               ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: _startQuickSync,
+                icon: const Icon(Icons.fast_forward),
+                label: const Text('Quick Sync (5 runs)'),
+              ),
+            ],
           ],
         ),
       ),
