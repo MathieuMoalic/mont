@@ -411,3 +411,85 @@ async fn gpx_without_type_field_is_accepted() {
         .bearer_auth(&app.token).multipart(form).send().await.unwrap();
     assert_eq!(res.status(), 201);
 }
+
+// ── FIT import tests ──────────────────────────────────────────────────────────
+//
+// A minimal valid FIT file: 3 GPS record messages + 1 session message (sport=running).
+// Generated from Python using the FIT binary protocol spec.
+// Track: Paris area, 5-min intervals, elevation 35→37.5→36m, HR 140/155/160 bpm,
+// cadence 160/162/164 spm (stored as strides/min 80/81/82), speed 3.0–3.2 m/s.
+// Expected: started_at=2026-01-15T09:00:00Z, duration=600s, distance≈265m.
+const SAMPLE_FIT: &[u8] = &[
+    0x0e, 0x10, 0x43, 0x08, 0x78, 0x00, 0x00, 0x00, 0x2e, 0x46, 0x49, 0x54, 0xf0, 0x1c,
+    0x40, 0x00, 0x00, 0x14, 0x00, 0x07, 0xfd, 0x04, 0x86, 0x00, 0x04, 0x85, 0x01, 0x04,
+    0x85, 0x02, 0x02, 0x84, 0x03, 0x01, 0x02, 0x04, 0x01, 0x02, 0x06, 0x02, 0x84, 0x00,
+    0x90, 0x60, 0xcb, 0x43, 0x96, 0x12, 0xbe, 0x22, 0x77, 0x34, 0xac, 0x01, 0x73, 0x0a,
+    0x8c, 0x50, 0xb8, 0x0b, 0x00, 0xbc, 0x61, 0xcb, 0x43, 0x31, 0x41, 0xbe, 0x22, 0x12,
+    0x63, 0xac, 0x01, 0x80, 0x0a, 0x9b, 0x51, 0x1c, 0x0c, 0x00, 0xe8, 0x62, 0xcb, 0x43,
+    0xcb, 0x6f, 0xbe, 0x22, 0xac, 0x91, 0xac, 0x01, 0x78, 0x0a, 0xa0, 0x52, 0x80, 0x0c,
+    0x41, 0x00, 0x00, 0x12, 0x00, 0x05, 0xfd, 0x04, 0x86, 0x05, 0x01, 0x00, 0x07, 0x04,
+    0x86, 0x09, 0x04, 0x86, 0x0e, 0x01, 0x02, 0x01, 0x14, 0x64, 0xcb, 0x43, 0x01, 0xc0,
+    0x27, 0x09, 0x00, 0xce, 0x67, 0x00, 0x00, 0x9b, 0xa0, 0xf4,
+];
+
+async fn import_fit(app: &common::TestApp) -> reqwest::Response {
+    let part = reqwest::multipart::Part::bytes(SAMPLE_FIT.to_vec())
+        .file_name("run.fit")
+        .mime_str("application/octet-stream")
+        .unwrap();
+    let form = reqwest::multipart::Form::new().part("file", part);
+    app.client
+        .post(app.url("/runs/import/fit"))
+        .bearer_auth(&app.token)
+        .multipart(form)
+        .send()
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn import_fit_returns_201() {
+    let app = common::TestApp::spawn().await;
+    let res = import_fit(&app).await;
+    assert_eq!(res.status(), 201);
+}
+
+#[tokio::test]
+async fn import_fit_extracts_distance_duration_and_timestamp() {
+    let app = common::TestApp::spawn().await;
+    let body: serde_json::Value = import_fit(&app).await.json().await.unwrap();
+    assert!(body["id"].as_i64().is_some());
+    assert_eq!(body["duration_s"], 600);
+    assert_eq!(body["started_at"], "2026-01-15T09:00:00Z");
+    let dist = body["distance_m"].as_f64().unwrap();
+    assert!(dist > 100.0, "expected distance > 100m, got {dist}");
+}
+
+#[tokio::test]
+async fn import_fit_extracts_heart_rate() {
+    let app = common::TestApp::spawn().await;
+    let body: serde_json::Value = import_fit(&app).await.json().await.unwrap();
+    let avg_hr = body["avg_hr"].as_i64().unwrap();
+    assert!(avg_hr >= 140 && avg_hr <= 160, "avg_hr={avg_hr} out of expected range");
+    let max_hr = body["max_hr"].as_i64().unwrap();
+    assert_eq!(max_hr, 160);
+}
+
+#[tokio::test]
+async fn import_fit_appears_in_run_list() {
+    let app = common::TestApp::spawn().await;
+    import_fit(&app).await;
+    let runs: Vec<serde_json::Value> = app.get("/runs").await.json().await.unwrap();
+    assert_eq!(runs.len(), 1);
+}
+
+#[tokio::test]
+async fn import_fit_invalid_bytes_returns_422() {
+    let app = common::TestApp::spawn().await;
+    let part = reqwest::multipart::Part::bytes(b"not a fit file".to_vec())
+        .file_name("run.fit");
+    let form = reqwest::multipart::Form::new().part("file", part);
+    let res = app.client.post(app.url("/runs/import/fit"))
+        .bearer_auth(&app.token).multipart(form).send().await.unwrap();
+    assert_eq!(res.status(), 422);
+}

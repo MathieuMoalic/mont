@@ -295,6 +295,7 @@ dependencies = [
  "iana-time-zone",
  "js-sys",
  "num-traits",
+ "serde",
  "wasm-bindgen",
  "windows-link",
 ]
@@ -572,6 +573,17 @@ name = "find-msvc-tools"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582"
+
+[[package]]
+name = "fitparser"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1294b34d7e0e59469d9331a7fb70a00c9cc5fb51401605b652754dfb58a6e7e6"
+dependencies = [
+ "chrono",
+ "nom",
+ "serde",
+]
 
 [[package]]
 name = "flate2"
@@ -1277,6 +1289,7 @@ dependencies = [
  "axum",
  "chrono",
  "clap",
+ "fitparser",
  "jsonwebtoken",
  "libsqlite3-sys",
  "mime_guess",
@@ -1317,6 +1330,15 @@ dependencies = [
  "mime",
  "spin",
  "version_check",
+]
+
+[[package]]
+name = "nom"
+version = "8.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df9761775871bdef83bee530e60050f7e54b1105350d6884eb0fb4f46c2f9405"
+dependencies = [
+ "memchr",
 ]
 
 [[package]]

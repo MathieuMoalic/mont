@@ -72,6 +72,7 @@ pub fn build_app(state: AppState) -> Router {
         .route("/runs/prs", get(runs::personal_records))
         .route("/runs/heatmap", get(runs::heatmap))
         .route("/runs/import", post(runs::import_run))
+        .route("/runs/import/fit", post(runs::import_run_fit))
         .route("/runs/sync", post(runs::sync_gadgetbridge))
         .route("/runs/gb-debug", get(runs::gb_debug))
         .route("/runs/{id}", get(runs::get_run).delete(runs::delete_run).patch(runs::set_invalid))
