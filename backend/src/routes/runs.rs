@@ -241,6 +241,125 @@ fn parse_gpx(data: &[u8]) -> anyhow::Result<ParsedRun> {
     })
 }
 
+// ── FIT parsing ───────────────────────────────────────────────────────────────
+
+const SEMICIRCLES_TO_DEG: f64 = 180.0 / 2_147_483_648.0;
+
+fn fit_value_as_f64(v: &fitparser::Value) -> Option<f64> {
+    use std::convert::TryInto;
+    v.clone().try_into().ok()
+}
+
+fn fit_value_as_i64(v: &fitparser::Value) -> Option<i64> {
+    use std::convert::TryInto;
+    v.clone().try_into().ok()
+}
+
+fn fit_field<'a>(record: &'a fitparser::FitDataRecord, name: &str) -> Option<&'a fitparser::Value> {
+    record.fields().iter().find(|f| f.name() == name).map(fitparser::FitDataField::value)
+}
+
+fn parse_fit(data: &[u8]) -> anyhow::Result<ParsedRun> {
+    let records = fitparser::from_bytes(data)?;
+
+    // Check activity type from session record (default to running if absent)
+    let sport: Option<String> = records.iter()
+        .filter(|r| r.kind().to_string() == "session")
+        .find_map(|r| {
+            if let Some(fitparser::Value::String(s)) = fit_field(r, "sport") {
+                Some(s.clone())
+            } else {
+                None
+            }
+        });
+
+    if !is_running_activity(sport.as_deref()) {
+        anyhow::bail!(
+            "Activity type '{}' is not a running activity",
+            sport.as_deref().unwrap_or("unknown")
+        );
+    }
+
+    let mut points: Vec<TrackPoint> = Vec::new();
+
+    for record in records.iter().filter(|r| r.kind().to_string() == "record") {
+        let lat = fit_field(record, "position_lat")
+            .and_then(fit_value_as_i64)
+            .map(|v| {
+                #[allow(clippy::cast_precision_loss)]
+                let f = v as f64;
+                f * SEMICIRCLES_TO_DEG
+            });
+        let lon = fit_field(record, "position_long")
+            .and_then(fit_value_as_i64)
+            .map(|v| {
+                #[allow(clippy::cast_precision_loss)]
+                let f = v as f64;
+                f * SEMICIRCLES_TO_DEG
+            });
+
+        let Some((lat, lon)) = lat.zip(lon) else { continue };
+
+        let ele = fit_field(record, "enhanced_altitude")
+            .or_else(|| fit_field(record, "altitude"))
+            .and_then(fit_value_as_f64);
+
+        let hr = fit_field(record, "heart_rate")
+            .and_then(fit_value_as_i64)
+            .filter(|&v| v > 0 && v < 255);
+
+        // FIT cadence is strides/min; multiply by 2 for total steps/min
+        let cad = fit_field(record, "cadence")
+            .and_then(fit_value_as_i64)
+            .filter(|&v| v > 0)
+            .map(|v| v * 2);
+
+        let speed = fit_field(record, "enhanced_speed")
+            .or_else(|| fit_field(record, "speed"))
+            .and_then(fit_value_as_f64)
+            .filter(|&v| v > 0.0);
+
+        let time_secs = record.fields().iter()
+            .find(|f| f.name() == "timestamp")
+            .and_then(|f| {
+                if let fitparser::Value::Timestamp(dt) = f.value() {
+                    Some(dt.timestamp())
+                } else {
+                    None
+                }
+            });
+
+        points.push(TrackPoint { lat, lon, ele, time_secs, hr, cad, speed });
+    }
+
+    anyhow::ensure!(!points.is_empty(), "FIT file contains no GPS track points");
+
+    let (started_at, duration_s) = compute_timing(&points);
+    let distance_m: f64 = points.windows(2)
+        .map(|w| haversine_m(w[0].lat, w[0].lon, w[1].lat, w[1].lon))
+        .sum();
+    let elevation_gain_m = compute_elevation_gain(&points);
+    let stats = compute_run_stats(&points);
+
+    let route = {
+        let t0 = points.first().and_then(|p| p.time_secs);
+        points.into_iter().map(|p| RoutePoint {
+            lat: p.lat, lon: p.lon, ele: p.ele, hr: p.hr,
+            t: p.time_secs.and_then(|ts| t0.map(|t0| ts - t0)),
+            cad: p.cad.filter(|&c| c > 0),
+        }).collect()
+    };
+
+    Ok(ParsedRun {
+        started_at, duration_s, distance_m, elevation_gain_m,
+        avg_hr: stats.avg_hr, max_hr: stats.max_hr,
+        avg_cadence: stats.avg_cadence, avg_stride_m: stats.avg_stride_m,
+        route, activity_type: sport,
+        weather_temp_c: None, weather_wind_kph: None,
+        weather_precip_mm: None, weather_code: None,
+    })
+}
+
 // ── Handlers ──────────────────────────────────────────────────────────────────
 
 /// # Errors
@@ -283,6 +402,83 @@ pub async fn import_run(
             ),
         ).into());
     }
+
+    // Fetch weather for the first route point
+    if let Some(first) = parsed.route.first()
+        && let Ok(ts) = parse_timestamp(&parsed.started_at)
+        && let Some(w) = crate::weather::fetch_weather(
+            &state.http, first.lat, first.lon, ts,
+        ).await
+    {
+        parsed.weather_temp_c    = Some(w.temp_c);
+        parsed.weather_wind_kph  = Some(w.wind_kph);
+        parsed.weather_precip_mm = Some(w.precip_mm);
+        parsed.weather_code      = Some(w.code);
+    }
+
+    let route_json = serde_json::to_string(&parsed.route)
+        .map_err(anyhow::Error::from)?;
+
+    let run = sqlx::query_as::<_, RunSummary>(
+        "INSERT INTO runs \
+         (started_at, duration_s, distance_m, elevation_gain_m, avg_hr, max_hr, route_json, avg_cadence, avg_stride_m, \
+          weather_temp_c, weather_wind_kph, weather_precip_mm, weather_code) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
+         RETURNING id, started_at, duration_s, distance_m, elevation_gain_m, avg_hr, max_hr, notes, is_invalid, \
+                   avg_cadence, avg_stride_m, weather_temp_c, weather_wind_kph, weather_precip_mm, weather_code",
+    )
+    .bind(&parsed.started_at)
+    .bind(parsed.duration_s)
+    .bind(parsed.distance_m)
+    .bind(parsed.elevation_gain_m)
+    .bind(parsed.avg_hr)
+    .bind(parsed.max_hr)
+    .bind(&route_json)
+    .bind(parsed.avg_cadence)
+    .bind(parsed.avg_stride_m)
+    .bind(parsed.weather_temp_c)
+    .bind(parsed.weather_wind_kph)
+    .bind(parsed.weather_precip_mm)
+    .bind(parsed.weather_code)
+    .fetch_one(&state.pool)
+    .await?;
+
+    Ok((StatusCode::CREATED, Json(run)))
+}
+
+/// Import a run from a Garmin FIT file (e.g., directly downloaded from an Amazfit watch).
+///
+/// # Errors
+/// Returns `BAD_REQUEST` if the multipart body is malformed or missing the `file` field,
+/// `UNPROCESSABLE_ENTITY` if the FIT file cannot be parsed or is not a running activity,
+/// or a database error.
+pub async fn import_run_fit(
+    State(state): State<AppState>,
+    mut multipart: Multipart,
+) -> AppResult<(StatusCode, Json<RunSummary>)> {
+    let mut fit_bytes: Option<Vec<u8>> = None;
+
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.body_text()))?
+    {
+        if field.name() == Some("file") {
+            fit_bytes = Some(
+                field
+                    .bytes()
+                    .await
+                    .map_err(|e| (StatusCode::BAD_REQUEST, e.body_text()))?
+                    .to_vec(),
+            );
+        }
+    }
+
+    let bytes = fit_bytes
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, "Missing `file` field".to_string()))?;
+
+    let mut parsed = parse_fit(&bytes)
+        .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, e.to_string()))?;
 
     // Fetch weather for the first route point
     if let Some(first) = parsed.route.first()
