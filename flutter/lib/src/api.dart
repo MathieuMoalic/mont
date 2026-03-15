@@ -259,6 +259,29 @@ Future<RunSummary> importGpx(List<int> bytes, String filename) async {
   return RunSummary.fromJson(jsonDecode(body) as Map<String, dynamic>);
 }
 
+Future<RunSummary> importFit(List<int> bytes) async {
+  final token = _authToken;
+  if (token == null) throw Exception('Not authenticated');
+  final req = http.MultipartRequest('POST', _u('/runs/import/fit'))
+    ..headers['Authorization'] = 'Bearer $token'
+    ..files.add(http.MultipartFile.fromBytes('file', bytes, filename: 'activity.fit'));
+  final streamed = await req.send();
+  final body = await streamed.stream.bytesToString();
+  if (streamed.statusCode != 201) throw Exception('HTTP ${streamed.statusCode}');
+  return RunSummary.fromJson(jsonDecode(body) as Map<String, dynamic>);
+}
+
+Future<void> importHealthFit(List<int> bytes) async {
+  final token = _authToken;
+  if (token == null) throw Exception('Not authenticated');
+  final req = http.MultipartRequest('POST', _u('/health/fit'))
+    ..headers['Authorization'] = 'Bearer $token'
+    ..files.add(http.MultipartFile.fromBytes('file', bytes, filename: 'health.fit'));
+  final streamed = await req.send();
+  if (streamed.statusCode != 201) throw Exception('HTTP ${streamed.statusCode}');
+  await streamed.stream.bytesToString(); // drain
+}
+
 Future<List<List<List<double>>>> fetchHeatmap() async {
   final res = await http.get(_u('/runs/heatmap'), headers: _headers());
   if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
