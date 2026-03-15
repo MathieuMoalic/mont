@@ -1,17 +1,15 @@
-// Amazfit/ZeppOS AES-128-ECB auth handshake (endpoint 0x0082).
+// Amazfit/ZeppOS AES-128-ECB auth handshake (auth characteristic 0x0009).
 //
 // Protocol:
-//  1. Write request  [0x01, 0x00, 0x02, 0x00] to auth characteristic to start
-//  2. Watch replies with 16-byte random nonce
+//  1. Write buildAuthRequest() to auth characteristic to start
+//  2. Watch notifies auth characteristic with 16-byte random nonce
 //  3. Phone encrypts nonce with AES-128-ECB using the device secret key
-//  4. Phone sends encrypted response via chunked write on endpoint 0x0082
-//  5. Watch replies with [0x10, 0x01, ...] on success
+//  4. Phone writes buildAuthResponsePayload(...) to auth characteristic
+//  5. Watch notifies [0x10, 0x01, ...] on auth characteristic for success
 
 import 'dart:typed_data';
 
 import 'package:pointycastle/export.dart';
-
-import 'chunked_protocol.dart';
 
 /// Encrypt [data] with AES-128-ECB using [key].
 Uint8List aesEcbEncrypt(Uint8List key, Uint8List data) {
@@ -24,25 +22,33 @@ Uint8List aesEcbEncrypt(Uint8List key, Uint8List data) {
   return out;
 }
 
-/// Build the initial auth request payload written to [BleUuids.auth].
+/// Build the initial auth request written to the auth characteristic.
 Uint8List buildAuthRequest() => Uint8List.fromList([0x01, 0x00, 0x02, 0x00]);
 
-/// Build the chunked auth-response packets from a nonce and device key.
+/// Build the auth response payload from [nonce] and [deviceKey].
 ///
-/// [nonce] is the 16-byte challenge received from the watch.
-/// [deviceKey] is the 16-byte secret obtained during pairing.
-/// [seq] is the current sequence counter (usually 0 for first message).
-List<Uint8List> buildAuthResponse(Uint8List nonce, Uint8List deviceKey, int seq) {
+/// Write this directly to the auth characteristic (not via chunked channel).
+Uint8List buildAuthResponsePayload(Uint8List nonce, Uint8List deviceKey) {
   final Uint8List encrypted = aesEcbEncrypt(deviceKey, nonce);
-  // Auth response payload: [0x03, 0x00, ...16 encrypted bytes]
   final Uint8List payload = Uint8List(18);
   payload[0] = 0x03;
   payload[1] = 0x00;
   payload.setRange(2, 18, encrypted);
-  return encodeChunked(BleEndpoints.authEndpoint, seq, payload);
+  return payload;
 }
 
-/// Returns true if [response] is a successful auth acknowledgment.
-bool isAuthSuccess(Uint8List response) {
-  return response.length >= 2 && response[0] == 0x10 && response[1] == 0x01;
+/// Returns true if [notification] is a successful auth acknowledgment.
+bool isAuthSuccess(Uint8List notification) {
+  return notification.length >= 2 &&
+      notification[0] == 0x10 &&
+      notification[1] == 0x01;
+}
+
+/// Parse a 16-byte nonce from an auth characteristic notification.
+///
+/// The watch sends [0x02, 0x00, ...16 bytes nonce] after the initial request.
+Uint8List? parseAuthNonce(Uint8List notification) {
+  if (notification.length < 18) return null;
+  if (notification[0] != 0x02 || notification[1] != 0x00) return null;
+  return notification.sublist(2, 18);
 }

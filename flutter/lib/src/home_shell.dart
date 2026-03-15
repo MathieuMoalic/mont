@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'views/health_screen.dart';
 import 'views/runs_screen.dart';
 import 'views/settings_screen.dart';
+import 'views/watch_sync_screen.dart';
 import 'views/workouts_screen.dart';
 
 class HomeShell extends StatefulWidget {
@@ -18,6 +19,7 @@ class _HomeShellState extends State<HomeShell> {
     WorkoutsScreen(),
     RunsScreen(),
     HealthScreen(),
+    WatchSyncScreen(),
     SettingsScreen(),
   ];
 
@@ -40,6 +42,10 @@ class _HomeShellState extends State<HomeShell> {
           NavigationDestination(
             icon: Icon(Icons.monitor_heart_outlined),
             label: 'Health',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.watch_outlined),
+            label: 'Watch',
           ),
           NavigationDestination(
             icon: Icon(Icons.settings_outlined),
