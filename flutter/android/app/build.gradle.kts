@@ -21,7 +21,7 @@ android {
 
     defaultConfig {
         applicationId = "eu.matmoa.mont"
-        minSdk = flutter.minSdkVersion
+        minSdk = 21
         targetSdk = 36
         versionCode = flutter.versionCode
         versionName = flutter.versionName

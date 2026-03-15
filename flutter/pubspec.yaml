@@ -24,6 +24,9 @@ dependencies:
   flutter_map: ^8.2.2
   latlong2: ^0.9.1
   file_picker: ^8.0.7
+  flutter_blue_plus: ^1.31.0
+  pointycastle: ^3.9.0
+  permission_handler: ^11.3.1
 
 dev_dependencies:
   flutter_test:
