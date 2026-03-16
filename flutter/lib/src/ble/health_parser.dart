@@ -93,10 +93,12 @@ List<DailyHealthData> parseActivitySamples(
 
     // Only include HR from minutes where the watch is actually worn.
     // NOT_WORN (115) and CHARGING (118) samples have unreliable HR readings.
-    // Also exclude physiologically impossible values (< 30 or >= 255).
+    // Exclude physiologically impossible values: 0x01 (sentinel = no reading),
+    // < 40 (artifact values this watch emits; 30 BPM is a common spurious value),
+    // and >= 255.
     final isWorn =
         kind != _HuamiKind.notWorn && kind != _HuamiKind.charging;
-    if (isWorn && hr >= 30 && hr < 255) {
+    if (isWorn && hr >= 40 && hr < 255) {
       acc.hrSum += hr;
       acc.hrCount++;
       if (hr < acc.hrMin) acc.hrMin = hr;
