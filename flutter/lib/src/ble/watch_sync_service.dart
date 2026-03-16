@@ -409,7 +409,17 @@ class WatchSyncService {
         sinceYear: since.year, sinceMonth: since.month, sinceDay: since.day,
         sinceHour: since.hour, sinceMin: since.minute, sinceSec: since.second,
       ));
-      final rawResp = await receiveResponse();
+      // Watch doesn't respond at all when it has no new data — treat as done.
+      Uint8List rawResp;
+      try {
+        rawResp = await receiveResponse();
+      } on Exception catch (e) {
+        if (e.toString().contains('Timed out')) {
+          print('[BLE] Activities: no response — up to date.');
+          return;
+        }
+        rethrow;
+      }
 
       final (int ep, Uint8List payload) = decodeHuami2021(rawResp);
       final fetchResp = parseFetchResponse(payload);
@@ -584,7 +594,7 @@ class WatchSyncService {
 
     var since = sinceOverride ?? DateTime.utc(2000);
     final allDailyData = <String, DailyHealthData>{};
-    // Brief pause after auth — some firmware needs a moment before responding to data requests.
+    // Brief pause after auth — some firmware needs a moment before responding.
     await Future.delayed(const Duration(seconds: 2));
     print('[BLE] Health: starting fetch since $since, notifyEvents.length=${notifyEvents.length}');
 
@@ -592,9 +602,21 @@ class WatchSyncService {
       if (_cancelled) break;
 
       // 1. Request next batch of activity data.
+      //    The watch does NOT respond at all (no count=0) when it has no new
+      //    data to offer — it just ignores the request. Treat a timeout on the
+      //    very first request as "up to date" rather than an error.
       await send(buildActivityFetchRequest(localSeq, since));
       print('[BLE] Health: waiting for fetch response...');
-      final rawResp = await receiveResponse();
+      Uint8List rawResp;
+      try {
+        rawResp = await receiveResponse();
+      } on Exception catch (e) {
+        if (allDailyData.isEmpty && e.toString().contains('Timed out')) {
+          print('[BLE] Health: no response from watch — already up to date.');
+          return; // clean exit, not an error
+        }
+        rethrow;
+      }
       final (int _, Uint8List payload) = decodeHuami2021(rawResp);
       final fetchResp = parseFetchResponse(payload);
       if (fetchResp == null) {
