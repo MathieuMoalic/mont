@@ -55,6 +55,7 @@ class WatchSyncService {
   bool _cancelled = false;
   int? _maxRuns; // null = no limit (full sync)
   bool _healthOnly = false; // true = skip activities, fetch health data only
+  DateTime? _forcedHealthSince; // non-null = bypass stored timestamp
 
   void cancel() {
     _cancelled = true;
@@ -82,6 +83,7 @@ class WatchSyncService {
     _cancelled = false;
     _maxRuns = null;
     _healthOnly = true;
+    _forcedHealthSince = null;
     _syncedCount = 0;
     _scannedCount = 0;
     _lastError = null;
@@ -90,6 +92,26 @@ class WatchSyncService {
       await _sync();
     } catch (e, st) {
       print('[BLE] syncHealthOnly error: $e\n$st');
+      _lastError = e.toString();
+      _notify(SyncStatus.error, 'Error: $e');
+    }
+  }
+
+  /// Like [syncHealthOnly] but forces fetching from [since], ignoring any
+  /// stored last-sync timestamp. Useful for debugging / re-importing data.
+  Future<void> syncHealthOnlyFrom(DateTime since) async {
+    _cancelled = false;
+    _maxRuns = null;
+    _healthOnly = true;
+    _forcedHealthSince = since;
+    _syncedCount = 0;
+    _scannedCount = 0;
+    _lastError = null;
+
+    try {
+      await _sync();
+    } catch (e, st) {
+      print('[BLE] syncHealthOnlyFrom error: $e\n$st');
       _lastError = e.toString();
       _notify(SyncStatus.error, 'Error: $e');
     }
@@ -281,27 +303,32 @@ class WatchSyncService {
       // work incrementally. (Using a past date risks hitting the pointer and timing out.)
       DateTime? healthSince;
       if (_healthOnly) {
-        final stored = await loadLastHealthSyncTime();
-        if (stored != null) {
-          healthSince = stored;
+        if (_forcedHealthSince != null) {
+          // Force-sync from a specific date (e.g. debug re-import).
+          healthSince = _forcedHealthSince;
         } else {
-          // Try the backend for the last known health date. If it returns today,
-          // the watch pointer is already past that date, so use now instead of
-          // a historical date (which would be before the pointer → timeout).
-          DateTime? lastDate;
-          try { lastDate = await api.lastHealthDate(); } catch (_) {}
-          if (lastDate != null) {
-            final today = DateTime.now().toUtc();
-            final isToday = lastDate.year == today.year &&
-                lastDate.month == today.month &&
-                lastDate.day == today.day;
-            healthSince = isToday
-                ? today  // pointer already advanced to today; start from now
-                : DateTime.utc(lastDate.year, lastDate.month, lastDate.day + 1);
+          final stored = await loadLastHealthSyncTime();
+          if (stored != null) {
+            healthSince = stored;
           } else {
-            // No data anywhere — true first sync. Start from now so we get a
-            // clean count=0, save the timestamp, and build from there.
-            healthSince = DateTime.now().toUtc();
+            // Try the backend for the last known health date. If it returns today,
+            // the watch pointer is already past that date, so use now instead of
+            // a historical date (which would be before the pointer → timeout).
+            DateTime? lastDate;
+            try { lastDate = await api.lastHealthDate(); } catch (_) {}
+            if (lastDate != null) {
+              final today = DateTime.now().toUtc();
+              final isToday = lastDate.year == today.year &&
+                  lastDate.month == today.month &&
+                  lastDate.day == today.day;
+              healthSince = isToday
+                  ? today  // pointer already advanced to today; start from now
+                  : DateTime.utc(lastDate.year, lastDate.month, lastDate.day + 1);
+            } else {
+              // No data anywhere — true first sync. Start from now so we get a
+              // clean count=0, save the timestamp, and build from there.
+              healthSince = DateTime.now().toUtc();
+            }
           }
         }
       }

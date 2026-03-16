@@ -51,6 +51,12 @@ Future<void> saveLastHealthSyncTime(DateTime t) async {
   await prefs.setInt(_kLastHealthSyncTime, t.toUtc().millisecondsSinceEpoch);
 }
 
+/// Clear the stored health sync timestamp so the next sync fetches from scratch.
+Future<void> clearLastHealthSyncTime() async {
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.remove(_kLastHealthSyncTime);
+}
+
 /// Convert a hex string (e.g. "deadbeef...") to bytes.
 /// Throws [FormatException] if the string is not valid hex or not 32 chars (16 bytes).
 List<int> hexToBytes(String hex) {

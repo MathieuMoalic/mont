@@ -87,6 +87,41 @@ class _HealthScreenState extends State<HealthScreen> {
     }
   }
 
+  Future<void> _syncHealthBleForced() async {
+    if (_bleSyncService != null) return;
+    final since = DateTime.now().toUtc().subtract(const Duration(days: 15));
+    final service = WatchSyncService();
+    void listener() {
+      if (mounted) setState(() => _bleSyncMessage = service.message);
+    }
+    service.addListener(listener);
+    setState(() {
+      _bleSyncService = service;
+      _bleSyncMessage = 'Starting forced re-sync…';
+    });
+    try {
+      await service.syncHealthOnlyFrom(since);
+    } finally {
+      service.removeListener(listener);
+      if (mounted) {
+        setState(() => _bleSyncService = null);
+        if (service.status == SyncStatus.done) {
+          _load();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(service.message)),
+          );
+        } else if (service.status == SyncStatus.error) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(service.lastError ?? 'Sync failed'),
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+          );
+        }
+      }
+    }
+  }
+
   Future<void> _addWeight() async {
     double? entered;
     final confirmed = await showDialog<bool>(
@@ -220,12 +255,18 @@ class _HealthScreenState extends State<HealthScreen> {
                 padding: EdgeInsets.symmetric(horizontal: 16),
                 child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))),
               )
-            else
+            else ...[
               IconButton(
                 icon: const Icon(Icons.watch_outlined),
                 tooltip: 'Sync health from watch',
                 onPressed: _syncHealthBle,
               ),
+              IconButton(
+                icon: const Icon(Icons.restart_alt),
+                tooltip: 'Force re-sync health (last 15 days)',
+                onPressed: _syncHealthBleForced,
+              ),
+            ],
           ],
         ),
         if (_bleSyncService != null)
