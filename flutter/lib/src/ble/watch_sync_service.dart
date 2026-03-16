@@ -307,7 +307,6 @@ class WatchSyncService {
       await authChar.write(buildAuthRequest(), withoutResponse: false);
 
       final resp1 = await next();
-      print('[BLE] Auth response bytes: ${resp1.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}');
 
       if (isAuthSuccess(resp1)) return;
 
@@ -316,11 +315,9 @@ class WatchSyncService {
       final Uint8List? nonce = isAuthSendKeyRequest(resp1) ? null : parseAuthNonce(resp1);
 
       final response = buildAuthResponsePayload(nonce, deviceKey);
-      print('[BLE] Sending auth response: ${response.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}');
       await authChar.write(response, withoutResponse: false);
 
       final resp2 = await next();
-      print('[BLE] Auth result bytes: ${resp2.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}');
 
       if (isAuthSuccess(resp2)) return;
       if (resp2.length >= 3 && resp2[0] == 0x10 && resp2[2] == 0x02) {
@@ -357,7 +354,6 @@ class WatchSyncService {
     }
 
     Future<void> send(Uint8List packet) async {
-      print('[BLE] TX: ${packet.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}');
       await writeChar.write(packet, withoutResponse: true);
       seq = (seq + 1) & 0xff;
     }
@@ -378,11 +374,8 @@ class WatchSyncService {
         sinceHour: since.hour, sinceMin: since.minute, sinceSec: since.second,
       ));
       final rawResp = await receiveResponse();
-      print('[BLE] RX: ${hex(rawResp)}');
 
       final (int ep, Uint8List payload) = decodeHuami2021(rawResp);
-      print('[BLE] Decoded endpoint=0x${ep.toRadixString(16)} payload=${hex(payload)}');
-
       final fetchResp = parseFetchResponse(payload);
       if (fetchResp == null) {
         throw Exception('Unexpected fetch response: ${hex(payload)}');
@@ -412,7 +405,6 @@ class WatchSyncService {
         }
         if (notifyEvents.isNotEmpty) {
           final packet = Uint8List.fromList(notifyEvents.removeAt(0));
-          print('[BLE] RX: ${hex(packet)}');
           if (packet.length >= 11) {
             final (int ep2, Uint8List p2) = decodeHuami2021(packet);
             if (ep2 == BleEndpoints.huamiData && p2.length >= 2 && p2[0] == 0x10 && p2[1] == 0x02) {
@@ -433,13 +425,9 @@ class WatchSyncService {
 
       // ── 4. ACK (keep on watch — safe to re-sync) ──────────────────────────
       await send(buildAckTransfer(seq, deleteFromWatch: false));
-      final ackResp = await receiveResponse();
-      print('[BLE] ACK response: ${hex(ackResp)}');
+      await receiveResponse();
 
       // ── 5. Parse and upload ───────────────────────────────────────────────
-      int totalBytes = rawDataChunks.fold(0, (s, c) => s + c.length);
-      print('[BLE] Total raw data: $totalBytes B in ${rawDataChunks.length} chunks');
-
       final summary = parseSportsSummary(rawDataChunks);
       if (summary == null) {
         // Parsing failed — dump hex for diagnosis, then skip forward.
@@ -551,7 +539,6 @@ class WatchSyncService {
     }
 
     Future<void> send(Uint8List packet) async {
-      print('[BLE] Health TX: ${packet.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}');
       await writeChar.write(packet, withoutResponse: true);
       localSeq = (localSeq + 1) & 0xff;
     }
@@ -619,14 +606,19 @@ class WatchSyncService {
       await receiveResponse();
 
       // 5. Parse and accumulate.
-      // Log first 32 assembled bytes (after seq-prefix strip) for debugging.
-      final debugBytes = chunks
+      // Debug: show first 5 decoded samples so we can verify field layout.
+      final rawAll = chunks
           .where((c) => c.length >= 2)
           .expand((c) => c.skip(1))
-          .take(32)
-          .map((b) => b.toRadixString(16).padLeft(2, '0'))
-          .join(' ');
-      print('[BLE] Health raw[0..31]: $debugBytes');
+          .skip(2) // BLE header
+          .toList();
+      if (rawAll.length >= 8) {
+        final sb = StringBuffer('[BLE] Health samples (kind|steps|hr): ');
+        for (int i = 0; i < 5 * 8 && i + 8 <= rawAll.length; i += 8) {
+          sb.write('${rawAll[i]}|${rawAll[i+2]}|${rawAll[i+3]}  ');
+        }
+        print(sb.toString());
+      }
       final dayData = parseActivitySamples(chunks, batchStart);
       for (final d in dayData) {
         allDailyData[d.date] = d;

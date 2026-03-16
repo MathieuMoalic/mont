@@ -39,6 +39,12 @@ class DailyHealthData {
       };
 }
 
+/// Activity kind constants from HuamiExtendedSampleProvider.
+class _HuamiKind {
+  static const int notWorn = 115;
+  static const int charging = 118;
+}
+
 class _DayAccum {
   int stepsTotal = 0;
   int hrSum = 0;
@@ -73,15 +79,24 @@ List<DailyHealthData> parseActivitySamples(
 
   for (int i = 0; i + sampleSize <= samples.length; i += sampleSize) {
     // Extended 8-byte sample: [kind, intensity, steps, hr, unk1, sleep, deepSleep, remSleep]
+    final kind = samples[i];
     final steps = samples[i + 2];
     final hr = samples[i + 3];
     final date =
         '${t.year}-${t.month.toString().padLeft(2, '0')}-${t.day.toString().padLeft(2, '0')}';
 
     final acc = days.putIfAbsent(date, _DayAccum.new);
+
+    // Count steps from all minutes (including not-worn, some devices still
+    // report valid step counts in those slots).
     acc.stepsTotal += steps;
-    // 0 = no reading; 255 = sentinel "no data" used by Huami firmware.
-    if (hr > 0 && hr < 255) {
+
+    // Only include HR from minutes where the watch is actually worn.
+    // NOT_WORN (115) and CHARGING (118) samples have unreliable HR readings.
+    // Also exclude physiologically impossible values (< 30 or >= 255).
+    final isWorn =
+        kind != _HuamiKind.notWorn && kind != _HuamiKind.charging;
+    if (isWorn && hr >= 30 && hr < 255) {
       acc.hrSum += hr;
       acc.hrCount++;
       if (hr < acc.hrMin) acc.hrMin = hr;
