@@ -276,20 +276,33 @@ class WatchSyncService {
       // Determine the starting date for health data fetch.
       // Use the persisted timestamp from the last successful health sync so we
       // always request data after the watch's internal "last transferred" pointer.
-      // On first-ever sync, query the backend for the last known health date and
-      // start from there; if no data at all, start 7 days back.
+      // On first-ever sync with no data anywhere, fall back to DateTime.now() —
+      // the watch returns count=0, we save the timestamp, and subsequent syncs
+      // work incrementally. (Using a past date risks hitting the pointer and timing out.)
       DateTime? healthSince;
       if (_healthOnly) {
         final stored = await loadLastHealthSyncTime();
         if (stored != null) {
           healthSince = stored;
         } else {
-          final lastDate = await api.lastHealthDate();
-          // If we have data up to today, the watch's pointer is already past
-          // midnight today — use noon today so we're clearly after the pointer.
-          healthSince = lastDate != null
-              ? DateTime.utc(lastDate.year, lastDate.month, lastDate.day, 12)
-              : DateTime.now().toUtc().subtract(const Duration(days: 7));
+          // Try the backend for the last known health date. If it returns today,
+          // the watch pointer is already past that date, so use now instead of
+          // a historical date (which would be before the pointer → timeout).
+          DateTime? lastDate;
+          try { lastDate = await api.lastHealthDate(); } catch (_) {}
+          if (lastDate != null) {
+            final today = DateTime.now().toUtc();
+            final isToday = lastDate.year == today.year &&
+                lastDate.month == today.month &&
+                lastDate.day == today.day;
+            healthSince = isToday
+                ? today  // pointer already advanced to today; start from now
+                : DateTime.utc(lastDate.year, lastDate.month, lastDate.day + 1);
+          } else {
+            // No data anywhere — true first sync. Start from now so we get a
+            // clean count=0, save the timestamp, and build from there.
+            healthSince = DateTime.now().toUtc();
+          }
         }
       }
       await _fetchHealthData(
@@ -632,8 +645,9 @@ class WatchSyncService {
         );
       }
 
-      // 4. ACK — keep data on watch.
-      await send(buildAckTransfer(localSeq, deleteFromWatch: false));
+      // 4. ACK — delete from watch (matches GB behaviour; watch resets its
+      //    transfer pointer, so any future 'since' date works correctly).
+      await send(buildAckTransfer(localSeq, deleteFromWatch: true));
       await receiveResponse();
 
       // 5. Parse and accumulate.
