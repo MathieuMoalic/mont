@@ -627,12 +627,19 @@ class WatchSyncService {
       // Advance since past the last sample in this batch.
       final assembledLen =
           chunks.fold(0, (s, c) => c.length >= 2 ? s + c.length - 1 : s);
-      final sampleCount = assembledLen ~/ 8;
+      final sampleCount = (assembledLen - 2) ~/ 8; // subtract 2-byte BLE header
       print('[BLE] Health: $sampleCount samples from $batchStart, ${dayData.length} day(s)');
-      if (sampleCount == 0) {
+      if (sampleCount <= 0) {
         since = batchStart.add(const Duration(hours: 24));
       } else {
         since = batchStart.add(Duration(minutes: sampleCount));
+      }
+
+      // Stop once we've caught up to within 1 hour of now (mirrors GB's
+      // needsAnotherFetch behaviour — avoids looping forever on large history).
+      if (since.isAfter(DateTime.now().toUtc().subtract(const Duration(hours: 1)))) {
+        print('[BLE] Health: caught up to now ($since), stopping.');
+        break;
       }
     }
 
