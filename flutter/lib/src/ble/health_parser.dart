@@ -61,21 +61,27 @@ List<DailyHealthData> parseActivitySamples(
     assembled.addAll(chunk.skip(1));
   }
 
+  // Skip the 2-byte BLE framing header present at the start of all assembled
+  // Huami2021 data transfers (same as sports summaries and GPS detail).
+  const headerSize = 2;
   const sampleSize = 8;
-  if (assembled.length < sampleSize) return [];
+  if (assembled.length < headerSize + sampleSize) return [];
+  final samples = assembled.skip(headerSize).toList();
 
   final days = <String, _DayAccum>{};
   var t = firstSampleTime.toUtc();
 
-  for (int i = 0; i + sampleSize <= assembled.length; i += sampleSize) {
-    final steps = assembled[i + 2];
-    final hr = assembled[i + 3];
+  for (int i = 0; i + sampleSize <= samples.length; i += sampleSize) {
+    // Extended 8-byte sample: [kind, intensity, steps, hr, unk1, sleep, deepSleep, remSleep]
+    final steps = samples[i + 2];
+    final hr = samples[i + 3];
     final date =
         '${t.year}-${t.month.toString().padLeft(2, '0')}-${t.day.toString().padLeft(2, '0')}';
 
     final acc = days.putIfAbsent(date, _DayAccum.new);
     acc.stepsTotal += steps;
-    if (hr > 0) {
+    // 0 = no reading; 255 = sentinel "no data" used by Huami firmware.
+    if (hr > 0 && hr < 255) {
       acc.hrSum += hr;
       acc.hrCount++;
       if (hr < acc.hrMin) acc.hrMin = hr;

@@ -273,6 +273,9 @@ class WatchSyncService {
         (w) => notifyWaiter = w,
         dataEvents,
         (w) => dataWaiter = w,
+        sinceOverride: _healthOnly
+            ? DateTime.now().toUtc().subtract(const Duration(days: 15))
+            : null,
       );
     } finally {
       await notifySub.cancel();
@@ -522,13 +525,15 @@ class WatchSyncService {
   /// Fetch ACTIVITY health data (type 0x01) — per-minute step/HR samples.
   ///
   /// Aggregates samples into daily [DailyHealthData] and uploads to the backend.
+  /// [sinceOverride] sets the starting date (defaults to epoch for full history).
   Future<void> _fetchHealthData(
     BluetoothCharacteristic writeChar,
     List<List<int>> notifyEvents,
     void Function(Completer<void>?) setNotifyWaiter,
     List<List<int>> dataEvents,
-    void Function(Completer<void>?) setDataWaiter,
-  ) async {
+    void Function(Completer<void>?) setDataWaiter, {
+    DateTime? sinceOverride,
+  }) async {
     int localSeq = 0x40;
 
     Future<Uint8List> receiveResponse() async {
@@ -551,7 +556,7 @@ class WatchSyncService {
       localSeq = (localSeq + 1) & 0xff;
     }
 
-    var since = DateTime.utc(2000);
+    var since = sinceOverride ?? DateTime.utc(2000);
     final allDailyData = <String, DailyHealthData>{};
 
     while (true) {
@@ -614,6 +619,14 @@ class WatchSyncService {
       await receiveResponse();
 
       // 5. Parse and accumulate.
+      // Log first 32 assembled bytes (after seq-prefix strip) for debugging.
+      final debugBytes = chunks
+          .where((c) => c.length >= 2)
+          .expand((c) => c.skip(1))
+          .take(32)
+          .map((b) => b.toRadixString(16).padLeft(2, '0'))
+          .join(' ');
+      print('[BLE] Health raw[0..31]: $debugBytes');
       final dayData = parseActivitySamples(chunks, batchStart);
       for (final d in dayData) {
         allDailyData[d.date] = d;
