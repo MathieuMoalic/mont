@@ -613,11 +613,18 @@ class WatchSyncService {
           .skip(2) // BLE header
           .toList();
       if (rawAll.length >= 8) {
-        final sb = StringBuffer('[BLE] Health samples (kind|steps|hr): ');
+        final sb = StringBuffer('[BLE] Health samples (b0..b7): ');
         for (int i = 0; i < 5 * 8 && i + 8 <= rawAll.length; i += 8) {
-          sb.write('${rawAll[i]}|${rawAll[i+2]}|${rawAll[i+3]}  ');
+          sb.write('${rawAll[i]},${rawAll[i+1]},${rawAll[i+2]},${rawAll[i+3]},${rawAll[i+4]},${rawAll[i+5]},${rawAll[i+6]},${rawAll[i+7]}  ');
         }
         print(sb.toString());
+        // Also sample from the middle (more likely to have active HR readings).
+        final mid = (rawAll.length ~/ 8 ~/ 2) * 8;
+        final sb2 = StringBuffer('[BLE] Health mid-samples (b0..b7): ');
+        for (int i = mid; i < mid + 5 * 8 && i + 8 <= rawAll.length; i += 8) {
+          sb2.write('${rawAll[i]},${rawAll[i+1]},${rawAll[i+2]},${rawAll[i+3]},${rawAll[i+4]},${rawAll[i+5]},${rawAll[i+6]},${rawAll[i+7]}  ');
+        }
+        print(sb2.toString());
       }
       final dayData = parseActivitySamples(chunks, batchStart);
       for (final d in dayData) {
