@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 const String _kDeviceKeyHex = 'ble_device_key_hex';
 const String _kDeviceRemoteId = 'ble_device_remote_id';
+const String _kLastHealthSyncTime = 'ble_last_health_sync_time';
 
 /// Load the stored 16-byte device key as a hex string, or null if not set.
 Future<String?> loadDeviceKeyHex() async {
@@ -34,6 +35,20 @@ Future<void> clearBleSettings() async {
   final prefs = await SharedPreferences.getInstance();
   await prefs.remove(_kDeviceKeyHex);
   await prefs.remove(_kDeviceRemoteId);
+}
+
+/// Load the timestamp of the last successfully synced health sample, or null.
+Future<DateTime?> loadLastHealthSyncTime() async {
+  final prefs = await SharedPreferences.getInstance();
+  final ms = prefs.getInt(_kLastHealthSyncTime);
+  if (ms == null) return null;
+  return DateTime.fromMillisecondsSinceEpoch(ms, isUtc: true);
+}
+
+/// Persist the timestamp of the last successfully synced health sample.
+Future<void> saveLastHealthSyncTime(DateTime t) async {
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setInt(_kLastHealthSyncTime, t.toUtc().millisecondsSinceEpoch);
 }
 
 /// Convert a hex string (e.g. "deadbeef...") to bytes.

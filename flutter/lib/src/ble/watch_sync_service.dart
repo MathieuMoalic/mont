@@ -274,15 +274,23 @@ class WatchSyncService {
         );
       }
       // Determine the starting date for health data fetch.
-      // Use the last known health date from the backend (minus 1 day for safety)
-      // so we always request data after the watch's internal "last transferred" pointer.
-      // Fall back to 7 days ago if the backend has no data yet.
+      // Use the persisted timestamp from the last successful health sync so we
+      // always request data after the watch's internal "last transferred" pointer.
+      // On first-ever sync, query the backend for the last known health date and
+      // start from there; if no data at all, start 7 days back.
       DateTime? healthSince;
       if (_healthOnly) {
-        final lastDate = await api.lastHealthDate();
-        healthSince = lastDate != null
-            ? lastDate.subtract(const Duration(days: 1))
-            : DateTime.now().toUtc().subtract(const Duration(days: 7));
+        final stored = await loadLastHealthSyncTime();
+        if (stored != null) {
+          healthSince = stored;
+        } else {
+          final lastDate = await api.lastHealthDate();
+          // If we have data up to today, the watch's pointer is already past
+          // midnight today — use noon today so we're clearly after the pointer.
+          healthSince = lastDate != null
+              ? DateTime.utc(lastDate.year, lastDate.month, lastDate.day, 12)
+              : DateTime.now().toUtc().subtract(const Duration(days: 7));
+        }
       }
       await _fetchHealthData(
         writeChar,
@@ -583,6 +591,7 @@ class WatchSyncService {
 
       if (!fetchResp.hasData) {
         print('[BLE] Health: no more data since $since');
+        await saveLastHealthSyncTime(since);
         break;
       }
 
@@ -671,6 +680,9 @@ class WatchSyncService {
         break;
       }
     }
+
+    // Persist the final since timestamp so the next sync resumes from here.
+    await saveLastHealthSyncTime(since);
 
     if (allDailyData.isEmpty) {
       _notify(SyncStatus.done,
