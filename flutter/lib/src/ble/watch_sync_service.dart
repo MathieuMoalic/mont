@@ -11,7 +11,6 @@ import 'dart:typed_data';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 
-// ignore: unused_import
 import '../api.dart' as api;
 import 'activity_list.dart';
 import 'auth.dart';
@@ -117,13 +116,19 @@ class WatchSyncService {
     _notify(SyncStatus.connecting, 'Connecting to ${device.advName}…');
     await device.connect(timeout: const Duration(seconds: 15));
     if (_cancelled) {
+      print('[BLE] _sync: cancelled after connect, disconnecting.');
       await device.disconnect();
       return;
     }
 
     try {
       await _runSession(device, deviceKeyBytes);
+      print('[BLE] _sync: _runSession completed normally.');
+    } catch (e) {
+      print('[BLE] _sync: _runSession threw: $e');
+      rethrow;
     } finally {
+      print('[BLE] _sync: disconnecting in finally.');
       await device.disconnect();
     }
   }
@@ -249,6 +254,7 @@ class WatchSyncService {
     _notify(SyncStatus.authenticating, 'Authenticating…');
     await _authenticate(authChar, deviceKey);
     if (_cancelled) {
+      print('[BLE] _runSession: cancelled after auth, returning early.');
       await notifySub.cancel();
       await dataSub?.cancel();
       return;
@@ -267,15 +273,24 @@ class WatchSyncService {
           (w) => dataWaiter = w,
         );
       }
+      // Determine the starting date for health data fetch.
+      // Use the last known health date from the backend (minus 1 day for safety)
+      // so we always request data after the watch's internal "last transferred" pointer.
+      // Fall back to 7 days ago if the backend has no data yet.
+      DateTime? healthSince;
+      if (_healthOnly) {
+        final lastDate = await api.lastHealthDate();
+        healthSince = lastDate != null
+            ? lastDate.subtract(const Duration(days: 1))
+            : DateTime.now().toUtc().subtract(const Duration(days: 7));
+      }
       await _fetchHealthData(
         writeChar,
         notifyEvents,
         (w) => notifyWaiter = w,
         dataEvents,
         (w) => dataWaiter = w,
-        sinceOverride: _healthOnly
-            ? DateTime.now().toUtc().subtract(const Duration(days: 15))
-            : null,
+        sinceOverride: healthSince,
       );
     } finally {
       await notifySub.cancel();
@@ -527,7 +542,9 @@ class WatchSyncService {
     Future<Uint8List> receiveResponse() async {
       while (true) {
         if (notifyEvents.isNotEmpty) {
-          return Uint8List.fromList(notifyEvents.removeAt(0));
+          final pkt = Uint8List.fromList(notifyEvents.removeAt(0));
+          print('[BLE] Health recv (${pkt.length}B): ${pkt.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}');
+          return pkt;
         }
         final waiter = Completer<void>();
         setNotifyWaiter(waiter);
@@ -539,23 +556,28 @@ class WatchSyncService {
     }
 
     Future<void> send(Uint8List packet) async {
+      print('[BLE] Health send (${packet.length}B): ${packet.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}');
       await writeChar.write(packet, withoutResponse: true);
       localSeq = (localSeq + 1) & 0xff;
     }
 
     var since = sinceOverride ?? DateTime.utc(2000);
     final allDailyData = <String, DailyHealthData>{};
+    // Brief pause after auth — some firmware needs a moment before responding to data requests.
+    await Future.delayed(const Duration(seconds: 2));
+    print('[BLE] Health: starting fetch since $since, notifyEvents.length=${notifyEvents.length}');
 
     while (true) {
       if (_cancelled) break;
 
       // 1. Request next batch of activity data.
       await send(buildActivityFetchRequest(localSeq, since));
+      print('[BLE] Health: waiting for fetch response...');
       final rawResp = await receiveResponse();
       final (int _, Uint8List payload) = decodeHuami2021(rawResp);
       final fetchResp = parseFetchResponse(payload);
       if (fetchResp == null) {
-        print('[BLE] Health: unexpected fetch response, stopping.');
+        print('[BLE] Health: unexpected fetch response (payload: ${payload.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}), stopping.');
         break;
       }
 

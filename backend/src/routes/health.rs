@@ -240,6 +240,20 @@ pub async fn list_daily_health(
     Ok(Json(rows))
 }
 
+/// Return the most recent date in `daily_health`, or null if the table is empty.
+///
+/// # Errors
+/// Returns an error if the database query fails.
+pub async fn last_health_date(
+    State(state): State<AppState>,
+) -> AppResult<Json<serde_json::Value>> {
+    let row: Option<(String,)> =
+        sqlx::query_as("SELECT date FROM daily_health ORDER BY date DESC LIMIT 1")
+            .fetch_optional(&state.pool)
+            .await?;
+    Ok(Json(serde_json::json!({ "date": row.map(|(d,)| d) })))
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[derive(Deserialize)]

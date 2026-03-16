@@ -369,3 +369,12 @@ Future<List<DailyHealth>> listDailyHealth() async {
       .map((e) => DailyHealth.fromJson(e as Map<String, dynamic>))
       .toList();
 }
+
+/// Returns the most recent date in daily_health, or null if no data yet.
+Future<DateTime?> lastHealthDate() async {
+  final res = await http.get(_u('/health/last-date'), headers: _headers());
+  if (res.statusCode != 200) return null;
+  final date = (jsonDecode(res.body) as Map<String, dynamic>)['date'] as String?;
+  if (date == null) return null;
+  return DateTime.tryParse(date)?.toUtc();
+}

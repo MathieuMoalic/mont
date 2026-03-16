@@ -60,6 +60,7 @@ pub fn build_app(state: AppState) -> Router {
         .route("/exercises", get(exercises::list_exercises).post(exercises::create_exercise))
         .route("/exercises/{id}/history", get(exercises::exercise_history))
         .route("/health/daily", get(health::list_daily_health))
+        .route("/health/last-date", get(health::last_health_date))
         .route("/health/fit", post(health::import_health_fit))
         .route("/health/ble", post(health::import_health_ble))
         .route("/workouts", get(workouts::list_workouts).post(workouts::create_workout))
