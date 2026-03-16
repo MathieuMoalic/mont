@@ -38,6 +38,8 @@ class HuamiDataType {
   static const int activity = 0x01;
   static const int sportsSummaries = 0x05;
   static const int sportsDetails = 0x06; // GPS track + per-sample HR for one workout
+  static const int restingHeartRate = 0x3a; // daily resting HR (one 6-byte record/day)
+  static const int maxHeartRate = 0x3d; // daily max HR including exercise (one 6-byte record/day)
   static const int stressAuto = 0x13;
 }
 

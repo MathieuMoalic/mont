@@ -621,10 +621,70 @@ class WatchSyncService {
     }
 
     var since = sinceOverride ?? DateTime.utc(2000);
+    final fetchFrom = since; // saved for secondary HR type fetches
     final allDailyData = <String, DailyHealthData>{};
     // Brief pause after auth — some firmware needs a moment before responding.
     await Future.delayed(const Duration(seconds: 2));
     print('[BLE] Health: starting fetch since $since, notifyEvents.length=${notifyEvents.length}');
+
+    // Fetch a single batch for the given data type. Returns chunks, or empty
+    // list if the watch has no data (timeout = already up to date).
+    Future<List<List<int>>> fetchOneBatch(int dataType, DateTime batchSince) async {
+      final payload = Uint8List(10);
+      payload[0] = 0x01;
+      payload[1] = dataType;
+      ByteData.sublistView(payload).setUint16(2, batchSince.year, Endian.little);
+      payload[4] = batchSince.month;
+      payload[5] = batchSince.day;
+      payload[6] = batchSince.hour;
+      payload[7] = batchSince.minute;
+      payload[8] = batchSince.second;
+      payload[9] = 0x04;
+      await send(encodeHuami2021(BleEndpoints.huamiData, localSeq, payload));
+
+      Uint8List rawR;
+      try {
+        rawR = await receiveResponse();
+      } on Exception catch (e) {
+        if (e.toString().contains('Timed out')) {
+          print('[BLE] type 0x${dataType.toRadixString(16)}: no data (up to date)');
+          return [];
+        }
+        rethrow;
+      }
+      final (int _, Uint8List p) = decodeHuami2021(rawR);
+      final fr = parseFetchResponse(p);
+      if (fr == null || !fr.hasData) return [];
+
+      await send(buildStartTransfer(localSeq));
+
+      final chunks = <List<int>>[];
+      while (true) {
+        while (dataEvents.isNotEmpty) { chunks.add(dataEvents.removeAt(0)); }
+        if (notifyEvents.isNotEmpty) {
+          final pkt = Uint8List.fromList(notifyEvents.removeAt(0));
+          if (pkt.length >= 11) {
+            final (int ep2, Uint8List p2) = decodeHuami2021(pkt);
+            if (ep2 == BleEndpoints.huamiData &&
+                p2.length >= 2 &&
+                p2[0] == 0x10 &&
+                p2[1] == 0x02) { break; }
+          }
+          continue;
+        }
+        final w = Completer<void>();
+        setDataWaiter(w);
+        setNotifyWaiter(w);
+        await w.future.timeout(
+          const Duration(seconds: 30),
+          onTimeout: () => throw Exception('Timed out waiting for HR data.'),
+        );
+      }
+
+      await send(buildAckTransfer(localSeq, deleteFromWatch: true));
+      await receiveResponse();
+      return chunks;
+    }
 
     while (true) {
       if (_cancelled) break;
@@ -748,6 +808,36 @@ class WatchSyncService {
 
     // Persist the final since timestamp so the next sync resumes from here.
     await saveLastHealthSyncTime(since);
+
+    // Fetch daily resting HR (0x3a) and max HR (0x3d) for the same window.
+    // These give the correct per-day min (resting) and max (exercise peak) values.
+    _notify(SyncStatus.syncing, 'Fetching resting HR…');
+    final restingChunks =
+        await fetchOneBatch(HuamiDataType.restingHeartRate, fetchFrom);
+    final restingByDate = parseDailyHrSamples(restingChunks);
+    print('[BLE] Resting HR: ${restingByDate.length} day(s): $restingByDate');
+
+    _notify(SyncStatus.syncing, 'Fetching max HR…');
+    final maxChunks =
+        await fetchOneBatch(HuamiDataType.maxHeartRate, fetchFrom);
+    final maxByDate = parseDailyHrSamples(maxChunks);
+    print('[BLE] Max HR: ${maxByDate.length} day(s): $maxByDate');
+
+    // Merge resting/max HR into the activity-derived daily data.
+    // Resting HR overrides min_hr; max HR overrides max_hr (includes exercise).
+    for (final date in {...allDailyData.keys, ...restingByDate.keys, ...maxByDate.keys}) {
+      final base = allDailyData[date];
+      final resting = restingByDate[date];
+      final peak = maxByDate[date];
+      if (resting == null && peak == null) continue;
+      allDailyData[date] = DailyHealthData(
+        date: date,
+        avgHr: base?.avgHr,
+        minHr: resting ?? base?.minHr,
+        maxHr: peak ?? base?.maxHr,
+        steps: base?.steps,
+      );
+    }
 
     if (allDailyData.isEmpty) {
       _notify(SyncStatus.done,
