@@ -12,3 +12,4 @@ flutter/android/.cxx/
 result
 target/rust-analyzer/
 backend/mont.log
+*.log
