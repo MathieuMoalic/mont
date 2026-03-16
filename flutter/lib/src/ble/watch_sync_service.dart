@@ -654,7 +654,10 @@ class WatchSyncService {
       }
       final (int _, Uint8List p) = decodeHuami2021(rawR);
       final fr = parseFetchResponse(p);
-      if (fr == null || !fr.hasData) return [];
+      if (fr == null || !fr.hasData) {
+        print('[BLE] type 0x${dataType.toRadixString(16)}: count=0, no data');
+        return [];
+      }
 
       await send(buildStartTransfer(localSeq));
 
@@ -686,6 +689,21 @@ class WatchSyncService {
       return chunks;
     }
 
+    // Fetch daily resting HR (0x3a) and max HR (0x3d) FIRST — they are tiny
+    // payloads (~6 bytes/day) that complete in seconds, and give the correct
+    // per-day min (resting) and max (exercise peak) values.
+    _notify(SyncStatus.syncing, 'Fetching resting HR…');
+    final restingChunks =
+        await fetchOneBatch(HuamiDataType.restingHeartRate, fetchFrom);
+    final restingByDate = parseDailyHrSamples(restingChunks);
+    print('[BLE] Resting HR: ${restingByDate.length} day(s): $restingByDate');
+
+    _notify(SyncStatus.syncing, 'Fetching max HR…');
+    final maxChunks =
+        await fetchOneBatch(HuamiDataType.maxHeartRate, fetchFrom);
+    final maxByDate = parseDailyHrSamples(maxChunks);
+    print('[BLE] Max HR: ${maxByDate.length} day(s): $maxByDate');
+
     while (true) {
       if (_cancelled) break;
 
@@ -701,8 +719,8 @@ class WatchSyncService {
       } on Exception catch (e) {
         if (allDailyData.isEmpty && e.toString().contains('Timed out')) {
           print('[BLE] Health: no response from watch — already up to date.');
-          _notify(SyncStatus.done, 'Health data up to date.');
-          return; // clean exit, not an error
+          // Still fall through to merge and upload any 0x3a/0x3d HR data we got.
+          break;
         }
         rethrow;
       }
@@ -809,21 +827,7 @@ class WatchSyncService {
     // Persist the final since timestamp so the next sync resumes from here.
     await saveLastHealthSyncTime(since);
 
-    // Fetch daily resting HR (0x3a) and max HR (0x3d) for the same window.
-    // These give the correct per-day min (resting) and max (exercise peak) values.
-    _notify(SyncStatus.syncing, 'Fetching resting HR…');
-    final restingChunks =
-        await fetchOneBatch(HuamiDataType.restingHeartRate, fetchFrom);
-    final restingByDate = parseDailyHrSamples(restingChunks);
-    print('[BLE] Resting HR: ${restingByDate.length} day(s): $restingByDate');
-
-    _notify(SyncStatus.syncing, 'Fetching max HR…');
-    final maxChunks =
-        await fetchOneBatch(HuamiDataType.maxHeartRate, fetchFrom);
-    final maxByDate = parseDailyHrSamples(maxChunks);
-    print('[BLE] Max HR: ${maxByDate.length} day(s): $maxByDate');
-
-    // Merge resting/max HR into the activity-derived daily data.
+    // Merge resting/max HR (fetched before the activity loop) into activity data.
     // Resting HR overrides min_hr; max HR overrides max_hr (includes exercise).
     for (final date in {...allDailyData.keys, ...restingByDate.keys, ...maxByDate.keys}) {
       final base = allDailyData[date];
@@ -839,9 +843,9 @@ class WatchSyncService {
       );
     }
 
-    if (allDailyData.isEmpty) {
+    if (allDailyData.isEmpty && restingByDate.isEmpty && maxByDate.isEmpty) {
       _notify(SyncStatus.done,
-          'Sync complete. $_syncedCount run(s) imported.\nNo health data found.');
+          'Sync complete. $_syncedCount run(s) imported.\nHealth data up to date.');
       return;
     }
 
