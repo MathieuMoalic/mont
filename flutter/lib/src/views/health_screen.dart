@@ -2,6 +2,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
 import '../api.dart' as api;
+import '../ble/watch_sync_service.dart';
 import '../models.dart';
 
 enum _Range {
@@ -28,6 +29,9 @@ class _HealthScreenState extends State<HealthScreen> {
   String? _error;
   _Range _range = _Range.twoWeeks;
 
+  WatchSyncService? _bleSyncService;
+  String _bleSyncMessage = '';
+
   @override
   void initState() {
     super.initState();
@@ -46,6 +50,40 @@ class _HealthScreenState extends State<HealthScreen> {
       }
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
+    }
+  }
+
+  Future<void> _syncHealthBle() async {
+    if (_bleSyncService != null) return; // already running
+    final service = WatchSyncService();
+    void listener() {
+      if (mounted) setState(() => _bleSyncMessage = service.message);
+    }
+    service.addListener(listener);
+    setState(() {
+      _bleSyncService = service;
+      _bleSyncMessage = 'Starting…';
+    });
+    try {
+      await service.syncHealthOnly();
+    } finally {
+      service.removeListener(listener);
+      if (mounted) {
+        setState(() => _bleSyncService = null);
+        if (service.status == SyncStatus.done) {
+          _load();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(service.message)),
+          );
+        } else if (service.status == SyncStatus.error) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(service.lastError ?? 'Sync failed'),
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+          );
+        }
+      }
     }
   }
 
@@ -176,8 +214,28 @@ class _HealthScreenState extends State<HealthScreen> {
         SliverAppBar(
           title: const Text('Health'),
           floating: true,
-          actions: const [],
+          actions: [
+            if (_bleSyncService != null)
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16),
+                child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))),
+              )
+            else
+              IconButton(
+                icon: const Icon(Icons.watch_outlined),
+                tooltip: 'Sync health from watch',
+                onPressed: _syncHealthBle,
+              ),
+          ],
         ),
+        if (_bleSyncService != null)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Text(_bleSyncMessage,
+                  style: Theme.of(context).textTheme.bodySmall),
+            ),
+          ),
         SliverToBoxAdapter(child: _buildRangeChips()),
         SliverToBoxAdapter(child: _buildHrChart(days)),
         SliverToBoxAdapter(child: _buildHrvChart(days)),

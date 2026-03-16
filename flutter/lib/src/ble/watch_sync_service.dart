@@ -55,6 +55,7 @@ class WatchSyncService {
 
   bool _cancelled = false;
   int? _maxRuns; // null = no limit (full sync)
+  bool _healthOnly = false; // true = skip activities, fetch health data only
 
   void cancel() {
     _cancelled = true;
@@ -64,6 +65,7 @@ class WatchSyncService {
   Future<void> sync({int? maxRuns}) async {
     _cancelled = false;
     _maxRuns = maxRuns;
+    _healthOnly = false;
     _syncedCount = 0;
     _scannedCount = 0;
     _lastError = null;
@@ -72,6 +74,23 @@ class WatchSyncService {
       await _sync();
     } catch (e, st) {
       print('[BLE] sync error: $e\n$st');
+      _lastError = e.toString();
+      _notify(SyncStatus.error, 'Error: $e');
+    }
+  }
+
+  Future<void> syncHealthOnly() async {
+    _cancelled = false;
+    _maxRuns = null;
+    _healthOnly = true;
+    _syncedCount = 0;
+    _scannedCount = 0;
+    _lastError = null;
+
+    try {
+      await _sync();
+    } catch (e, st) {
+      print('[BLE] syncHealthOnly error: $e\n$st');
       _lastError = e.toString();
       _notify(SyncStatus.error, 'Error: $e');
     }
@@ -235,16 +254,19 @@ class WatchSyncService {
       return;
     }
 
-    // ── Sync activities ──────────────────────────────────────────────────────
-    _notify(SyncStatus.syncing, 'Fetching activity list…');
+    // ── Sync activities (skipped in health-only mode) ────────────────────────
+    _notify(SyncStatus.syncing,
+        _healthOnly ? 'Connecting for health sync…' : 'Fetching activity list…');
     try {
-      await _syncActivities(
-        writeChar,
-        notifyEvents,
-        (w) => notifyWaiter = w,
-        dataEvents,
-        (w) => dataWaiter = w,
-      );
+      if (!_healthOnly) {
+        await _syncActivities(
+          writeChar,
+          notifyEvents,
+          (w) => notifyWaiter = w,
+          dataEvents,
+          (w) => dataWaiter = w,
+        );
+      }
       await _fetchHealthData(
         writeChar,
         notifyEvents,
