@@ -416,6 +416,7 @@ class WatchSyncService {
       } on Exception catch (e) {
         if (e.toString().contains('Timed out')) {
           print('[BLE] Activities: no response — up to date.');
+          _notify(SyncStatus.done, 'Sync complete. Activities up to date.');
           return;
         }
         rethrow;
@@ -613,6 +614,7 @@ class WatchSyncService {
       } on Exception catch (e) {
         if (allDailyData.isEmpty && e.toString().contains('Timed out')) {
           print('[BLE] Health: no response from watch — already up to date.');
+          _notify(SyncStatus.done, 'Health data up to date.');
           return; // clean exit, not an error
         }
         rethrow;
