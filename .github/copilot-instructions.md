@@ -152,8 +152,8 @@ One record per day. All data starts after a 2-byte chunk header (skip first 2 by
 
 | File | Purpose |
 |------|---------|
-| `flutter/lib/src/ble/watch_sync_service.dart` | Main BLE sync orchestrator. `_fetchHealthData()` fetches 0x3a/0x3d first, then 0x01 activity loop. |
-| `flutter/lib/src/ble/health_parser.dart` | `parseActivitySamples()` for 0x01; `parseDailyHrSamples()` for 0x3a/0x3d |
+| `flutter/lib/src/ble/watch_sync_service.dart` | Main BLE sync orchestrator. `_fetchHealthData()` fetches 0x3a/0x3d/0x13 first, then 0x01 activity loop. |
+| `flutter/lib/src/ble/health_parser.dart` | `parseActivitySamples()` for 0x01; `parseDailyHrSamples()` for 0x3a/0x3d; `parseStressSamples()` for 0x13 |
 | `flutter/lib/src/ble/activity_list.dart` | Protocol builders, `HuamiDataType` constants |
 | `flutter/lib/src/ble/settings.dart` | SharedPreferences helpers incl. `clearLastHealthSyncTime()` |
 | `flutter/lib/src/views/health_screen.dart` | Health UI; ↺ force-sync button calls `syncHealthOnlyFrom(now - 15 days)` |
@@ -167,7 +167,7 @@ One record per day. All data starts after a 2-byte chunk header (skip first 2 by
 GB source for Huami health parsing:
 `https://github.com/Freeyourgadget/Gadgetbridge/tree/master/app/src/main/java/nodomain/freeyourgadget/gadgetbridge/service/devices/huami/operations/fetch/`
 
-Key classes: `FetchHeartRateMaxOperation`, `FetchHeartRateRestingOperation`, `AbstractRepeatingFetchOperation`, and `HuamiFetchDataType`.
+Key classes: `FetchHeartRateMaxOperation`, `FetchHeartRateRestingOperation`, `FetchStressAutoOperation`, `AbstractRepeatingFetchOperation`, and `HuamiFetchDataType`.
 
 ---
 
@@ -178,8 +178,9 @@ HR data types 0x3a and 0x3d are implemented but **not yet verified working end-t
 ```
 [BLE] Resting HR: 15 day(s): {2026-03-15: 46, ...}
 [BLE] Max HR: 15 day(s): {2026-03-15: 137, ...}
+[BLE] Stress: 15 day(s): {2026-03-15: 42, ...}
 ```
 
-If both show `0 day(s)`, the watch is not responding to these types — investigate the request format or whether a different `since` date is needed.
+If both HR types show `0 day(s)`, the watch is not responding to these types — investigate the request format or whether a different `since` date is needed.
 
-HRV (type `0x12`/`0x13`) is **not yet implemented**.
+Stress data (type `0x13`) is now fetched and stored as a daily average score (0-100). There is **no dedicated HRV RMSSD type** in the BLE protocol — HRV RMSSD only comes from FIT file imports.
