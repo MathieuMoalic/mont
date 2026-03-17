@@ -29,6 +29,7 @@ class DailyHealthData {
     this.minHr,
     this.maxHr,
     this.steps,
+    this.stress,
   });
 
   final String date; // "YYYY-MM-DD" UTC
@@ -36,6 +37,7 @@ class DailyHealthData {
   final int? minHr;
   final int? maxHr;
   final int? steps;
+  final int? stress; // daily average stress score (0-100)
 
   Map<String, dynamic> toJson() => {
         'date': date,
@@ -43,6 +45,7 @@ class DailyHealthData {
         'min_hr': minHr,
         'max_hr': maxHr,
         'steps': steps,
+        'stress': stress,
       };
 }
 
@@ -160,6 +163,48 @@ Map<String, int> parseDailyHrSamples(List<List<int>> chunks) {
     final date =
         '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
     result[date] = hr;
+  }
+  return result;
+}
+
+/// Parse per-minute stress data (type 0x13) into daily average stress scores.
+///
+/// Data format: 1 byte per minute after the 2-byte chunk header.
+///   0xFF = no reading (skipped), 0-100 = stress score.
+///
+/// Returns a map of "YYYY-MM-DD" → average stress score (rounded).
+Map<String, int> parseStressSamples(
+  List<List<int>> chunks,
+  DateTime firstSampleTime,
+) {
+  final assembled = <int>[];
+  for (final chunk in chunks) {
+    if (chunk.length < 2) continue;
+    assembled.addAll(chunk.skip(1));
+  }
+
+  const headerSize = 2;
+  if (assembled.length <= headerSize) return {};
+  final samples = assembled.skip(headerSize).toList();
+
+  final sums = <String, int>{};
+  final counts = <String, int>{};
+  var t = firstSampleTime.toUtc();
+
+  for (final b in samples) {
+    final date =
+        '${t.year}-${t.month.toString().padLeft(2, '0')}-${t.day.toString().padLeft(2, '0')}';
+    final stress = b & 0xff;
+    if (stress != 0xff && stress <= 100) {
+      sums[date] = (sums[date] ?? 0) + stress;
+      counts[date] = (counts[date] ?? 0) + 1;
+    }
+    t = t.add(const Duration(minutes: 1));
+  }
+
+  final result = <String, int>{};
+  for (final date in sums.keys) {
+    result[date] = (sums[date]! / counts[date]!).round();
   }
   return result;
 }

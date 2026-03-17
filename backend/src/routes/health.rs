@@ -17,6 +17,7 @@ pub struct DailyHealth {
     pub max_hr: Option<i64>,
     pub hrv_rmssd: Option<f64>,
     pub steps: Option<i64>,
+    pub stress: Option<i64>,
 }
 
 // ── FIT health parsing ────────────────────────────────────────────────────────
@@ -164,7 +165,7 @@ fn finalize_day(date: String, acc: &DayAccum) -> DailyHealth {
         None
     };
 
-    DailyHealth { date, avg_hr, min_hr, max_hr, hrv_rmssd, steps }
+    DailyHealth { date, avg_hr, min_hr, max_hr, hrv_rmssd, steps, stress: None }
 }
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
@@ -232,7 +233,7 @@ pub async fn list_daily_health(
     State(state): State<AppState>,
 ) -> AppResult<Json<Vec<DailyHealth>>> {
     let rows = sqlx::query_as::<_, DailyHealth>(
-        "SELECT date, avg_hr, min_hr, max_hr, hrv_rmssd, steps \
+        "SELECT date, avg_hr, min_hr, max_hr, hrv_rmssd, steps, stress \
          FROM daily_health ORDER BY date",
     )
     .fetch_all(&state.pool)
@@ -263,6 +264,7 @@ pub struct BleHealthItem {
     pub min_hr: Option<i64>,
     pub max_hr: Option<i64>,
     pub steps: Option<i64>,
+    pub stress: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -284,19 +286,21 @@ pub async fn import_health_ble(
     let count = body.items.len();
     for item in body.items {
         sqlx::query(
-            "INSERT INTO daily_health (date, avg_hr, min_hr, max_hr, steps) \
-             VALUES (?, ?, ?, ?, ?) \
+            "INSERT INTO daily_health (date, avg_hr, min_hr, max_hr, steps, stress) \
+             VALUES (?, ?, ?, ?, ?, ?) \
              ON CONFLICT(date) DO UPDATE SET \
                avg_hr = excluded.avg_hr, \
                min_hr = excluded.min_hr, \
                max_hr = excluded.max_hr, \
-               steps  = excluded.steps",
+               steps  = excluded.steps, \
+               stress = COALESCE(excluded.stress, daily_health.stress)",
         )
         .bind(&item.date)
         .bind(item.avg_hr)
         .bind(item.min_hr)
         .bind(item.max_hr)
         .bind(item.steps)
+        .bind(item.stress)
         .execute(&state.pool)
         .await?;
     }

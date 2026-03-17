@@ -270,6 +270,7 @@ class DailyHealth {
   final int? maxHr;
   final double? hrvRmssd;
   final int? steps;
+  final int? stress;
 
   DailyHealth({
     required this.date,
@@ -278,6 +279,7 @@ class DailyHealth {
     this.maxHr,
     this.hrvRmssd,
     this.steps,
+    this.stress,
   });
 
   factory DailyHealth.fromJson(Map<String, dynamic> j) => DailyHealth(
@@ -287,6 +289,7 @@ class DailyHealth {
         maxHr: j['max_hr'] as int?,
         hrvRmssd: (j['hrv_rmssd'] as num?)?.toDouble(),
         steps: j['steps'] as int?,
+        stress: j['stress'] as int?,
       );
 }
 

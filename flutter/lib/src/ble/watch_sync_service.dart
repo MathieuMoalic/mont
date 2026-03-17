@@ -697,12 +697,29 @@ class WatchSyncService {
         await fetchOneBatch(HuamiDataType.restingHeartRate, fetchFrom);
     final restingByDate = parseDailyHrSamples(restingChunks);
     print('[BLE] Resting HR: ${restingByDate.length} day(s): $restingByDate');
+    if (restingChunks.isNotEmpty) {
+      final totalBytes = restingChunks.fold(0, (s, c) => s + c.length);
+      print('[BLE] Resting HR raw: ${restingChunks.length} chunk(s), $totalBytes bytes');
+    }
 
     _notify(SyncStatus.syncing, 'Fetching max HR…');
     final maxChunks =
         await fetchOneBatch(HuamiDataType.maxHeartRate, fetchFrom);
     final maxByDate = parseDailyHrSamples(maxChunks);
     print('[BLE] Max HR: ${maxByDate.length} day(s): $maxByDate');
+    if (maxChunks.isNotEmpty) {
+      final totalBytes = maxChunks.fold(0, (s, c) => s + c.length);
+      print('[BLE] Max HR raw: ${maxChunks.length} chunk(s), $totalBytes bytes');
+    }
+
+    // Fetch stress data (0x13) — per-minute stress scores, similar to activity.
+    _notify(SyncStatus.syncing, 'Fetching stress data…');
+    final stressChunks =
+        await fetchOneBatch(HuamiDataType.stressAuto, fetchFrom);
+    final stressByDate = stressChunks.isNotEmpty
+        ? parseStressSamples(stressChunks, fetchFrom)
+        : <String, int>{};
+    print('[BLE] Stress: ${stressByDate.length} day(s): $stressByDate');
 
     while (true) {
       if (_cancelled) break;
@@ -827,23 +844,26 @@ class WatchSyncService {
     // Persist the final since timestamp so the next sync resumes from here.
     await saveLastHealthSyncTime(since);
 
-    // Merge resting/max HR (fetched before the activity loop) into activity data.
+    // Merge resting/max HR and stress (fetched before the activity loop) into activity data.
     // Resting HR overrides min_hr; max HR overrides max_hr (includes exercise).
-    for (final date in {...allDailyData.keys, ...restingByDate.keys, ...maxByDate.keys}) {
+    final allDates = {...allDailyData.keys, ...restingByDate.keys, ...maxByDate.keys, ...stressByDate.keys};
+    for (final date in allDates) {
       final base = allDailyData[date];
       final resting = restingByDate[date];
       final peak = maxByDate[date];
-      if (resting == null && peak == null) continue;
+      final stress = stressByDate[date];
+      if (resting == null && peak == null && stress == null && base != null) continue;
       allDailyData[date] = DailyHealthData(
         date: date,
         avgHr: base?.avgHr,
         minHr: resting ?? base?.minHr,
         maxHr: peak ?? base?.maxHr,
         steps: base?.steps,
+        stress: stress ?? base?.stress,
       );
     }
 
-    if (allDailyData.isEmpty && restingByDate.isEmpty && maxByDate.isEmpty) {
+    if (allDailyData.isEmpty && restingByDate.isEmpty && maxByDate.isEmpty && stressByDate.isEmpty) {
       _notify(SyncStatus.done,
           'Sync complete. $_syncedCount run(s) imported.\nHealth data up to date.');
       return;

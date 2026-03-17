@@ -280,6 +280,7 @@ class _HealthScreenState extends State<HealthScreen> {
         SliverToBoxAdapter(child: _buildRangeChips()),
         SliverToBoxAdapter(child: _buildHrChart(days)),
         SliverToBoxAdapter(child: _buildHrvChart(days)),
+        SliverToBoxAdapter(child: _buildStressChart(days)),
         SliverToBoxAdapter(child: _buildStepsChart(days)),
         SliverToBoxAdapter(child: _buildWeightChart(weights)),
         const SliverToBoxAdapter(child: SizedBox(height: 80)),
@@ -412,6 +413,17 @@ class _HealthScreenState extends State<HealthScreen> {
       title: Text(d.date),
       trailing: Text(
         d.hrvRmssd != null ? d.hrvRmssd!.toStringAsFixed(0) : '—',
+        style: const TextStyle(fontSize: 12),
+      ),
+    )).toList());
+  }
+
+  void _showStressDetails(List<DailyHealth> days) {
+    _showSheet('Stress (avg)', days.reversed.map((d) => ListTile(
+      dense: true,
+      title: Text(d.date),
+      trailing: Text(
+        d.stress != null ? '${d.stress}' : '—',
         style: const TextStyle(fontSize: 12),
       ),
     )).toList());
@@ -557,6 +569,39 @@ class _HealthScreenState extends State<HealthScreen> {
             spots: spots, isCurved: true, color: scheme.tertiary,
             dotData: FlDotData(show: false), barWidth: 2,
             belowBarData: BarAreaData(show: true, color: scheme.tertiary.withValues(alpha: 0.10)),
+          ),
+        ],
+      )),
+    );
+  }
+
+  Widget _buildStressChart(List<DailyHealth> days) {
+    final stressDays = days.where((d) => d.stress != null).toList();
+    if (stressDays.isEmpty) {
+      return _chartSection(label: 'Stress (avg)', height: 48,
+          child: const Center(child: Text('No stress data in range', style: TextStyle(fontSize: 12))));
+    }
+    final indexed = stressDays.asMap().entries.toList();
+    final spots = indexed.map((e) => FlSpot(e.key.toDouble(), e.value.stress!.toDouble())).toList();
+    final values = stressDays.map((d) => d.stress!);
+    final minY = (values.reduce((a, b) => a < b ? a : b) - 5).clamp(0, 100).toDouble();
+    final maxY = (values.reduce((a, b) => a > b ? a : b) + 5).clamp(0, 100).toDouble();
+    final scheme = Theme.of(context).colorScheme;
+    return _chartSection(
+      label: 'Stress (avg)',
+      height: 120,
+      action: _detailsBtn(() => _showStressDetails(stressDays)),
+      child: LineChart(LineChartData(
+        minY: minY, maxY: maxY,
+        gridData: FlGridData(show: false),
+        borderData: FlBorderData(show: false),
+        titlesData: _axisTitles(yReserved: 44),
+        lineTouchData: _intTooltip(stressDays),
+        lineBarsData: [
+          LineChartBarData(
+            spots: spots, isCurved: true, color: scheme.error,
+            dotData: FlDotData(show: false), barWidth: 2,
+            belowBarData: BarAreaData(show: true, color: scheme.error.withValues(alpha: 0.10)),
           ),
         ],
       )),
