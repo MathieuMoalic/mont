@@ -695,7 +695,7 @@ class WatchSyncService {
     _notify(SyncStatus.syncing, 'Fetching resting HR…');
     final restingChunks =
         await fetchOneBatch(HuamiDataType.restingHeartRate, fetchFrom);
-    final restingByDate = parseDailyHrSamples(restingChunks);
+    var restingByDate = parseDailyHrSamples(restingChunks);
     print('[BLE] Resting HR: ${restingByDate.length} day(s): $restingByDate');
     if (restingChunks.isNotEmpty) {
       final totalBytes = restingChunks.fold(0, (s, c) => s + c.length);
@@ -705,7 +705,7 @@ class WatchSyncService {
     _notify(SyncStatus.syncing, 'Fetching max HR…');
     final maxChunks =
         await fetchOneBatch(HuamiDataType.maxHeartRate, fetchFrom);
-    final maxByDate = parseDailyHrSamples(maxChunks);
+    var maxByDate = parseDailyHrSamples(maxChunks);
     print('[BLE] Max HR: ${maxByDate.length} day(s): $maxByDate');
     if (maxChunks.isNotEmpty) {
       final totalBytes = maxChunks.fold(0, (s, c) => s + c.length);
@@ -716,7 +716,7 @@ class WatchSyncService {
     _notify(SyncStatus.syncing, 'Fetching stress data…');
     final stressChunks =
         await fetchOneBatch(HuamiDataType.stressAuto, fetchFrom);
-    final stressByDate = stressChunks.isNotEmpty
+    var stressByDate = stressChunks.isNotEmpty
         ? parseStressSamples(stressChunks, fetchFrom)
         : <String, int>{};
     print('[BLE] Stress: ${stressByDate.length} day(s): $stressByDate');
@@ -735,6 +735,19 @@ class WatchSyncService {
         rawResp = await receiveResponse();
       } on Exception catch (e) {
         if (allDailyData.isEmpty && e.toString().contains('Timed out')) {
+          // The watch ignores requests when its internal transfer pointer is
+          // ahead of the requested date (common after syncing with another
+          // app like Zepp). Retry from progressively more recent dates.
+          final now = DateTime.now().toUtc();
+          if (since.isBefore(now.subtract(const Duration(days: 1)))) {
+            since = now.subtract(const Duration(days: 1));
+            print('[BLE] Health: no response for old date, retrying from $since…');
+            continue;
+          } else if (since.isBefore(now.subtract(const Duration(hours: 1)))) {
+            since = now.subtract(const Duration(hours: 1));
+            print('[BLE] Health: no response, retrying from $since…');
+            continue;
+          }
           print('[BLE] Health: no response from watch — already up to date.');
           // Still fall through to merge and upload any 0x3a/0x3d HR data we got.
           break;
@@ -842,7 +855,36 @@ class WatchSyncService {
     }
 
     // Persist the final since timestamp so the next sync resumes from here.
-    await saveLastHealthSyncTime(since);
+    // Only save when the activity loop made progress (received data). If it
+    // only timed out (watch pointer ahead of our date), don't poison the
+    // stored timestamp — that would cause every subsequent sync to fail.
+    // The count=0 case is already handled by the save inside the loop.
+    if (allDailyData.isNotEmpty) {
+      await saveLastHealthSyncTime(since);
+    }
+
+    // If secondary types all timed out but the activity loop found data from
+    // a more recent date (pointer mismatch), re-fetch them with that date.
+    if (restingByDate.isEmpty && maxByDate.isEmpty && stressByDate.isEmpty &&
+        allDailyData.isNotEmpty && since != fetchFrom) {
+      print('[BLE] Retrying secondary health types from $since…');
+      _notify(SyncStatus.syncing, 'Fetching resting HR…');
+      final rc = await fetchOneBatch(HuamiDataType.restingHeartRate, since);
+      restingByDate = parseDailyHrSamples(rc);
+      print('[BLE] Resting HR (retry): ${restingByDate.length} day(s): $restingByDate');
+
+      _notify(SyncStatus.syncing, 'Fetching max HR…');
+      final mc = await fetchOneBatch(HuamiDataType.maxHeartRate, since);
+      maxByDate = parseDailyHrSamples(mc);
+      print('[BLE] Max HR (retry): ${maxByDate.length} day(s): $maxByDate');
+
+      _notify(SyncStatus.syncing, 'Fetching stress data…');
+      final sc = await fetchOneBatch(HuamiDataType.stressAuto, since);
+      stressByDate = sc.isNotEmpty
+          ? parseStressSamples(sc, since)
+          : <String, int>{};
+      print('[BLE] Stress (retry): ${stressByDate.length} day(s): $stressByDate');
+    }
 
     // Merge resting/max HR and stress (fetched before the activity loop) into activity data.
     // Resting HR overrides min_hr; max HR overrides max_hr (includes exercise).
