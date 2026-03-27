@@ -122,13 +122,36 @@ pub async fn finish_workout(
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> AppResult<StatusCode> {
-    let result = sqlx::query(
-        "UPDATE workouts SET finished_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') \
-         WHERE id = ? AND finished_at IS NULL",
+    // Get first and last set timestamps to calculate actual workout duration
+    let timestamps: Option<(String, String)> = sqlx::query_as(
+        "SELECT MIN(logged_at), MAX(logged_at) FROM workout_sets WHERE workout_id = ?",
     )
     .bind(id)
-    .execute(&state.pool)
+    .fetch_optional(&state.pool)
     .await?;
+
+    // Update workout: set started_at to first set, finished_at to last set
+    let result = if let Some((first, last)) = timestamps {
+        sqlx::query(
+            "UPDATE workouts SET started_at = ?, finished_at = ? \
+             WHERE id = ? AND finished_at IS NULL",
+        )
+        .bind(first)
+        .bind(last)
+        .bind(id)
+        .execute(&state.pool)
+        .await?
+    } else {
+        // No sets logged, just set finished_at to now
+        sqlx::query(
+            "UPDATE workouts SET finished_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') \
+             WHERE id = ? AND finished_at IS NULL",
+        )
+        .bind(id)
+        .execute(&state.pool)
+        .await?
+    };
+
     if result.rows_affected() == 0 {
         return Err(StatusCode::NOT_FOUND.into());
     }
