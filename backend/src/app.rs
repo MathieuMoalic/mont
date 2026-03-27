@@ -58,6 +58,7 @@ pub fn build_app(state: AppState) -> Router {
 
     let protected_routes = Router::new()
         .route("/exercises", get(exercises::list_exercises).post(exercises::create_exercise))
+        .route("/exercises/{id}", patch(exercises::update_exercise))
         .route("/exercises/{id}/history", get(exercises::exercise_history))
         .route("/health/daily", get(health::list_daily_health))
         .route("/workouts", get(workouts::list_workouts).post(workouts::create_workout))

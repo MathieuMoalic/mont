@@ -22,6 +22,13 @@ pub struct CreateExercise {
     pub muscle_group: Option<String>,
 }
 
+#[derive(Deserialize)]
+pub struct UpdateExercise {
+    pub name: Option<String>,
+    pub notes: Option<String>,
+    pub muscle_group: Option<String>,
+}
+
 /// # Errors
 /// Returns an error if the database query fails.
 pub async fn list_exercises(State(state): State<AppState>) -> AppResult<Json<Vec<Exercise>>> {
@@ -60,6 +67,78 @@ pub async fn create_exercise(
         }
     })?;
     Ok((StatusCode::CREATED, Json(exercise)))
+}
+
+/// # Errors
+/// Returns `NOT_FOUND` if the exercise doesn't exist, or an error if the query fails
+/// or the name conflicts with an existing exercise.
+pub async fn update_exercise(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Json(body): Json<UpdateExercise>,
+) -> AppResult<Json<Exercise>> {
+    // Verify exercise exists
+    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM exercises WHERE id = ?)")
+        .bind(id)
+        .fetch_one(&state.pool)
+        .await?;
+    if !exists {
+        return Err(StatusCode::NOT_FOUND.into());
+    }
+
+    // Build dynamic UPDATE query based on provided fields
+    let mut updates = Vec::new();
+
+    if body.name.is_some() {
+        updates.push("name = ?");
+    }
+    if body.notes.is_some() || body.notes == Some(String::new()) {
+        updates.push("notes = ?");
+    }
+    if body.muscle_group.is_some() || body.muscle_group == Some(String::new()) {
+        updates.push("muscle_group = ?");
+    }
+
+    if updates.is_empty() {
+        // No fields to update, just return existing exercise
+        let exercise = sqlx::query_as::<_, Exercise>(
+            "SELECT id, name, notes, muscle_group FROM exercises WHERE id = ?",
+        )
+        .bind(id)
+        .fetch_one(&state.pool)
+        .await?;
+        return Ok(Json(exercise));
+    }
+
+    let mut query = String::from("UPDATE exercises SET ");
+    query.push_str(&updates.join(", "));
+    query.push_str(" WHERE id = ? RETURNING id, name, notes, muscle_group");
+
+    let mut q = sqlx::query_as::<_, Exercise>(&query);
+    if let Some(ref name) = body.name {
+        q = q.bind(name);
+    }
+    if body.notes.is_some() {
+        q = q.bind(&body.notes);
+    }
+    if body.muscle_group.is_some() {
+        q = q.bind(&body.muscle_group);
+    }
+    q = q.bind(id);
+
+    let exercise = q.fetch_one(&state.pool).await.map_err(|e| -> crate::error::AppError {
+        if matches!(e, sqlx::Error::Database(ref db_err) if db_err.is_unique_violation()) {
+            (
+                StatusCode::CONFLICT,
+                format!("Exercise '{}' already exists", body.name.as_ref().unwrap_or(&String::new())),
+            )
+                .into()
+        } else {
+            e.into()
+        }
+    })?;
+
+    Ok(Json(exercise))
 }
 
 #[derive(Serialize, sqlx::FromRow)]

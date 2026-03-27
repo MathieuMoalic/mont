@@ -112,6 +112,25 @@ Future<Exercise> createExercise({
   return Exercise.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
 }
 
+Future<Exercise> updateExercise(
+  int id, {
+  String? name,
+  String? notes,
+  String? muscleGroup,
+}) async {
+  final res = await http.patch(
+    _u('/exercises/$id'),
+    headers: _headers(),
+    body: jsonEncode({
+      if (name != null) 'name': name,
+      if (notes != null) 'notes': notes,
+      if (muscleGroup != null) 'muscle_group': muscleGroup,
+    }),
+  );
+  if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}: ${res.body}');
+  return Exercise.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+}
+
 Future<List<PersonalRecord>> getPersonalRecords() async {
   final res = await http.get(_u('/runs/prs'), headers: _headers());
   if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
@@ -313,3 +332,4 @@ Future<List<DailyHealth>> listDailyHealth() async {
       .map((e) => DailyHealth.fromJson(e as Map<String, dynamic>))
       .toList();
 }
+

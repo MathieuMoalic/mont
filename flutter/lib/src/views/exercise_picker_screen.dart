@@ -70,19 +70,67 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
 
   Future<void> _createExercise() async {
     final prefill = _searchCtrl.text.trim();
-    final result = await showDialog<(String, String?)>(
+    final result = await _showExerciseDialog(
+      title: 'New exercise',
+      initialName: prefill,
+    );
+    if (result == null || result.$1.isEmpty || !mounted) return;
+    try {
+      final exercise = await api.createExercise(
+        name: result.$1,
+        muscleGroup: result.$2,
+      );
+      if (mounted) Navigator.pop(context, exercise);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.toString())));
+      }
+    }
+  }
+
+  Future<void> _editExercise(Exercise exercise) async {
+    final result = await _showExerciseDialog(
+      title: 'Edit exercise',
+      initialName: exercise.name,
+      initialMuscleGroup: exercise.muscleGroup,
+      initialNotes: exercise.notes,
+    );
+    if (result == null || !mounted) return;
+    try {
+      await api.updateExercise(
+        exercise.id,
+        name: result.$1.isEmpty ? null : result.$1,
+        muscleGroup: result.$2,
+      );
+      _load();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.toString())));
+      }
+    }
+  }
+
+  Future<(String, String?)?> _showExerciseDialog({
+    required String title,
+    String initialName = '',
+    String? initialMuscleGroup,
+    String? initialNotes,
+  }) {
+    final ctrl = TextEditingController(text: initialName);
+    String? selectedMuscleGroup = initialMuscleGroup;
+    const muscleGroups = [
+      'Chest', 'Back', 'Shoulders', 'Biceps', 'Triceps',
+      'Core', 'Quads', 'Hamstrings', 'Glutes', 'Calves',
+      'Full Body', 'Cardio',
+    ];
+    return showDialog<(String, String?)>(
       context: context,
       builder: (ctx) {
-        final ctrl = TextEditingController(text: prefill);
-        String? selectedMuscleGroup;
-        const muscleGroups = [
-          'Chest', 'Back', 'Shoulders', 'Biceps', 'Triceps',
-          'Core', 'Quads', 'Hamstrings', 'Glutes', 'Calves',
-          'Full Body', 'Cardio',
-        ];
         return StatefulBuilder(builder: (ctx, setSt) {
           return AlertDialog(
-            title: const Text('New exercise'),
+            title: Text(title),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -111,25 +159,12 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
               FilledButton(
                   onPressed: () => Navigator.pop(
                       ctx, (ctrl.text.trim(), selectedMuscleGroup)),
-                  child: const Text('Create')),
+                  child: const Text('Save')),
             ],
           );
         });
       },
-    );
-    if (result == null || result.$1.isEmpty || !mounted) return;
-    try {
-      final exercise = await api.createExercise(
-        name: result.$1,
-        muscleGroup: result.$2,
-      );
-      if (mounted) Navigator.pop(context, exercise);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(e.toString())));
-      }
-    }
+    ).whenComplete(() => ctrl.dispose());
   }
 
   @override
@@ -204,6 +239,7 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
             title: Text(e.name),
             subtitle: sub.isNotEmpty ? Text(sub) : null,
             onTap: () => Navigator.pop(context, e),
+            onLongPress: () => _editExercise(e),
           );
         },
       );
