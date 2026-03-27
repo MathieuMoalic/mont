@@ -48,7 +48,7 @@ async fn list_exercises_returns_created_exercises() {
 }
 
 #[tokio::test]
-async fn list_exercises_sorted_alphabetically() {
+async fn list_exercises_sorted_by_recent_use() {
     let app = common::TestApp::spawn().await;
     app.create_exercise("Squat").await;
     app.create_exercise("Bench Press").await;
@@ -56,7 +56,8 @@ async fn list_exercises_sorted_alphabetically() {
 
     let body: Vec<serde_json::Value> = app.get("/exercises").await.json().await.unwrap();
     let names: Vec<&str> = body.iter().map(|e| e["name"].as_str().unwrap()).collect();
-    assert_eq!(names, vec!["Bench Press", "Deadlift", "Squat"]);
+    // Most recently created first when no sets exist
+    assert_eq!(names, vec!["Deadlift", "Bench Press", "Squat"]);
 }
 
 #[tokio::test]

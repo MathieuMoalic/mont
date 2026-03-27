@@ -38,7 +38,7 @@ pub async fn list_exercises(State(state): State<AppState>) -> AppResult<Json<Vec
           LEFT JOIN workout_sets s ON s.exercise_id = e.id
           LEFT JOIN workouts w ON w.id = s.workout_id
           GROUP BY e.id
-          ORDER BY MAX(COALESCE(w.finished_at, w.started_at)) DESC NULLS LAST, e.name COLLATE NOCASE",
+          ORDER BY MAX(s.id) DESC NULLS LAST, e.id DESC",
     )
     .fetch_all(&state.pool)
     .await?;
