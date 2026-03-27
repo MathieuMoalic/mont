@@ -51,7 +51,14 @@ pub async fn create_exercise(
     .bind(&body.notes)
     .bind(&body.muscle_group)
     .fetch_one(&state.pool)
-    .await?;
+    .await
+    .map_err(|e| -> crate::error::AppError {
+        if matches!(e, sqlx::Error::Database(ref db_err) if db_err.is_unique_violation()) {
+            (StatusCode::CONFLICT, format!("Exercise '{}' already exists", body.name)).into()
+        } else {
+            e.into()
+        }
+    })?;
     Ok((StatusCode::CREATED, Json(exercise)))
 }
 
