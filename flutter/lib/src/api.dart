@@ -108,7 +108,11 @@ Future<Exercise> createExercise({
       if (muscleGroup != null) 'muscle_group': muscleGroup,
     }),
   );
-  if (res.statusCode != 201) throw Exception('HTTP ${res.statusCode}');
+  if (res.statusCode != 201) {
+    // Return the error message from the server if available, otherwise generic
+    final body = res.body;
+    throw Exception(body.isNotEmpty ? body : 'Failed to create exercise');
+  }
   return Exercise.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
 }
 
@@ -127,7 +131,11 @@ Future<Exercise> updateExercise(
       if (muscleGroup != null) 'muscle_group': muscleGroup,
     }),
   );
-  if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}: ${res.body}');
+  if (res.statusCode != 200) {
+    // Return the error message from the server if available, otherwise generic
+    final body = res.body;
+    throw Exception(body.isNotEmpty ? body : 'Failed to update exercise');
+  }
   return Exercise.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
 }
 

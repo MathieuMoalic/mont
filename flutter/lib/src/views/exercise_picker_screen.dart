@@ -83,8 +83,9 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
       if (mounted) Navigator.pop(context, exercise);
     } catch (e) {
       if (mounted) {
+        final msg = e.toString().replaceFirst('Exception: ', '');
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(e.toString())));
+            .showSnackBar(SnackBar(content: Text(msg)));
       }
     }
   }
@@ -106,8 +107,9 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
       _load();
     } catch (e) {
       if (mounted) {
+        final msg = e.toString().replaceFirst('Exception: ', '');
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(e.toString())));
+            .showSnackBar(SnackBar(content: Text(msg)));
       }
     }
   }
