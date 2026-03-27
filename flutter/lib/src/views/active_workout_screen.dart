@@ -26,6 +26,10 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   @override
   void dispose() {
     _scrollCtrl.dispose();
+    // Auto-finish workout when leaving the screen
+    if (_workout != null && _workout!.sets.isNotEmpty) {
+      api.finishWorkout(widget.workoutId).catchError((_) {});
+    }
     super.dispose();
   }
 
@@ -184,45 +188,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     );
   }
 
-  Future<void> _finishWorkout() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Finish workout?'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel')),
-          FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Finish')),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-    try {
-      await api.finishWorkout(widget.workoutId);
-      _load();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(e.toString())));
-      }
-    }
-  }
-
-  Future<void> _restartWorkout() async {
-    try {
-      await api.restartWorkout(widget.workoutId);
-      _load();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(e.toString())));
-      }
-    }
-  }
-
   Future<void> _deleteSet(int setId) async {
     try {
       await api.deleteSet(workoutId: widget.workoutId, setId: setId);
@@ -247,42 +212,21 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isActive = _workout?.isActive ?? true;
     return Scaffold(
       appBar: AppBar(
         title: Text(
           _workout == null ? 'Workout' : _formatDate(_workout!.startedAt),
         ),
-        actions: [
-          if (isActive && _workout != null)
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: FilledButton(
-                onPressed: _finishWorkout,
-                child: const Text('Finish'),
-              ),
-            ),
-          if (!isActive && _workout != null)
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: FilledButton.tonal(
-                onPressed: _restartWorkout,
-                child: const Text('Restart'),
-              ),
-            ),
-        ],
       ),
       body: Column(
         children: [
           Expanded(child: _buildBody()),
         ],
       ),
-      floatingActionButton: isActive
-          ? FloatingActionButton(
-              onPressed: _addSet,
-              child: const Icon(Icons.add),
-            )
-          : null,
+      floatingActionButton: FloatingActionButton(
+        onPressed: _addSet,
+        child: const Icon(Icons.add),
+      ),
     );
   }
 
@@ -355,16 +299,15 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                           style: theme.textTheme.bodyMedium,
                         ),
                       ),
-                      if (_workout!.isActive)
-                        InkWell(
-                          onTap: () => _deleteSet(s.id),
-                          borderRadius: BorderRadius.circular(12),
-                          child: Padding(
-                            padding: const EdgeInsets.all(6),
-                            child: Icon(Icons.close, size: 14,
-                                color: theme.colorScheme.onSurfaceVariant),
-                          ),
+                      InkWell(
+                        onTap: () => _deleteSet(s.id),
+                        borderRadius: BorderRadius.circular(12),
+                        child: Padding(
+                          padding: const EdgeInsets.all(6),
+                          child: Icon(Icons.close, size: 14,
+                              color: theme.colorScheme.onSurfaceVariant),
                         ),
+                      ),
                     ],
                   ),
                 ),
