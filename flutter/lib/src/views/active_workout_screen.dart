@@ -207,8 +207,11 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     return '${d.day}/${d.month}/${d.year} $h:$m';
   }
 
-  String _weightStr(double kg) =>
-      kg % 1 == 0 ? '${kg.toInt()}kg' : '${kg}kg';
+  String _setDisplay(double kg, int reps) {
+    if (kg == 0) return '$reps reps';
+    final weight = kg % 1 == 0 ? '${kg.toInt()}kg' : '${kg}kg';
+    return '$weight × $reps reps';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -295,7 +298,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                       ),
                       Expanded(
                         child: Text(
-                          '${_weightStr(s.weightKg)} × ${s.reps} reps',
+                          _setDisplay(s.weightKg, s.reps),
                           style: theme.textTheme.bodyMedium,
                         ),
                       ),
