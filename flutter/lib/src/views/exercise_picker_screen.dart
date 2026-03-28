@@ -241,7 +241,11 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
             title: Text(e.name),
             subtitle: sub.isNotEmpty ? Text(sub) : null,
             onTap: () => Navigator.pop(context, e),
-            onLongPress: () => _editExercise(e),
+            trailing: IconButton(
+              icon: const Icon(Icons.edit),
+              onPressed: () => _editExercise(e),
+              tooltip: 'Edit exercise',
+            ),
           );
         },
       );
