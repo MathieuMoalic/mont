@@ -33,6 +33,7 @@ pub struct WorkoutSetRow {
     pub set_number: i64,
     pub reps: i64,
     pub weight_kg: f64,
+    pub logged_at: String,
 }
 
 #[derive(sqlx::FromRow)]
@@ -101,7 +102,7 @@ pub async fn get_workout(
                        THEN e.name || ' (' || e.equipment || ')' 
                        ELSE e.name 
                   END as exercise_name,
-                  s.set_number, s.reps, s.weight_kg
+                  s.set_number, s.reps, s.weight_kg, s.logged_at
            FROM workout_sets s
            JOIN exercises e ON e.id = s.exercise_id
            WHERE s.workout_id = ?
@@ -177,7 +178,7 @@ pub async fn add_set(
                             THEN name || ' (' || equipment || ')' 
                             ELSE name 
                        END FROM exercises WHERE id = exercise_id) as exercise_name,
-               set_number, reps, weight_kg",
+               set_number, reps, weight_kg, logged_at",
     )
     .bind(workout_id)
     .bind(body.exercise_id)

@@ -222,6 +222,7 @@ class WorkoutSet {
   final int setNumber;
   final int reps;
   final double weightKg;
+  final DateTime loggedAt;
 
   WorkoutSet({
     required this.id,
@@ -230,6 +231,7 @@ class WorkoutSet {
     required this.setNumber,
     required this.reps,
     required this.weightKg,
+    required this.loggedAt,
   });
 
   factory WorkoutSet.fromJson(Map<String, dynamic> j) => WorkoutSet(
@@ -239,6 +241,7 @@ class WorkoutSet {
         setNumber: j['set_number'] as int,
         reps: j['reps'] as int,
         weightKg: (j['weight_kg'] as num).toDouble(),
+        loggedAt: DateTime.parse(j['logged_at'] as String),
       );
 }
 

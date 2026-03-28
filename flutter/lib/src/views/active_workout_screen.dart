@@ -302,6 +302,12 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                           style: theme.textTheme.bodyMedium,
                         ),
                       ),
+                      Text(
+                        '${s.loggedAt.hour.toString().padLeft(2, '0')}:${s.loggedAt.minute.toString().padLeft(2, '0')}',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant),
+                      ),
+                      const SizedBox(width: 8),
                       InkWell(
                         onTap: () => _deleteSet(s.id),
                         borderRadius: BorderRadius.circular(12),

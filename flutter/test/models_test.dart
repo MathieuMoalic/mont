@@ -148,6 +148,7 @@ void main() {
       final s = WorkoutSet.fromJson({
         'id': 1, 'exercise_id': 2, 'exercise_name': 'Deadlift',
         'set_number': 1, 'reps': 5, 'weight_kg': 140,
+        'logged_at': '2024-01-15T10:30:00Z',
       });
       expect(s.weightKg, 140.0);
       expect(s.reps, 5);
@@ -158,6 +159,7 @@ void main() {
       final s = WorkoutSet.fromJson({
         'id': 2, 'exercise_id': 3, 'exercise_name': 'Lateral Raise',
         'set_number': 2, 'reps': 15, 'weight_kg': 7.5,
+        'logged_at': '2024-01-15T10:32:00Z',
       });
       expect(s.weightKg, 7.5);
     });
@@ -174,10 +176,12 @@ void main() {
           {
             'id': 1, 'exercise_id': 1, 'exercise_name': 'Squat',
             'set_number': 1, 'reps': 8, 'weight_kg': 100.0,
+            'logged_at': '2026-03-01T09:05:00Z',
           },
           {
             'id': 2, 'exercise_id': 1, 'exercise_name': 'Squat',
             'set_number': 2, 'reps': 8, 'weight_kg': 100.0,
+            'logged_at': '2026-03-01T09:08:00Z',
           },
         ],
       });
