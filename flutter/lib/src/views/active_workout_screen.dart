@@ -303,7 +303,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                         ),
                       ),
                       Text(
-                        '${s.loggedAt.hour.toString().padLeft(2, '0')}:${s.loggedAt.minute.toString().padLeft(2, '0')}',
+                        '${s.loggedAt.toLocal().hour.toString().padLeft(2, '0')}:${s.loggedAt.toLocal().minute.toString().padLeft(2, '0')}',
                         style: theme.textTheme.bodySmall?.copyWith(
                             color: theme.colorScheme.onSurfaceVariant),
                       ),
