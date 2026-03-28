@@ -96,7 +96,11 @@ pub async fn get_workout(
     .ok_or(StatusCode::NOT_FOUND)?;
 
     let sets = sqlx::query_as::<_, WorkoutSetRow>(
-        r"SELECT s.id, s.exercise_id, e.name as exercise_name,
+        r"SELECT s.id, s.exercise_id, 
+                  CASE WHEN e.equipment IS NOT NULL AND e.equipment != '' 
+                       THEN e.name || ' (' || e.equipment || ')' 
+                       ELSE e.name 
+                  END as exercise_name,
                   s.set_number, s.reps, s.weight_kg
            FROM workout_sets s
            JOIN exercises e ON e.id = s.exercise_id
@@ -169,7 +173,10 @@ pub async fn add_set(
         r"INSERT INTO workout_sets (workout_id, exercise_id, set_number, reps, weight_kg)
            VALUES (?, ?, ?, ?, ?)
            RETURNING id, exercise_id,
-               (SELECT name FROM exercises WHERE id = exercise_id) as exercise_name,
+               (SELECT CASE WHEN equipment IS NOT NULL AND equipment != '' 
+                            THEN name || ' (' || equipment || ')' 
+                            ELSE name 
+                       END FROM exercises WHERE id = exercise_id) as exercise_name,
                set_number, reps, weight_kg",
     )
     .bind(workout_id)

@@ -98,6 +98,7 @@ Future<Exercise> createExercise({
   required String name,
   String? notes,
   String? muscleGroup,
+  String? equipment,
 }) async {
   final res = await http.post(
     _u('/exercises'),
@@ -106,6 +107,7 @@ Future<Exercise> createExercise({
       'name': name,
       if (notes != null) 'notes': notes,
       if (muscleGroup != null) 'muscle_group': muscleGroup,
+      if (equipment != null) 'equipment': equipment,
     }),
   );
   if (res.statusCode != 201) {
@@ -121,6 +123,7 @@ Future<Exercise> updateExercise(
   String? name,
   String? notes,
   String? muscleGroup,
+  String? equipment,
 }) async {
   final res = await http.patch(
     _u('/exercises/$id'),
@@ -129,6 +132,7 @@ Future<Exercise> updateExercise(
       if (name != null) 'name': name,
       if (notes != null) 'notes': notes,
       if (muscleGroup != null) 'muscle_group': muscleGroup,
+      if (equipment != null) 'equipment': equipment,
     }),
   );
   if (res.statusCode != 200) {

@@ -167,15 +167,24 @@ class Exercise {
   final String name;
   final String? notes;
   final String? muscleGroup;
+  final String? equipment;
 
-  Exercise({required this.id, required this.name, this.notes, this.muscleGroup});
+  Exercise({required this.id, required this.name, this.notes, this.muscleGroup, this.equipment});
 
   factory Exercise.fromJson(Map<String, dynamic> j) => Exercise(
         id: j['id'] as int,
         name: j['name'] as String,
         notes: j['notes'] as String?,
         muscleGroup: j['muscle_group'] as String?,
+        equipment: j['equipment'] as String?,
       );
+
+  String get displayName {
+    if (equipment != null && equipment!.isNotEmpty) {
+      return '$name ($equipment)';
+    }
+    return name;
+  }
 }
 
 class WorkoutSummary {

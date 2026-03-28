@@ -13,6 +13,7 @@ pub struct Exercise {
     pub name: String,
     pub notes: Option<String>,
     pub muscle_group: Option<String>,
+    pub equipment: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -20,6 +21,7 @@ pub struct CreateExercise {
     pub name: String,
     pub notes: Option<String>,
     pub muscle_group: Option<String>,
+    pub equipment: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -27,13 +29,14 @@ pub struct UpdateExercise {
     pub name: Option<String>,
     pub notes: Option<String>,
     pub muscle_group: Option<String>,
+    pub equipment: Option<String>,
 }
 
 /// # Errors
 /// Returns an error if the database query fails.
 pub async fn list_exercises(State(state): State<AppState>) -> AppResult<Json<Vec<Exercise>>> {
     let exercises = sqlx::query_as::<_, Exercise>(
-        r"SELECT e.id, e.name, e.notes, e.muscle_group
+        r"SELECT e.id, e.name, e.notes, e.muscle_group, e.equipment
           FROM exercises e
           LEFT JOIN workout_sets s ON s.exercise_id = e.id
           LEFT JOIN workouts w ON w.id = s.workout_id
@@ -52,11 +55,12 @@ pub async fn create_exercise(
     Json(body): Json<CreateExercise>,
 ) -> AppResult<(StatusCode, Json<Exercise>)> {
     let exercise = sqlx::query_as::<_, Exercise>(
-        "INSERT INTO exercises (name, notes, muscle_group) VALUES (?, ?, ?) RETURNING id, name, notes, muscle_group",
+        "INSERT INTO exercises (name, notes, muscle_group, equipment) VALUES (?, ?, ?, ?) RETURNING id, name, notes, muscle_group, equipment",
     )
     .bind(&body.name)
     .bind(&body.notes)
     .bind(&body.muscle_group)
+    .bind(&body.equipment)
     .fetch_one(&state.pool)
     .await
     .map_err(|e| -> crate::error::AppError {
@@ -98,11 +102,14 @@ pub async fn update_exercise(
     if body.muscle_group.is_some() || body.muscle_group == Some(String::new()) {
         updates.push("muscle_group = ?");
     }
+    if body.equipment.is_some() || body.equipment == Some(String::new()) {
+        updates.push("equipment = ?");
+    }
 
     if updates.is_empty() {
         // No fields to update, just return existing exercise
         let exercise = sqlx::query_as::<_, Exercise>(
-            "SELECT id, name, notes, muscle_group FROM exercises WHERE id = ?",
+            "SELECT id, name, notes, muscle_group, equipment FROM exercises WHERE id = ?",
         )
         .bind(id)
         .fetch_one(&state.pool)
@@ -112,7 +119,7 @@ pub async fn update_exercise(
 
     let mut query = String::from("UPDATE exercises SET ");
     query.push_str(&updates.join(", "));
-    query.push_str(" WHERE id = ? RETURNING id, name, notes, muscle_group");
+    query.push_str(" WHERE id = ? RETURNING id, name, notes, muscle_group, equipment");
 
     let mut q = sqlx::query_as::<_, Exercise>(&query);
     if let Some(ref name) = body.name {
@@ -123,6 +130,9 @@ pub async fn update_exercise(
     }
     if body.muscle_group.is_some() {
         q = q.bind(&body.muscle_group);
+    }
+    if body.equipment.is_some() {
+        q = q.bind(&body.equipment);
     }
     q = q.bind(id);
 

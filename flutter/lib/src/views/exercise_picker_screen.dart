@@ -79,6 +79,7 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
       final exercise = await api.createExercise(
         name: result.$1,
         muscleGroup: result.$2,
+        equipment: result.$3,
       );
       if (mounted) Navigator.pop(context, exercise);
     } catch (e) {
@@ -95,6 +96,7 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
       title: 'Edit exercise',
       initialName: exercise.name,
       initialMuscleGroup: exercise.muscleGroup,
+      initialEquipment: exercise.equipment,
       initialNotes: exercise.notes,
     );
     if (result == null || !mounted) return;
@@ -103,6 +105,7 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
         exercise.id,
         name: result.$1.isEmpty ? null : result.$1,
         muscleGroup: result.$2,
+        equipment: result.$3,
       );
       _load();
     } catch (e) {
@@ -114,45 +117,63 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
     }
   }
 
-  Future<(String, String?)?> _showExerciseDialog({
+  Future<(String, String?, String?)?> _showExerciseDialog({
     required String title,
     String initialName = '',
     String? initialMuscleGroup,
+    String? initialEquipment,
     String? initialNotes,
   }) {
     final ctrl = TextEditingController(text: initialName);
     String? selectedMuscleGroup = initialMuscleGroup;
+    String? selectedEquipment = initialEquipment;
     const muscleGroups = [
       'Chest', 'Back', 'Shoulders', 'Biceps', 'Triceps',
       'Core', 'Quads', 'Hamstrings', 'Glutes', 'Calves',
       'Full Body', 'Cardio',
     ];
-    return showDialog<(String, String?)>(
+    const equipment = [
+      'Barbell', 'Dumbbell', 'Machine', 'Cable', 'Smith',
+      'Bodyweight', 'Kettlebell', 'Band',
+    ];
+    return showDialog<(String, String?, String?)>(
       context: context,
       builder: (ctx) {
         return StatefulBuilder(builder: (ctx, setSt) {
           return AlertDialog(
             title: Text(title),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: ctrl,
-                  autofocus: true,
-                  textCapitalization: TextCapitalization.words,
-                  decoration: const InputDecoration(labelText: 'Name'),
-                ),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
-                  value: selectedMuscleGroup,
-                  hint: const Text('Muscle group (optional)'),
-                  decoration: const InputDecoration(labelText: 'Muscle group'),
-                  items: muscleGroups
-                      .map((g) => DropdownMenuItem(value: g, child: Text(g)))
-                      .toList(),
-                  onChanged: (v) => setSt(() => selectedMuscleGroup = v),
-                ),
-              ],
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: ctrl,
+                    autofocus: true,
+                    textCapitalization: TextCapitalization.words,
+                    decoration: const InputDecoration(labelText: 'Name'),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: selectedMuscleGroup,
+                    hint: const Text('Muscle group (optional)'),
+                    decoration: const InputDecoration(labelText: 'Muscle group'),
+                    items: muscleGroups
+                        .map((g) => DropdownMenuItem(value: g, child: Text(g)))
+                        .toList(),
+                    onChanged: (v) => setSt(() => selectedMuscleGroup = v),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: selectedEquipment,
+                    hint: const Text('Equipment (optional)'),
+                    decoration: const InputDecoration(labelText: 'Equipment'),
+                    items: equipment
+                        .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+                        .toList(),
+                    onChanged: (v) => setSt(() => selectedEquipment = v),
+                  ),
+                ],
+              ),
             ),
             actions: [
               TextButton(
@@ -160,7 +181,7 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
                   child: const Text('Cancel')),
               FilledButton(
                   onPressed: () => Navigator.pop(
-                      ctx, (ctrl.text.trim(), selectedMuscleGroup)),
+                      ctx, (ctrl.text.trim(), selectedMuscleGroup, selectedEquipment)),
                   child: const Text('Save')),
             ],
           );
@@ -238,7 +259,7 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
             if (e.notes != null) e.notes!,
           ].join(' · ');
           return ListTile(
-            title: Text(e.name),
+            title: Text(e.displayName),
             subtitle: sub.isNotEmpty ? Text(sub) : null,
             onTap: () => Navigator.pop(context, e),
             trailing: IconButton(
