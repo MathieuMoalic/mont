@@ -122,7 +122,7 @@ pub async fn get_workout(
 }
 
 /// # Errors
-/// Returns `NOT_FOUND` if the workout doesn't exist or is already finished.
+/// Returns `NOT_FOUND` if the workout doesn't exist.
 pub async fn finish_workout(
     State(state): State<AppState>,
     Path(id): Path<i64>,
@@ -136,6 +136,7 @@ pub async fn finish_workout(
     .await?;
 
     // Update workout: set started_at to first set, finished_at to last set
+    // Only update if not already finished
     let result = if let Some((first, last)) = timestamps {
         sqlx::query(
             "UPDATE workouts SET started_at = ?, finished_at = ? \
