@@ -379,7 +379,10 @@ pub async fn get_run(
     .await?
     .ok_or(StatusCode::NOT_FOUND)?;
 
-    let route: Vec<RoutePoint> = serde_json::from_str(&row.route_json).unwrap_or_default();
+    let route: Vec<RoutePoint> = serde_json::from_str(&row.route_json).unwrap_or_else(|e| {
+        tracing::warn!(run_id = id, error = %e, "Failed to parse route JSON, returning empty route");
+        Vec::new()
+    });
 
     Ok(Json(RunDetail {
         id: row.id,

@@ -37,11 +37,14 @@ pub async fn list_weight(
 }
 
 /// # Errors
-/// Returns an error if the database insert fails.
+/// Returns an error if the database insert fails or weight is invalid.
 pub async fn create_weight_entry(
     State(state): State<AppState>,
     Json(body): Json<CreateWeightEntry>,
 ) -> AppResult<(StatusCode, Json<WeightEntry>)> {
+    if body.weight_kg <= 0.0 {
+        return Err((StatusCode::BAD_REQUEST, "Weight must be positive".to_string()).into());
+    }
     let entry = if let Some(ts) = body.measured_at {
         sqlx::query_as::<_, WeightEntry>(
             "INSERT INTO weight_entries (weight_kg, measured_at) VALUES (?, ?) \
@@ -70,12 +73,17 @@ pub struct UpdateWeightEntry {
 }
 
 /// # Errors
-/// Returns `NOT_FOUND` if the entry doesn't exist.
+/// Returns `NOT_FOUND` if the entry doesn't exist, or `BAD_REQUEST` if weight is invalid.
 pub async fn update_weight_entry(
     State(state): State<AppState>,
     Path(id): Path<i64>,
     Json(body): Json<UpdateWeightEntry>,
 ) -> AppResult<Json<WeightEntry>> {
+    if let Some(w) = body.weight_kg
+        && w <= 0.0
+    {
+        return Err((StatusCode::BAD_REQUEST, "Weight must be positive".to_string()).into());
+    }
     let entry = sqlx::query_as::<_, WeightEntry>(
         "UPDATE weight_entries SET \
          weight_kg = COALESCE(?, weight_kg), \

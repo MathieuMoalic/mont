@@ -226,8 +226,8 @@ async fn weight_entry_with_zero_weight() {
     let res = app
         .post_json("/weight", &serde_json::json!({ "weight_kg": 0.0 }))
         .await;
-    // Zero weight might be invalid depending on business logic
-    assert!(res.status() == 201 || res.status() == 422);
+    // Zero weight is rejected with 400 BAD_REQUEST
+    assert_eq!(res.status(), 400);
 }
 
 #[tokio::test]

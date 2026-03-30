@@ -171,12 +171,22 @@ pub async fn finish_workout(
 }
 
 /// # Errors
-/// Returns an error if the database insert fails (e.g. invalid workout or exercise id).
+/// Returns an error if the database insert fails (e.g. invalid workout or exercise id),
+/// or `BAD_REQUEST` if `set_number`, `reps`, or `weight_kg` are invalid.
 pub async fn add_set(
     State(state): State<AppState>,
     Path(workout_id): Path<i64>,
     Json(body): Json<AddSet>,
 ) -> AppResult<(StatusCode, Json<WorkoutSetRow>)> {
+    if body.set_number <= 0 {
+        return Err((StatusCode::BAD_REQUEST, "Set number must be positive".to_string()).into());
+    }
+    if body.reps < 0 {
+        return Err((StatusCode::BAD_REQUEST, "Reps cannot be negative".to_string()).into());
+    }
+    if body.weight_kg < 0.0 {
+        return Err((StatusCode::BAD_REQUEST, "Weight cannot be negative".to_string()).into());
+    }
     let set = sqlx::query_as::<_, WorkoutSetRow>(
         r"INSERT INTO workout_sets (workout_id, exercise_id, set_number, reps, weight_kg)
            VALUES (?, ?, ?, ?, ?)
