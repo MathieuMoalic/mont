@@ -25,7 +25,7 @@ struct Claims {
 fn now_ts() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
+        .expect("system time is after Unix epoch")
         .as_secs()
 }
 

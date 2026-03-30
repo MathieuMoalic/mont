@@ -1,11 +1,11 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     Json,
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{error::AppResult, models::AppState};
+use crate::{error::AppResult, models::AppState, pagination::Pagination};
 
 #[derive(Serialize, sqlx::FromRow)]
 pub struct WorkoutSummary {
@@ -54,15 +54,21 @@ pub struct AddSet {
 
 /// # Errors
 /// Returns an error if the database query fails.
-pub async fn list_workouts(State(state): State<AppState>) -> AppResult<Json<Vec<WorkoutSummary>>> {
+pub async fn list_workouts(
+    State(state): State<AppState>,
+    Query(pagination): Query<Pagination>,
+) -> AppResult<Json<Vec<WorkoutSummary>>> {
     let workouts = sqlx::query_as::<_, WorkoutSummary>(
         r"SELECT w.id, w.started_at, w.finished_at, w.notes,
                   COUNT(s.id) as set_count
            FROM workouts w
            LEFT JOIN workout_sets s ON s.workout_id = w.id
            GROUP BY w.id
-           ORDER BY w.started_at DESC",
+           ORDER BY w.started_at DESC
+           LIMIT ? OFFSET ?",
     )
+    .bind(pagination.limit)
+    .bind(pagination.offset)
     .fetch_all(&state.pool)
     .await?;
     Ok(Json(workouts))

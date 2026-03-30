@@ -1,11 +1,11 @@
 use axum::{
-    extract::{Multipart, Path, State},
+    extract::{Multipart, Path, Query, State},
     http::StatusCode,
     Json,
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{error::AppResult, models::AppState};
+use crate::{error::AppResult, models::AppState, pagination::Pagination};
 
 // ── DB / response types ───────────────────────────────────────────────────────
 
@@ -329,12 +329,17 @@ pub async fn import_run(
 
 /// # Errors
 /// Returns an error if the database query fails.
-pub async fn list_runs(State(state): State<AppState>) -> AppResult<Json<Vec<RunSummary>>> {
+pub async fn list_runs(
+    State(state): State<AppState>,
+    Query(pagination): Query<Pagination>,
+) -> AppResult<Json<Vec<RunSummary>>> {
     let runs = sqlx::query_as::<_, RunSummary>(
         "SELECT id, started_at, duration_s, distance_m, elevation_gain_m, avg_hr, max_hr, notes, is_invalid, \
                 avg_cadence, avg_stride_m, weather_temp_c, weather_wind_kph, weather_precip_mm, weather_code \
-         FROM runs ORDER BY started_at DESC",
+         FROM runs ORDER BY started_at DESC LIMIT ? OFFSET ?",
     )
+    .bind(pagination.limit)
+    .bind(pagination.offset)
     .fetch_all(&state.pool)
     .await?;
     Ok(Json(runs))

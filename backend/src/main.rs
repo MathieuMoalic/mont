@@ -64,7 +64,8 @@ async fn main() -> anyhow::Result<()> {
 
     let pool = make_pool(config.database_path.clone()).await?;
 
-    let jwt_secret = config.jwt_secret.as_ref().unwrap();
+    // Safe: we ensured jwt_secret is Some above
+    let jwt_secret = config.jwt_secret.as_ref().expect("jwt_secret was set above");
     let state = AppState {
         pool,
         jwt_encoding: jsonwebtoken::EncodingKey::from_secret(jwt_secret.as_bytes()),
@@ -104,8 +105,8 @@ async fn main() -> anyhow::Result<()> {
 fn secs_until(hhmm: &str) -> u64 {
     use chrono::{Local, NaiveTime};
     let now = Local::now();
-    let target = NaiveTime::parse_from_str(hhmm, "%H:%M")
-        .unwrap_or_else(|_| NaiveTime::from_hms_opt(5, 0, 0).expect("valid"));
+    let default_time = NaiveTime::from_hms_opt(5, 0, 0).unwrap_or_default();
+    let target = NaiveTime::parse_from_str(hhmm, "%H:%M").unwrap_or(default_time);
     let now_time = now.time();
     let secs_today = if target > now_time {
         (target - now_time).num_seconds()

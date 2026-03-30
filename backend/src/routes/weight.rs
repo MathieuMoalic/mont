@@ -1,11 +1,11 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     Json,
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{error::AppResult, models::AppState};
+use crate::{error::AppResult, models::AppState, pagination::Pagination};
 
 #[derive(Serialize, sqlx::FromRow)]
 pub struct WeightEntry {
@@ -22,10 +22,15 @@ pub struct CreateWeightEntry {
 
 /// # Errors
 /// Returns an error if the database query fails.
-pub async fn list_weight(State(state): State<AppState>) -> AppResult<Json<Vec<WeightEntry>>> {
+pub async fn list_weight(
+    State(state): State<AppState>,
+    Query(pagination): Query<Pagination>,
+) -> AppResult<Json<Vec<WeightEntry>>> {
     let entries = sqlx::query_as::<_, WeightEntry>(
-        "SELECT id, measured_at, weight_kg FROM weight_entries ORDER BY measured_at ASC",
+        "SELECT id, measured_at, weight_kg FROM weight_entries ORDER BY measured_at ASC LIMIT ? OFFSET ?",
     )
+    .bind(pagination.limit)
+    .bind(pagination.offset)
     .fetch_all(&state.pool)
     .await?;
     Ok(Json(entries))

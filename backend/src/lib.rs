@@ -15,5 +15,7 @@ pub mod embedded_web;
 pub mod error;
 pub mod logging;
 pub mod models;
+pub mod pagination;
+pub mod rate_limit;
 pub mod routes;
 pub mod weather;

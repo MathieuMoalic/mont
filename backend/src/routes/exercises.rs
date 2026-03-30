@@ -1,11 +1,11 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     Json,
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{error::AppResult, models::AppState};
+use crate::{error::AppResult, models::AppState, pagination::Pagination};
 
 #[derive(Serialize, sqlx::FromRow)]
 pub struct Exercise {
@@ -34,15 +34,21 @@ pub struct UpdateExercise {
 
 /// # Errors
 /// Returns an error if the database query fails.
-pub async fn list_exercises(State(state): State<AppState>) -> AppResult<Json<Vec<Exercise>>> {
+pub async fn list_exercises(
+    State(state): State<AppState>,
+    Query(pagination): Query<Pagination>,
+) -> AppResult<Json<Vec<Exercise>>> {
     let exercises = sqlx::query_as::<_, Exercise>(
         r"SELECT e.id, e.name, e.notes, e.muscle_group, e.equipment
           FROM exercises e
           LEFT JOIN workout_sets s ON s.exercise_id = e.id
           LEFT JOIN workouts w ON w.id = s.workout_id
           GROUP BY e.id
-          ORDER BY MAX(s.id) DESC NULLS LAST, e.id DESC",
+          ORDER BY MAX(s.id) DESC NULLS LAST, e.id DESC
+          LIMIT ? OFFSET ?",
     )
+    .bind(pagination.limit)
+    .bind(pagination.offset)
     .fetch_all(&state.pool)
     .await?;
     Ok(Json(exercises))
@@ -166,6 +172,7 @@ pub struct ExerciseHistoryPoint {
 pub async fn exercise_history(
     State(state): State<AppState>,
     Path(id): Path<i64>,
+    Query(pagination): Query<Pagination>,
 ) -> AppResult<Json<Vec<ExerciseHistoryPoint>>> {
     // Verify exercise exists
     let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM exercises WHERE id = ?)")
@@ -192,10 +199,13 @@ pub async fn exercise_history(
           JOIN workouts w ON w.id = s.workout_id
           WHERE s.exercise_id = ?
           GROUP BY w.id
-          ORDER BY w.started_at ASC",
+          ORDER BY w.started_at ASC
+          LIMIT ? OFFSET ?",
     )
     .bind(id)
     .bind(id)
+    .bind(pagination.limit)
+    .bind(pagination.offset)
     .fetch_all(&state.pool)
     .await?;
 

@@ -35,7 +35,7 @@ fn serve_asset(path: &str, content: Vec<u8>) -> Response<Body> {
     let mime = mime_guess::from_path(path)
         .first_or_octet_stream()
         .to_string();
-    
+
     Response::builder()
         .status(StatusCode::OK)
         .header(
@@ -43,5 +43,5 @@ fn serve_asset(path: &str, content: Vec<u8>) -> Response<Body> {
             HeaderValue::from_str(&mime).unwrap_or(HeaderValue::from_static("application/octet-stream")),
         )
         .body(Body::from(content))
-        .unwrap()
+        .expect("valid response with known status and header")
 }

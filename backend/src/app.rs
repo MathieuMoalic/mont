@@ -1,3 +1,4 @@
+use crate::rate_limit::{rate_limit_middleware, RateLimitState};
 use crate::routes::{auth, exercises, health, runs, weight, workouts};
 use crate::{
     auth_middleware::require_auth,
@@ -12,9 +13,9 @@ use axum::routing::{delete, get, patch, post};
 use axum::{Json, Router};
 use serde::Serialize;
 
+use tower::ServiceBuilder;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer};
-use tower::ServiceBuilder;
 
 async fn healthz() -> Json<&'static str> {
     Json("ok")
@@ -51,6 +52,8 @@ pub fn build_app(state: AppState) -> Router {
         .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
         .layer(PropagateRequestIdLayer::x_request_id());
 
+    let rate_limit_state = RateLimitState::new();
+
     let public_routes = Router::new()
         .route("/healthz", get(healthz))
         .route("/version", get(version))
@@ -83,6 +86,7 @@ pub fn build_app(state: AppState) -> Router {
         .merge(protected_routes)
         .fallback(serve_embedded_web)
         .with_state(state.clone())
+        .layer(from_fn_with_state(rate_limit_state, rate_limit_middleware))
         .layer(request_id_layer)
         .layer(from_fn(access_log))
         .layer(from_fn(log_payloads))
