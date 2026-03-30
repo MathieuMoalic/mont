@@ -13,10 +13,13 @@ class ExerciseHistoryScreen extends StatefulWidget {
 
 class _ExerciseHistoryScreenState extends State<ExerciseHistoryScreen> {
   List<Exercise>? _exercises;
+  List<Exercise>? _filtered;
   Exercise? _selected;
   List<ExerciseHistoryPoint>? _history;
   String? _error;
   bool _showVolume = false;
+  String? _muscleFilter;
+  String? _equipmentFilter;
 
   @override
   void initState() {
@@ -27,10 +30,49 @@ class _ExerciseHistoryScreenState extends State<ExerciseHistoryScreen> {
   Future<void> _loadExercises() async {
     try {
       final list = await api.listExercises();
-      if (mounted) setState(() { _exercises = list; _error = null; });
+      if (mounted) {
+        setState(() {
+          _exercises = list;
+          _filtered = list;
+          _error = null;
+        });
+      }
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     }
+  }
+
+  void _applyFilters() {
+    if (_exercises == null) return;
+    setState(() {
+      _filtered = _exercises!.where((e) {
+        final matchesMuscle = _muscleFilter == null || e.muscleGroup == _muscleFilter;
+        final matchesEquipment = _equipmentFilter == null || e.equipment == _equipmentFilter;
+        return matchesMuscle && matchesEquipment;
+      }).toList();
+    });
+  }
+
+  List<String> _distinctMuscleGroups() {
+    if (_exercises == null) return [];
+    return _exercises!
+        .map((e) => e.muscleGroup)
+        .whereType<String>()
+        .where((s) => s.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
+  }
+
+  List<String> _distinctEquipment() {
+    if (_exercises == null) return [];
+    return _exercises!
+        .map((e) => e.equipment)
+        .whereType<String>()
+        .where((s) => s.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
   }
 
   Future<void> _selectExercise(Exercise ex) async {
@@ -84,17 +126,100 @@ class _ExerciseHistoryScreenState extends State<ExerciseHistoryScreen> {
 
   Widget _buildExercisePicker() {
     if (_exercises == null) return const Center(child: CircularProgressIndicator());
-    return ListView.builder(
-      itemCount: _exercises!.length,
-      itemBuilder: (ctx, i) {
-        final ex = _exercises![i];
-        return ListTile(
-          title: Text(ex.name),
-          subtitle: ex.muscleGroup != null ? Text(ex.muscleGroup!) : null,
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => _selectExercise(ex),
-        );
-      },
+
+    final muscleGroups = _distinctMuscleGroups();
+    final equipmentList = _distinctEquipment();
+    final filtered = _filtered ?? _exercises!;
+
+    return CustomScrollView(
+      slivers: [
+        // Muscle group filter chips
+        if (muscleGroups.isNotEmpty)
+          SliverToBoxAdapter(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Row(
+                children: [
+                  FilterChip(
+                    label: const Text('All muscles'),
+                    selected: _muscleFilter == null,
+                    onSelected: (_) {
+                      setState(() => _muscleFilter = null);
+                      _applyFilters();
+                    },
+                  ),
+                  ...muscleGroups.map((g) => Padding(
+                        padding: const EdgeInsets.only(left: 6),
+                        child: FilterChip(
+                          label: Text(g),
+                          selected: _muscleFilter == g,
+                          onSelected: (_) {
+                            setState(() => _muscleFilter = g);
+                            _applyFilters();
+                          },
+                        ),
+                      )),
+                ],
+              ),
+            ),
+          ),
+        // Equipment filter chips
+        if (equipmentList.isNotEmpty)
+          SliverToBoxAdapter(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              child: Row(
+                children: [
+                  FilterChip(
+                    label: const Text('All equipment'),
+                    selected: _equipmentFilter == null,
+                    onSelected: (_) {
+                      setState(() => _equipmentFilter = null);
+                      _applyFilters();
+                    },
+                  ),
+                  ...equipmentList.map((e) => Padding(
+                        padding: const EdgeInsets.only(left: 6),
+                        child: FilterChip(
+                          label: Text(e),
+                          selected: _equipmentFilter == e,
+                          onSelected: (_) {
+                            setState(() => _equipmentFilter = e);
+                            _applyFilters();
+                          },
+                        ),
+                      )),
+                ],
+              ),
+            ),
+          ),
+        // Exercise list
+        if (filtered.isEmpty)
+          const SliverFillRemaining(
+            child: Center(child: Text('No exercises match the selected filters.')),
+          )
+        else
+          SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (ctx, i) {
+                final ex = filtered[i];
+                final subtitle = [
+                  if (ex.muscleGroup != null) ex.muscleGroup!,
+                  if (ex.equipment != null) ex.equipment!,
+                ].join(' • ');
+                return ListTile(
+                  title: Text(ex.name),
+                  subtitle: subtitle.isNotEmpty ? Text(subtitle) : null,
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => _selectExercise(ex),
+                );
+              },
+              childCount: filtered.length,
+            ),
+          ),
+      ],
     );
   }
 
