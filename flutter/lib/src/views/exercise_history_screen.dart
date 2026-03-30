@@ -16,6 +16,7 @@ class _ExerciseHistoryScreenState extends State<ExerciseHistoryScreen> {
   List<Exercise>? _filtered;
   Exercise? _selected;
   List<ExerciseHistoryPoint>? _history;
+  ExercisePersonalRecord? _pr;
   String? _error;
   bool _showVolume = false;
   String? _muscleFilter;
@@ -76,10 +77,11 @@ class _ExerciseHistoryScreenState extends State<ExerciseHistoryScreen> {
   }
 
   Future<void> _selectExercise(Exercise ex) async {
-    setState(() { _selected = ex; _history = null; });
+    setState(() { _selected = ex; _history = null; _pr = null; });
     try {
       final h = await api.getExerciseHistory(ex.id);
-      if (mounted) setState(() => _history = h);
+      final pr = await api.getExercisePersonalRecords(ex.id);
+      if (mounted) setState(() { _history = h; _pr = pr; });
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     }

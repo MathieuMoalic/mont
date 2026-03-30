@@ -335,3 +335,48 @@ class ExerciseHistoryPoint {
       repsAtMax <= 1 ? maxWeightKg : maxWeightKg * (1 + repsAtMax / 30.0);
 }
 
+class ExercisePersonalRecord {
+  final double maxWeightKg;
+  final DateTime maxWeightDate;
+  final int maxWeightReps;
+  final int maxReps;
+  final DateTime maxRepsDate;
+  final double maxRepsWeightKg;
+  final double maxVolumeWorkout;
+  final DateTime maxVolumeDate;
+  final double bestSetScore;
+  final DateTime bestSetDate;
+  final double bestSetWeightKg;
+  final int bestSetReps;
+
+  ExercisePersonalRecord({
+    required this.maxWeightKg,
+    required this.maxWeightDate,
+    required this.maxWeightReps,
+    required this.maxReps,
+    required this.maxRepsDate,
+    required this.maxRepsWeightKg,
+    required this.maxVolumeWorkout,
+    required this.maxVolumeDate,
+    required this.bestSetScore,
+    required this.bestSetDate,
+    required this.bestSetWeightKg,
+    required this.bestSetReps,
+  });
+
+  factory ExercisePersonalRecord.fromJson(Map<String, dynamic> j) => ExercisePersonalRecord(
+        maxWeightKg: (j['max_weight_kg'] as num).toDouble(),
+        maxWeightDate: DateTime.parse(j['max_weight_date'] as String),
+        maxWeightReps: j['max_weight_reps'] as int,
+        maxReps: j['max_reps'] as int,
+        maxRepsDate: DateTime.parse(j['max_reps_date'] as String),
+        maxRepsWeightKg: (j['max_reps_weight_kg'] as num).toDouble(),
+        maxVolumeWorkout: (j['max_volume_workout'] as num).toDouble(),
+        maxVolumeDate: DateTime.parse(j['max_volume_date'] as String),
+        bestSetScore: (j['best_set_score'] as num).toDouble(),
+        bestSetDate: DateTime.parse(j['best_set_date'] as String),
+        bestSetWeightKg: (j['best_set_weight_kg'] as num).toDouble(),
+        bestSetReps: j['best_set_reps'] as int,
+      );
+}
+
