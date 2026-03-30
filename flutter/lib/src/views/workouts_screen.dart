@@ -194,8 +194,10 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
             ),
             title: Text(_formatDate(w.startedAt)),
             subtitle: Text(
-              '${w.setCount} set${w.setCount == 1 ? '' : 's'} · ${_duration(w)}',
+              '${w.setCount} set${w.setCount == 1 ? '' : 's'} · ${_duration(w)}'
+              '${w.notes != null && w.notes!.isNotEmpty ? '\n${w.notes}' : ''}',
             ),
+            isThreeLine: w.notes != null && w.notes!.isNotEmpty,
             onTap: () async {
               await Navigator.push<void>(
                 ctx,

@@ -283,3 +283,106 @@ async fn restart_active_workout_returns_404() {
     let res = app.patch_empty(&format!("/workouts/{wid}/restart")).await;
     assert_eq!(res.status(), 404);
 }
+
+// ── Update Workout ──────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn update_workout_notes() {
+    let app = common::TestApp::spawn().await;
+    let w = app.create_workout().await;
+    let wid = w["id"].as_i64().unwrap();
+
+    let res = app
+        .patch(&format!("/workouts/{wid}"), serde_json::json!({"notes": "Leg day"}))
+        .await;
+    assert_eq!(res.status(), 200);
+
+    let body: serde_json::Value = res.json().await.unwrap();
+    assert_eq!(body["notes"], "Leg day");
+}
+
+#[tokio::test]
+async fn update_nonexistent_workout_returns_404() {
+    let app = common::TestApp::spawn().await;
+    let res = app
+        .patch("/workouts/999", serde_json::json!({"notes": "test"}))
+        .await;
+    assert_eq!(res.status(), 404);
+}
+
+// ── Update Set ──────────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn update_set_reps_and_weight() {
+    let app = common::TestApp::spawn().await;
+    let w = app.create_workout().await;
+    let e = app.create_exercise("Squat").await;
+    let wid = w["id"].as_i64().unwrap();
+    let eid = e["id"].as_i64().unwrap();
+
+    let set = app.add_set(wid, eid, 1, 10, 100.0).await;
+    let sid = set["id"].as_i64().unwrap();
+
+    let res = app
+        .patch(
+            &format!("/workouts/{wid}/sets/{sid}"),
+            serde_json::json!({"reps": 12, "weight_kg": 105.0}),
+        )
+        .await;
+    assert_eq!(res.status(), 200);
+
+    let body: serde_json::Value = res.json().await.unwrap();
+    assert_eq!(body["reps"], 12);
+    assert_eq!(body["weight_kg"], 105.0);
+}
+
+#[tokio::test]
+async fn update_set_partial_update() {
+    let app = common::TestApp::spawn().await;
+    let w = app.create_workout().await;
+    let e = app.create_exercise("Deadlift").await;
+    let wid = w["id"].as_i64().unwrap();
+    let eid = e["id"].as_i64().unwrap();
+
+    let set = app.add_set(wid, eid, 1, 5, 150.0).await;
+    let sid = set["id"].as_i64().unwrap();
+
+    // Only update reps
+    let res = app
+        .patch(&format!("/workouts/{wid}/sets/{sid}"), serde_json::json!({"reps": 6}))
+        .await;
+    assert_eq!(res.status(), 200);
+
+    let body: serde_json::Value = res.json().await.unwrap();
+    assert_eq!(body["reps"], 6);
+    assert_eq!(body["weight_kg"], 150.0); // unchanged
+}
+
+#[tokio::test]
+async fn update_set_negative_reps_returns_400() {
+    let app = common::TestApp::spawn().await;
+    let w = app.create_workout().await;
+    let e = app.create_exercise("Press").await;
+    let wid = w["id"].as_i64().unwrap();
+    let eid = e["id"].as_i64().unwrap();
+
+    let set = app.add_set(wid, eid, 1, 10, 50.0).await;
+    let sid = set["id"].as_i64().unwrap();
+
+    let res = app
+        .patch(&format!("/workouts/{wid}/sets/{sid}"), serde_json::json!({"reps": -1}))
+        .await;
+    assert_eq!(res.status(), 400);
+}
+
+#[tokio::test]
+async fn update_nonexistent_set_returns_404() {
+    let app = common::TestApp::spawn().await;
+    let w = app.create_workout().await;
+    let wid = w["id"].as_i64().unwrap();
+
+    let res = app
+        .patch(&format!("/workouts/{wid}/sets/999"), serde_json::json!({"reps": 10}))
+        .await;
+    assert_eq!(res.status(), 404);
+}

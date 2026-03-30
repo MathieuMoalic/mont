@@ -52,6 +52,17 @@ pub struct AddSet {
     pub weight_kg: f64,
 }
 
+#[derive(Deserialize)]
+pub struct UpdateWorkout {
+    pub notes: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateSet {
+    pub reps: Option<i64>,
+    pub weight_kg: Option<f64>,
+}
+
 /// # Errors
 /// Returns an error if the database query fails.
 pub async fn list_workouts(
@@ -125,6 +136,27 @@ pub async fn get_workout(
         notes: row.notes,
         sets,
     }))
+}
+
+/// # Errors
+/// Returns `NOT_FOUND` if the workout doesn't exist.
+pub async fn update_workout(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Json(body): Json<UpdateWorkout>,
+) -> AppResult<Json<WorkoutSummary>> {
+    let workout = sqlx::query_as::<_, WorkoutSummary>(
+        r"UPDATE workouts SET notes = COALESCE(?, notes)
+          WHERE id = ?
+          RETURNING id, started_at, finished_at, notes,
+              (SELECT COUNT(*) FROM workout_sets WHERE workout_id = workouts.id) as set_count",
+    )
+    .bind(&body.notes)
+    .bind(id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or(StatusCode::NOT_FOUND)?;
+    Ok(Json(workout))
 }
 
 /// # Errors
@@ -256,4 +288,46 @@ pub async fn delete_set(
         return Err(StatusCode::NOT_FOUND.into());
     }
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// # Errors
+/// Returns `NOT_FOUND` if the set doesn't exist in that workout,
+/// or `BAD_REQUEST` if `reps` or `weight_kg` are invalid.
+pub async fn update_set(
+    State(state): State<AppState>,
+    Path((workout_id, set_id)): Path<(i64, i64)>,
+    Json(body): Json<UpdateSet>,
+) -> AppResult<Json<WorkoutSetRow>> {
+    if let Some(reps) = body.reps
+        && reps < 0
+    {
+        return Err((StatusCode::BAD_REQUEST, "Reps cannot be negative".to_string()).into());
+    }
+    if let Some(weight) = body.weight_kg
+        && weight < 0.0
+    {
+        return Err((StatusCode::BAD_REQUEST, "Weight cannot be negative".to_string()).into());
+    }
+
+    let set = sqlx::query_as::<_, WorkoutSetRow>(
+        r"UPDATE workout_sets SET
+              reps = COALESCE(?, reps),
+              weight_kg = COALESCE(?, weight_kg)
+          WHERE id = ? AND workout_id = ?
+          RETURNING id, exercise_id,
+              (SELECT CASE WHEN equipment IS NOT NULL AND equipment != ''
+                           THEN name || ' (' || equipment || ')'
+                           ELSE name
+                      END FROM exercises WHERE id = exercise_id) as exercise_name,
+              set_number, reps, weight_kg, logged_at",
+    )
+    .bind(body.reps)
+    .bind(body.weight_kg)
+    .bind(set_id)
+    .bind(workout_id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or(StatusCode::NOT_FOUND)?;
+
+    Ok(Json(set))
 }

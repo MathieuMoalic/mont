@@ -1,6 +1,6 @@
 use axum::{
     body::Body,
-    http::{Request, StatusCode},
+    http::{header, Request, StatusCode},
     response::{IntoResponse, Response},
 };
 use std::{
@@ -108,6 +108,7 @@ pub async fn rate_limit_middleware(
     if !allowed {
         return (
             StatusCode::TOO_MANY_REQUESTS,
+            [(header::RETRY_AFTER, "60")],
             "Rate limit exceeded. Please try again later.",
         )
             .into_response();
