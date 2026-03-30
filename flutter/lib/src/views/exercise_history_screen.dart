@@ -92,6 +92,94 @@ class _ExerciseHistoryScreenState extends State<ExerciseHistoryScreen> {
     return '${l.day}/${l.month}/${l.year.toString().substring(2)}';
   }
 
+  Widget _buildPRCard(ExercisePersonalRecord pr) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.emoji_events, color: Color(0xFFC4B5FD)),
+                const SizedBox(width: 8),
+                Text('Personal Records',
+                    style: Theme.of(context).textTheme.titleMedium),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: _prItem(
+                    '🏋️',
+                    'Max Weight',
+                    '${pr.maxWeightKg.toStringAsFixed(1)} kg',
+                    '${pr.maxWeightReps} reps on ${_fmtDate(pr.maxWeightDate)}',
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _prItem(
+                    '💪',
+                    'Max Reps',
+                    '${pr.maxReps} reps',
+                    '${pr.maxRepsWeightKg.toStringAsFixed(1)} kg on ${_fmtDate(pr.maxRepsDate)}',
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _prItem(
+                    '📊',
+                    'Max Volume',
+                    '${pr.maxVolumeWorkout.toStringAsFixed(0)} kg',
+                    'on ${_fmtDate(pr.maxVolumeDate)}',
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _prItem(
+                    '⭐',
+                    'Best Set',
+                    '${pr.bestSetWeightKg.toStringAsFixed(1)} kg × ${pr.bestSetReps}',
+                    'on ${_fmtDate(pr.bestSetDate)}',
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _prItem(String emoji, String label, String value, String detail) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(emoji, style: const TextStyle(fontSize: 20)),
+            const SizedBox(width: 4),
+            Text(label, style: Theme.of(context).textTheme.bodySmall),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(value, style: Theme.of(context).textTheme.titleSmall?.copyWith(
+          color: const Color(0xFFC4B5FD),
+          fontWeight: FontWeight.bold,
+        )),
+        Text(detail, style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          fontSize: 11,
+        )),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -251,6 +339,9 @@ class _ExerciseHistoryScreenState extends State<ExerciseHistoryScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Personal Records Card
+          if (_pr != null) _buildPRCard(_pr!),
+          if (_pr != null) const SizedBox(height: 16),
           // Toggle chip
           Row(
             children: [
