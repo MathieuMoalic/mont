@@ -39,17 +39,52 @@ class MontApp extends StatelessWidget {
   Widget _initialHome() =>
       Auth.token == null ? const LoginPage() : const HomeShell();
 
-  ThemeData _theme(Brightness b) => ThemeData(
-    useMaterial3: true,
-    colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepOrange, brightness: b),
-  );
+  ThemeData _theme(Brightness b) {
+    // Soft Neon Lavender theme (Purple Accent)
+    const background = Color(0xFF121217);
+    const surface = Color(0xFF1A1B22);
+    const lavender = Color(0xFFC4B5FD);
+    const indigo = Color(0xFF818CF8);
+    const accent = Color(0xFFE9D5FF);
+    const textPrimary = Color(0xFFF5F5F7);
+    const textSecondary = Color(0xFFA1A1AA);
+
+    return ThemeData(
+      useMaterial3: true,
+      brightness: Brightness.dark,
+      colorScheme: ColorScheme.dark(
+        primary: lavender,
+        secondary: indigo,
+        tertiary: accent,
+        surface: surface,
+        background: background,
+        onPrimary: background,
+        onSecondary: background,
+        onSurface: textPrimary,
+        onBackground: textPrimary,
+        error: Colors.redAccent,
+        outline: textSecondary,
+      ),
+      scaffoldBackgroundColor: background,
+      cardColor: surface,
+      dividerColor: textSecondary.withValues(alpha: 0.2),
+      textTheme: TextTheme(
+        bodyLarge: TextStyle(color: textPrimary),
+        bodyMedium: TextStyle(color: textPrimary),
+        bodySmall: TextStyle(color: textSecondary),
+        titleLarge: TextStyle(color: textPrimary),
+        titleMedium: TextStyle(color: textPrimary),
+        titleSmall: TextStyle(color: textSecondary),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Mont',
       themeMode: ThemeMode.dark,
-      theme: _theme(Brightness.light),
+      theme: _theme(Brightness.dark),
       darkTheme: _theme(Brightness.dark),
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
