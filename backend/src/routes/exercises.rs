@@ -16,6 +16,22 @@ pub struct Exercise {
     pub equipment: Option<String>,
 }
 
+#[derive(Serialize, sqlx::FromRow)]
+pub struct PersonalRecord {
+    pub max_weight_kg: f64,
+    pub max_weight_date: String,
+    pub max_weight_reps: i64,
+    pub max_reps: i64,
+    pub max_reps_date: String,
+    pub max_reps_weight_kg: f64,
+    pub max_volume_workout: f64,
+    pub max_volume_date: String,
+    pub best_set_score: f64,  // weight * reps
+    pub best_set_date: String,
+    pub best_set_weight_kg: f64,
+    pub best_set_reps: i64,
+}
+
 #[derive(Deserialize)]
 pub struct CreateExercise {
     pub name: String,
@@ -210,4 +226,81 @@ pub async fn exercise_history(
     .await?;
 
     Ok(Json(points))
+}
+
+/// # Errors
+/// Returns `NOT_FOUND` if the exercise doesn't exist, or an error if the query fails.
+pub async fn exercise_personal_records(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> AppResult<Json<PersonalRecord>> {
+    // Verify exercise exists
+    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM exercises WHERE id = ?)")
+        .bind(id)
+        .fetch_one(&state.pool)
+        .await?;
+    if !exists {
+        return Err(StatusCode::NOT_FOUND.into());
+    }
+
+    // Query for all PR records in one go
+    let pr = sqlx::query_as::<_, PersonalRecord>(
+        r"WITH exercise_sets AS (
+              SELECT s.weight_kg, s.reps, w.started_at, 
+                     (s.weight_kg * CAST(s.reps AS REAL)) as set_score
+              FROM workout_sets s
+              JOIN workouts w ON w.id = s.workout_id
+              WHERE s.exercise_id = ?
+          ),
+          workout_volumes AS (
+              SELECT w.started_at, SUM(s.weight_kg * CAST(s.reps AS REAL)) as volume
+              FROM workout_sets s
+              JOIN workouts w ON w.id = s.workout_id
+              WHERE s.exercise_id = ?
+              GROUP BY w.id
+          ),
+          max_weight AS (
+              SELECT weight_kg, started_at, reps
+              FROM exercise_sets
+              ORDER BY weight_kg DESC, reps DESC
+              LIMIT 1
+          ),
+          max_reps AS (
+              SELECT reps, started_at, weight_kg
+              FROM exercise_sets
+              ORDER BY reps DESC, weight_kg DESC
+              LIMIT 1
+          ),
+          max_volume AS (
+              SELECT volume, started_at
+              FROM workout_volumes
+              ORDER BY volume DESC
+              LIMIT 1
+          ),
+          best_set AS (
+              SELECT set_score, started_at, weight_kg, reps
+              FROM exercise_sets
+              ORDER BY set_score DESC
+              LIMIT 1
+          )
+          SELECT
+              (SELECT weight_kg FROM max_weight) as max_weight_kg,
+              (SELECT started_at FROM max_weight) as max_weight_date,
+              (SELECT reps FROM max_weight) as max_weight_reps,
+              (SELECT reps FROM max_reps) as max_reps,
+              (SELECT started_at FROM max_reps) as max_reps_date,
+              (SELECT weight_kg FROM max_reps) as max_reps_weight_kg,
+              (SELECT volume FROM max_volume) as max_volume_workout,
+              (SELECT started_at FROM max_volume) as max_volume_date,
+              (SELECT set_score FROM best_set) as best_set_score,
+              (SELECT started_at FROM best_set) as best_set_date,
+              (SELECT weight_kg FROM best_set) as best_set_weight_kg,
+              (SELECT reps FROM best_set) as best_set_reps",
+    )
+    .bind(id)
+    .bind(id)
+    .fetch_one(&state.pool)
+    .await?;
+
+    Ok(Json(pr))
 }

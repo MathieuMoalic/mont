@@ -229,3 +229,54 @@ async fn exercise_history_total_volume_computed_correctly() {
     let vol = body[0]["total_volume"].as_f64().unwrap();
     assert!((vol - 1500.0).abs() < 0.01, "expected 1500 got {vol}");
 }
+
+// ── Personal Records endpoint ─────────────────────────────────────────────────
+
+#[tokio::test]
+async fn exercise_pr_returns_404_for_unknown_exercise() {
+    let app = common::TestApp::spawn().await;
+    let res = app.get("/exercises/999/pr").await;
+    assert_eq!(res.status(), 404);
+}
+
+#[tokio::test]
+async fn exercise_pr_returns_all_records() {
+    let app = common::TestApp::spawn().await;
+    let ex = app.create_exercise("Squat").await;
+    let ex_id = ex["id"].as_i64().unwrap();
+    
+    // Create multiple workouts with different PRs
+    // Workout 1: max weight
+    let w1 = app.create_workout().await;
+    app.add_set(w1["id"].as_i64().unwrap(), ex_id, 1, 5, 150.0).await;
+    
+    // Workout 2: max reps (at lower weight)
+    let w2 = app.create_workout().await;
+    app.add_set(w2["id"].as_i64().unwrap(), ex_id, 1, 20, 60.0).await;
+    
+    // Workout 3: max volume (multiple sets)
+    let w3 = app.create_workout().await;
+    app.add_set(w3["id"].as_i64().unwrap(), ex_id, 1, 10, 100.0).await;
+    app.add_set(w3["id"].as_i64().unwrap(), ex_id, 2, 10, 100.0).await;
+    app.add_set(w3["id"].as_i64().unwrap(), ex_id, 3, 10, 100.0).await;
+    
+    let pr: serde_json::Value = app.get(&format!("/exercises/{ex_id}/pr")).await.json().await.unwrap();
+    
+    // Check max weight
+    assert_eq!(pr["max_weight_kg"], 150.0);
+    assert_eq!(pr["max_weight_reps"], 5);
+    
+    // Check max reps
+    assert_eq!(pr["max_reps"], 20);
+    assert_eq!(pr["max_reps_weight_kg"], 60.0);
+    
+    // Check max volume (3 sets x 10 reps x 100kg = 3000)
+    let max_vol = pr["max_volume_workout"].as_f64().unwrap();
+    assert!((max_vol - 3000.0).abs() < 0.01);
+    
+    // Check best set (weight * reps) - 60kg * 20 reps = 1200
+    let best_score = pr["best_set_score"].as_f64().unwrap();
+    assert!((best_score - 1200.0).abs() < 0.01);
+    assert_eq!(pr["best_set_weight_kg"], 60.0);
+    assert_eq!(pr["best_set_reps"], 20);
+}

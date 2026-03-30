@@ -63,6 +63,7 @@ pub fn build_app(state: AppState) -> Router {
         .route("/exercises", get(exercises::list_exercises).post(exercises::create_exercise))
         .route("/exercises/{id}", patch(exercises::update_exercise))
         .route("/exercises/{id}/history", get(exercises::exercise_history))
+        .route("/exercises/{id}/pr", get(exercises::exercise_personal_records))
         .route("/health/daily", get(health::list_daily_health))
         .route("/workouts", get(workouts::list_workouts).post(workouts::create_workout))
         .route("/workouts/{id}", get(workouts::get_workout).delete(workouts::delete_workout))
