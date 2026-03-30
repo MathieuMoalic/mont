@@ -16,6 +16,7 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
   final _searchCtrl = TextEditingController();
   String? _error;
   String? _muscleFilter;
+  String? _equipmentFilter;
 
   @override
   void initState() {
@@ -53,7 +54,9 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
         final matchesSearch = e.name.toLowerCase().contains(q);
         final matchesMuscle =
             _muscleFilter == null || e.muscleGroup == _muscleFilter;
-        return matchesSearch && matchesMuscle;
+        final matchesEquipment =
+            _equipmentFilter == null || e.equipment == _equipmentFilter;
+        return matchesSearch && matchesMuscle && matchesEquipment;
       }).toList();
     });
   }
@@ -63,6 +66,18 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
     return _all!
         .map((e) => e.muscleGroup)
         .whereType<String>()
+        .where((s) => s.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
+  }
+
+  List<String> _distinctEquipment() {
+    if (_all == null) return [];
+    return _all!
+        .map((e) => e.equipment)
+        .whereType<String>()
+        .where((s) => s.isNotEmpty)
         .toSet()
         .toList()
       ..sort();
@@ -154,7 +169,7 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
-                    value: selectedMuscleGroup,
+                    initialValue: selectedMuscleGroup,
                     hint: const Text('Muscle group (optional)'),
                     decoration: const InputDecoration(labelText: 'Muscle group'),
                     items: muscleGroups
@@ -164,7 +179,7 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
-                    value: selectedEquipment,
+                    initialValue: selectedEquipment,
                     hint: const Text('Equipment (optional)'),
                     decoration: const InputDecoration(labelText: 'Equipment'),
                     items: equipment
@@ -229,6 +244,7 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
     if (_all == null) return const Center(child: CircularProgressIndicator());
 
     final muscleGroups = _distinctMuscleGroups();
+    final equipmentList = _distinctEquipment();
 
     Widget listContent;
     if (_filtered.isEmpty) {
@@ -256,8 +272,8 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
           final e = _filtered[i];
           final sub = [
             if (e.muscleGroup != null) e.muscleGroup!,
-            if (e.notes != null) e.notes!,
-          ].join(' · ');
+            if (e.equipment != null) e.equipment!,
+          ].join(' • ');
           return ListTile(
             title: Text(e.displayName),
             subtitle: sub.isNotEmpty ? Text(sub) : null,
@@ -272,35 +288,64 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
       );
     }
 
-    if (muscleGroups.isEmpty) return listContent;
+    if (muscleGroups.isEmpty && equipmentList.isEmpty) return listContent;
 
     return CustomScrollView(
       slivers: [
-        SliverToBoxAdapter(
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: Row(
-              children: [
-                FilterChip(
-                  label: const Text('All'),
-                  selected: _muscleFilter == null,
-                  onSelected: (_) =>
-                      setState(() { _muscleFilter = null; _filter(); }),
-                ),
-                ...muscleGroups.map((g) => Padding(
-                      padding: const EdgeInsets.only(left: 6),
-                      child: FilterChip(
-                        label: Text(g),
-                        selected: _muscleFilter == g,
-                        onSelected: (_) =>
-                            setState(() { _muscleFilter = g; _filter(); }),
-                      ),
-                    )),
-              ],
+        // Muscle group filter
+        if (muscleGroups.isNotEmpty)
+          SliverToBoxAdapter(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Row(
+                children: [
+                  FilterChip(
+                    label: const Text('All muscles'),
+                    selected: _muscleFilter == null,
+                    onSelected: (_) =>
+                        setState(() { _muscleFilter = null; _filter(); }),
+                  ),
+                  ...muscleGroups.map((g) => Padding(
+                        padding: const EdgeInsets.only(left: 6),
+                        child: FilterChip(
+                          label: Text(g),
+                          selected: _muscleFilter == g,
+                          onSelected: (_) =>
+                              setState(() { _muscleFilter = g; _filter(); }),
+                        ),
+                      )),
+                ],
+              ),
             ),
           ),
-        ),
+        // Equipment filter
+        if (equipmentList.isNotEmpty)
+          SliverToBoxAdapter(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              child: Row(
+                children: [
+                  FilterChip(
+                    label: const Text('All equipment'),
+                    selected: _equipmentFilter == null,
+                    onSelected: (_) =>
+                        setState(() { _equipmentFilter = null; _filter(); }),
+                  ),
+                  ...equipmentList.map((e) => Padding(
+                        padding: const EdgeInsets.only(left: 6),
+                        child: FilterChip(
+                          label: Text(e),
+                          selected: _equipmentFilter == e,
+                          onSelected: (_) =>
+                              setState(() { _equipmentFilter = e; _filter(); }),
+                        ),
+                      )),
+                ],
+              ),
+            ),
+          ),
         SliverFillRemaining(child: listContent),
       ],
     );
