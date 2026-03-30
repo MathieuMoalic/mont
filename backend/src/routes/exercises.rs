@@ -71,7 +71,7 @@ pub async fn list_exercises(
 }
 
 /// # Errors
-/// Returns an error if the database query fails or the name is a duplicate.
+/// Returns an error if the database query fails or the name+equipment combination is a duplicate.
 pub async fn create_exercise(
     State(state): State<AppState>,
     Json(body): Json<CreateExercise>,
@@ -87,7 +87,9 @@ pub async fn create_exercise(
     .await
     .map_err(|e| -> crate::error::AppError {
         if matches!(e, sqlx::Error::Database(ref db_err) if db_err.is_unique_violation()) {
-            (StatusCode::CONFLICT, format!("Exercise '{}' already exists", body.name)).into()
+            let name = &body.name;
+            let equipment_info = body.equipment.as_deref().unwrap_or("no equipment");
+            (StatusCode::CONFLICT, format!("Exercise '{name}' with {equipment_info} already exists")).into()
         } else {
             e.into()
         }
@@ -97,7 +99,7 @@ pub async fn create_exercise(
 
 /// # Errors
 /// Returns `NOT_FOUND` if the exercise doesn't exist, or an error if the query fails
-/// or the name conflicts with an existing exercise.
+/// or the name+equipment combination conflicts with an existing exercise.
 pub async fn update_exercise(
     State(state): State<AppState>,
     Path(id): Path<i64>,
@@ -160,9 +162,11 @@ pub async fn update_exercise(
 
     let exercise = q.fetch_one(&state.pool).await.map_err(|e| -> crate::error::AppError {
         if matches!(e, sqlx::Error::Database(ref db_err) if db_err.is_unique_violation()) {
+            let name = body.name.as_deref().unwrap_or("exercise");
+            let equipment_info = body.equipment.as_deref().unwrap_or("no equipment");
             (
                 StatusCode::CONFLICT,
-                format!("Exercise '{}' already exists", body.name.as_ref().unwrap_or(&String::new())),
+                format!("Exercise '{name}' with {equipment_info} already exists"),
             )
                 .into()
         } else {
