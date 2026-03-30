@@ -61,16 +61,40 @@ async fn list_exercises_sorted_by_recent_use() {
 }
 
 #[tokio::test]
-async fn create_exercise_with_duplicate_name_fails() {
+async fn create_exercise_with_duplicate_name_and_equipment_fails() {
     let app = common::TestApp::spawn().await;
     let res1 = app
-        .post_json("/exercises", &serde_json::json!({ "name": "Curl" }))
+        .post_json("/exercises", &serde_json::json!({ "name": "Curl", "equipment": "Barbell" }))
         .await;
     assert_eq!(res1.status(), 201);
     let res2 = app
-        .post_json("/exercises", &serde_json::json!({ "name": "Curl" }))
+        .post_json("/exercises", &serde_json::json!({ "name": "Curl", "equipment": "Barbell" }))
         .await;
     assert!(res2.status().is_server_error() || res2.status().is_client_error());
+}
+
+#[tokio::test]
+async fn create_exercise_with_same_name_different_equipment_succeeds() {
+    let app = common::TestApp::spawn().await;
+    let res1 = app
+        .post_json("/exercises", &serde_json::json!({ "name": "Chest Press", "equipment": "Barbell" }))
+        .await;
+    assert_eq!(res1.status(), 201);
+    let body1: serde_json::Value = res1.json().await.unwrap();
+    assert_eq!(body1["name"], "Chest Press");
+    assert_eq!(body1["equipment"], "Barbell");
+
+    let res2 = app
+        .post_json("/exercises", &serde_json::json!({ "name": "Chest Press", "equipment": "Dumbbell" }))
+        .await;
+    assert_eq!(res2.status(), 201);
+    let body2: serde_json::Value = res2.json().await.unwrap();
+    assert_eq!(body2["name"], "Chest Press");
+    assert_eq!(body2["equipment"], "Dumbbell");
+
+    // Verify both exist
+    let list: Vec<serde_json::Value> = app.get("/exercises").await.json().await.unwrap();
+    assert_eq!(list.len(), 2);
 }
 
 #[tokio::test]
