@@ -204,13 +204,17 @@ class _WorkoutHeatmapScreenState extends State<WorkoutHeatmapScreen> {
     return _buildHeatmap();
   }
 
+  // Normalize a DateTime to midnight local time (for consistent map keys)
+  DateTime _midnight(DateTime d) => DateTime(d.year, d.month, d.day);
+
   Widget _buildHeatmap() {
     // Build an 8-week grid ending today
     final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
+    final today = _midnight(now);
     // Start on Monday 8 weeks ago
     final daysBack = 7 * 8 + today.weekday - 1;
-    final gridStart = today.subtract(Duration(days: daysBack));
+    final gridStartRaw = today.subtract(Duration(days: daysBack));
+    final gridStart = _midnight(gridStartRaw);
 
     const weeks = 8;
     const days = 7;
@@ -247,8 +251,8 @@ class _WorkoutHeatmapScreenState extends State<WorkoutHeatmapScreen> {
           ),
           const SizedBox(height: 4),
           ...List.generate(weeks, (weekIdx) {
-            final weekStart =
-                gridStart.add(Duration(days: weekIdx * 7));
+            final weekStartRaw = gridStart.add(Duration(days: weekIdx * 7));
+            final weekStart = _midnight(weekStartRaw);
             final monthStr = weekStart.day <= 7
                 ? monthNames[weekStart.month]
                 : '';
@@ -265,8 +269,8 @@ class _WorkoutHeatmapScreenState extends State<WorkoutHeatmapScreen> {
                     ),
                   ),
                   ...List.generate(days, (dayIdx) {
-                    final date =
-                        weekStart.add(Duration(days: dayIdx));
+                    final dateRaw = weekStart.add(Duration(days: dayIdx));
+                    final date = _midnight(dateRaw);
                     if (date.isAfter(today)) {
                       return SizedBox(width: cellSize + gap);
                     }
@@ -351,12 +355,15 @@ class _WorkoutHeatmapScreenState extends State<WorkoutHeatmapScreen> {
   Widget _buildWeeklySummary(DateTime gridStart, DateTime today) {
     final rows = <Widget>[];
     for (int w = 7; w >= 0; w--) {
-      final weekStart = gridStart.add(Duration(days: w * 7));
-      final weekEnd = weekStart.add(const Duration(days: 6));
+      final weekStartRaw = gridStart.add(Duration(days: w * 7));
+      final weekStart = _midnight(weekStartRaw);
+      final weekEndRaw = weekStart.add(const Duration(days: 6));
+      final weekEnd = _midnight(weekEndRaw);
       int totalSets = 0;
       int workoutDays = 0;
       for (int d = 0; d < 7; d++) {
-        final day = weekStart.add(Duration(days: d));
+        final dayRaw = weekStart.add(Duration(days: d));
+        final day = _midnight(dayRaw);
         if (day.isAfter(today)) break;
         final ws = _byDay[day] ?? [];
         if (ws.isNotEmpty) workoutDays++;
