@@ -1,9 +1,11 @@
--- Drop the unique constraint on name alone
--- SQLite doesn't support DROP CONSTRAINT, so we need to recreate the table
--- We need to temporarily disable foreign keys to recreate the table
+-- Recreate exercises table to change UNIQUE constraint from name-only to (name, equipment)
+-- SQLite doesn't support ALTER COLUMN, so we must recreate the table
+-- NOTE: FK constraints are disabled at connection level during migrations
 
-PRAGMA foreign_keys = OFF;
+-- Clean up orphaned workout_sets first
+DELETE FROM workout_sets WHERE exercise_id NOT IN (SELECT id FROM exercises);
 
+-- Create new table without UNIQUE on name column
 CREATE TABLE exercises_new (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     name         TEXT NOT NULL,
@@ -12,19 +14,16 @@ CREATE TABLE exercises_new (
     equipment    TEXT
 );
 
+-- Copy all data preserving IDs
 INSERT INTO exercises_new (id, name, notes, muscle_group, equipment)
 SELECT id, name, notes, muscle_group, equipment FROM exercises;
 
+-- Drop old table and rename new one
 DROP TABLE exercises;
-
 ALTER TABLE exercises_new RENAME TO exercises;
 
--- Add unique constraint on (name, equipment) but only when equipment is NOT NULL
--- This allows exercises with the same name but different equipment
--- When equipment is NULL, names can be duplicated (for exercises without specified equipment)
+-- Add unique constraint on (name, equipment) when equipment is NOT NULL
 CREATE UNIQUE INDEX idx_exercise_name_equipment ON exercises(name, equipment) WHERE equipment IS NOT NULL;
 
--- Also keep a unique constraint on name alone when equipment IS NULL (optional - for cleaner data)
+-- Add unique constraint on name when equipment IS NULL
 CREATE UNIQUE INDEX idx_exercise_name_no_equipment ON exercises(name) WHERE equipment IS NULL;
-
-PRAGMA foreign_keys = ON;
