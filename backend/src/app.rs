@@ -57,7 +57,8 @@ pub fn build_app(state: AppState) -> Router {
     let public_routes = Router::new()
         .route("/healthz", get(healthz))
         .route("/version", get(version))
-        .route("/auth/login", post(auth::login));
+        .route("/auth/login", post(auth::login))
+        .route("/auth/refresh", post(auth::refresh));
 
     let protected_routes = Router::new()
         .route("/exercises", get(exercises::list_exercises).post(exercises::create_exercise))

@@ -13,6 +13,7 @@ const TEST_JWT_SECRET: &str = "test-jwt-secret-for-integration-tests!!";
 struct Claims {
     sub: i64,
     exp: u64,
+    token_type: String,
 }
 
 use sqlx::SqlitePool;
@@ -77,7 +78,11 @@ impl TestApp {
             + 3600;
         let token = jsonwebtoken::encode(
             &Header::new(Algorithm::HS256),
-            &Claims { sub: 1, exp },
+            &Claims {
+                sub: 1,
+                exp,
+                token_type: "access".to_string(),
+            },
             &EncodingKey::from_secret(TEST_JWT_SECRET.as_bytes()),
         )
         .unwrap();

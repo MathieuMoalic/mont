@@ -73,13 +73,33 @@ Future<String> fetchBackendVersion() async {
   return data['version'] as String;
 }
 
-Future<String> login({required String password}) async {
+class LoginResult {
+  final String token;
+  final String refreshToken;
+  LoginResult({required this.token, required this.refreshToken});
+}
+
+Future<LoginResult> login({required String password}) async {
   final res = await http.post(
     _u('/auth/login'),
     headers: {'Content-Type': 'application/json'},
     body: jsonEncode({'password': password}),
   );
   if (res.statusCode != 200) throw Exception('Login failed: ${res.body}');
+  final data = jsonDecode(res.body) as Map<String, dynamic>;
+  return LoginResult(
+    token: data['token'] as String,
+    refreshToken: data['refresh_token'] as String,
+  );
+}
+
+Future<String> refreshAccessToken(String refreshToken) async {
+  final res = await http.post(
+    _u('/auth/refresh'),
+    headers: {'Content-Type': 'application/json'},
+    body: jsonEncode({'refresh_token': refreshToken}),
+  );
+  if (res.statusCode != 200) throw Exception('Token refresh failed');
   final data = jsonDecode(res.body) as Map<String, dynamic>;
   return data['token'] as String;
 }

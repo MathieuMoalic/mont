@@ -53,9 +53,8 @@ async fn exercise_with_empty_name_fails() {
     let res = app
         .post_json("/exercises", &serde_json::json!({ "name": "" }))
         .await;
-    // Empty name should still create (no validation) or fail based on DB constraint
-    // The current implementation doesn't validate empty strings
-    assert!(res.status() == 201 || res.status() == 422);
+    // Empty name should return 400 Bad Request
+    assert_eq!(res.status(), 400);
 }
 
 #[tokio::test]
@@ -73,14 +72,14 @@ async fn exercise_with_very_long_name() {
 }
 
 #[tokio::test]
-async fn exercise_with_whitespace_only_name() {
+async fn exercise_with_whitespace_only_name_fails() {
     let app = TestApp::spawn().await;
 
     let res = app
         .post_json("/exercises", &serde_json::json!({ "name": "   " }))
         .await;
-    // Whitespace-only names are technically allowed
-    assert!(res.status() == 201 || res.status() == 422);
+    // Whitespace-only name should return 400 Bad Request
+    assert_eq!(res.status(), 400);
 }
 
 #[tokio::test]

@@ -6,16 +6,9 @@ use axum::{
     response::Response,
 };
 use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
-use serde::Deserialize;
 
 use crate::models::AppState;
-
-#[allow(dead_code)]
-#[derive(Debug, Deserialize)]
-struct Claims {
-    sub: i64,
-    exp: u64,
-}
+use crate::routes::auth::{Claims, TokenType};
 
 /// # Errors
 /// Returns `UNAUTHORIZED` if the token is missing or invalid, `INTERNAL_SERVER_ERROR` if the JWT secret is not configured.
@@ -36,12 +29,21 @@ pub async fn require_auth(
         .ok_or(StatusCode::UNAUTHORIZED)?;
 
     // Decode and verify JWT using the config's JWT secret
-    let jwt_secret = state.config.jwt_secret.as_ref()
+    let jwt_secret = state
+        .config
+        .jwt_secret
+        .as_ref()
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
     let decoding_key = DecodingKey::from_secret(jwt_secret.as_bytes());
 
-    decode::<Claims>(token, &decoding_key, &Validation::new(Algorithm::HS256))
-        .map_err(|_| StatusCode::UNAUTHORIZED)?;
+    let claims = decode::<Claims>(token, &decoding_key, &Validation::new(Algorithm::HS256))
+        .map_err(|_| StatusCode::UNAUTHORIZED)?
+        .claims;
+
+    // Only accept access tokens, not refresh tokens
+    if claims.token_type != TokenType::Access {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
 
     Ok(next.run(request).await)
 }

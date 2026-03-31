@@ -76,6 +76,10 @@ pub async fn create_exercise(
     State(state): State<AppState>,
     Json(body): Json<CreateExercise>,
 ) -> AppResult<(StatusCode, Json<Exercise>)> {
+    if body.name.trim().is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "Exercise name cannot be empty".to_string()).into());
+    }
+
     let exercise = sqlx::query_as::<_, Exercise>(
         "INSERT INTO exercises (name, notes, muscle_group, equipment) VALUES (?, ?, ?, ?) RETURNING id, name, notes, muscle_group, equipment",
     )
@@ -105,6 +109,14 @@ pub async fn update_exercise(
     Path(id): Path<i64>,
     Json(body): Json<UpdateExercise>,
 ) -> AppResult<Json<Exercise>> {
+    if let Some(ref name) = body.name
+        && name.trim().is_empty()
+    {
+        return Err(
+            (StatusCode::BAD_REQUEST, "Exercise name cannot be empty".to_string()).into(),
+        );
+    }
+
     // Verify exercise exists
     let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM exercises WHERE id = ?)")
         .bind(id)
