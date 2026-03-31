@@ -363,9 +363,9 @@ class _WorkoutHeatmapScreenState extends State<WorkoutHeatmapScreen> {
         totalSets += ws.fold(0, (s, wk) => s + wk.setCount);
       }
       if (totalSets == 0) continue;
-      final label = w == 0
+      final label = w == 7
           ? 'This week'
-          : w == 1
+          : w == 6
               ? 'Last week'
               : '${weekEnd.day}/${weekEnd.month}';
       rows.add(Padding(

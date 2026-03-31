@@ -11,10 +11,21 @@ import 'src/views/login_page.dart';
 import 'src/auth.dart';
 import 'src/home_shell.dart';
 
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await api.initApi();
   await Auth.init();
+
+  // Set up auth failure callback to redirect to login
+  api.onAuthFailure = () {
+    Auth.logout();
+    navigatorKey.currentState?.pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginPage()),
+      (_) => false,
+    );
+  };
 
   if (!kIsWeb && plat.isDesktop) {
     await windowManager.ensureInitialized();
@@ -82,6 +93,7 @@ class MontApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: navigatorKey,
       title: 'Mont',
       themeMode: ThemeMode.dark,
       theme: _theme(Brightness.dark),

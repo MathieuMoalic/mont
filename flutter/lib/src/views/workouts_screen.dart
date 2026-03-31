@@ -189,15 +189,35 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
             ),
             onDismissed: (_) => _deleteWorkout(w.id),
             child: ListTile(
-            leading: CircleAvatar(
-              child: Icon(w.isActive ? Icons.fitness_center : Icons.check),
+            leading: Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: w.isActive
+                    ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.2)
+                    : Theme.of(context).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Center(
+                child: w.isActive
+                    ? Icon(Icons.fitness_center, color: Theme.of(context).colorScheme.primary)
+                    : Text(
+                        '${w.setCount}',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18,
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
+                      ),
+              ),
             ),
             title: Text(_formatDate(w.startedAt)),
             subtitle: Text(
-              '${w.setCount} set${w.setCount == 1 ? '' : 's'} · ${_duration(w)}'
-              '${w.notes != null && w.notes!.isNotEmpty ? '\n${w.notes}' : ''}',
+              w.isActive
+                  ? '${w.setCount} set${w.setCount == 1 ? '' : 's'} · In progress'
+                  : _duration(w) + (w.notes != null && w.notes!.isNotEmpty ? '\n${w.notes}' : ''),
             ),
-            isThreeLine: w.notes != null && w.notes!.isNotEmpty,
+            isThreeLine: !w.isActive && w.notes != null && w.notes!.isNotEmpty,
             onTap: () async {
               await Navigator.push<void>(
                 ctx,

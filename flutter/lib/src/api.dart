@@ -14,6 +14,14 @@ const _kApiBaseUrlKey = 'api_base_url';
 
 String _baseUrl = _defaultBaseUrl;
 String? _authToken;
+String? _refreshToken;
+
+/// Callback to handle authentication failure (e.g., redirect to login)
+void Function()? onAuthFailure;
+
+void setRefreshToken(String? token) {
+  _refreshToken = token;
+}
 
 String get baseUrl => _baseUrl;
 
@@ -37,6 +45,44 @@ Map<String, String> _headers() => {
   'Content-Type': 'application/json',
   if (_authToken != null) 'Authorization': 'Bearer $_authToken',
 };
+
+bool _isRefreshing = false;
+
+/// Try to refresh the access token using the stored refresh token.
+/// Returns true if successful.
+Future<bool> _tryRefreshToken() async {
+  if (_refreshToken == null || _refreshToken!.isEmpty || _isRefreshing) {
+    return false;
+  }
+  _isRefreshing = true;
+  try {
+    final newToken = await refreshAccessToken(_refreshToken!);
+    _authToken = newToken;
+    await kv.setString('auth_token', newToken);
+    return true;
+  } catch (_) {
+    return false;
+  } finally {
+    _isRefreshing = false;
+  }
+}
+
+/// Handle 401 response: try to refresh token and retry, or trigger auth failure
+Future<http.Response> _handleUnauthorized(Future<http.Response> Function() request) async {
+  final res = await request();
+  if (res.statusCode == 401) {
+    final refreshed = await _tryRefreshToken();
+    if (refreshed) {
+      // Retry the request with new token
+      return await request();
+    } else {
+      // Refresh failed, trigger auth failure callback
+      onAuthFailure?.call();
+      throw Exception('Session expired. Please log in again.');
+    }
+  }
+  return res;
+}
 
 String _normalizeBase(String url) {
   final trimmed = url.trim();
@@ -107,7 +153,7 @@ Future<String> refreshAccessToken(String refreshToken) async {
 // ── Exercises ────────────────────────────────────────────────────────────────
 
 Future<List<Exercise>> listExercises() async {
-  final res = await http.get(_u('/exercises'), headers: _headers());
+  final res = await _handleUnauthorized(() => http.get(_u('/exercises'), headers: _headers()));
   if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
   return (jsonDecode(res.body) as List)
       .map((e) => Exercise.fromJson(e as Map<String, dynamic>))
@@ -120,7 +166,7 @@ Future<Exercise> createExercise({
   String? muscleGroup,
   String? equipment,
 }) async {
-  final res = await http.post(
+  final res = await _handleUnauthorized(() => http.post(
     _u('/exercises'),
     headers: _headers(),
     body: jsonEncode({
@@ -129,9 +175,8 @@ Future<Exercise> createExercise({
       if (muscleGroup != null) 'muscle_group': muscleGroup,
       if (equipment != null) 'equipment': equipment,
     }),
-  );
+  ));
   if (res.statusCode != 201) {
-    // Return the error message from the server if available, otherwise generic
     final body = res.body;
     throw Exception(body.isNotEmpty ? body : 'Failed to create exercise');
   }
@@ -145,7 +190,7 @@ Future<Exercise> updateExercise(
   String? muscleGroup,
   String? equipment,
 }) async {
-  final res = await http.patch(
+  final res = await _handleUnauthorized(() => http.patch(
     _u('/exercises/$id'),
     headers: _headers(),
     body: jsonEncode({
@@ -154,9 +199,8 @@ Future<Exercise> updateExercise(
       if (muscleGroup != null) 'muscle_group': muscleGroup,
       if (equipment != null) 'equipment': equipment,
     }),
-  );
+  ));
   if (res.statusCode != 200) {
-    // Return the error message from the server if available, otherwise generic
     final body = res.body;
     throw Exception(body.isNotEmpty ? body : 'Failed to update exercise');
   }
@@ -164,7 +208,7 @@ Future<Exercise> updateExercise(
 }
 
 Future<List<PersonalRecord>> getPersonalRecords() async {
-  final res = await http.get(_u('/runs/prs'), headers: _headers());
+  final res = await _handleUnauthorized(() => http.get(_u('/runs/prs'), headers: _headers()));
   if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
   return (jsonDecode(res.body) as List)
       .map((e) => PersonalRecord.fromJson(e as Map<String, dynamic>))
@@ -174,7 +218,7 @@ Future<List<PersonalRecord>> getPersonalRecords() async {
 // ── Workouts ─────────────────────────────────────────────────────────────────
 
 Future<List<WorkoutSummary>> listWorkouts() async {
-  final res = await http.get(_u('/workouts'), headers: _headers());
+  final res = await _handleUnauthorized(() => http.get(_u('/workouts'), headers: _headers()));
   if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
   return (jsonDecode(res.body) as List)
       .map((w) => WorkoutSummary.fromJson(w as Map<String, dynamic>))
@@ -182,29 +226,29 @@ Future<List<WorkoutSummary>> listWorkouts() async {
 }
 
 Future<WorkoutSummary> createWorkout() async {
-  final res = await http.post(_u('/workouts'), headers: _headers());
+  final res = await _handleUnauthorized(() => http.post(_u('/workouts'), headers: _headers()));
   if (res.statusCode != 201) throw Exception('HTTP ${res.statusCode}');
   return WorkoutSummary.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
 }
 
 Future<WorkoutDetail> getWorkout(int id) async {
-  final res = await http.get(_u('/workouts/$id'), headers: _headers());
+  final res = await _handleUnauthorized(() => http.get(_u('/workouts/$id'), headers: _headers()));
   if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
   return WorkoutDetail.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
 }
 
 Future<void> finishWorkout(int id) async {
-  final res = await http.patch(_u('/workouts/$id/finish'), headers: _headers());
+  final res = await _handleUnauthorized(() => http.patch(_u('/workouts/$id/finish'), headers: _headers()));
   if (res.statusCode != 204) throw Exception('HTTP ${res.statusCode}');
 }
 
 Future<void> deleteWorkout(int id) async {
-  final res = await http.delete(_u('/workouts/$id'), headers: _headers());
+  final res = await _handleUnauthorized(() => http.delete(_u('/workouts/$id'), headers: _headers()));
   if (res.statusCode != 204) throw Exception('HTTP ${res.statusCode}');
 }
 
 Future<void> restartWorkout(int id) async {
-  final res = await http.patch(_u('/workouts/$id/restart'), headers: _headers());
+  final res = await _handleUnauthorized(() => http.patch(_u('/workouts/$id/restart'), headers: _headers()));
   if (res.statusCode != 204) throw Exception('HTTP ${res.statusCode}');
 }
 
@@ -215,7 +259,7 @@ Future<WorkoutSet> addSet({
   required int reps,
   required double weightKg,
 }) async {
-  final res = await http.post(
+  final res = await _handleUnauthorized(() => http.post(
     _u('/workouts/$workoutId/sets'),
     headers: _headers(),
     body: jsonEncode({
@@ -224,27 +268,27 @@ Future<WorkoutSet> addSet({
       'reps': reps,
       'weight_kg': weightKg,
     }),
-  );
+  ));
   if (res.statusCode != 201) throw Exception('HTTP ${res.statusCode}');
   return WorkoutSet.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
 }
 
 Future<void> deleteSet({required int workoutId, required int setId}) async {
-  final res = await http.delete(
+  final res = await _handleUnauthorized(() => http.delete(
     _u('/workouts/$workoutId/sets/$setId'),
     headers: _headers(),
-  );
+  ));
   if (res.statusCode != 204) throw Exception('HTTP ${res.statusCode}');
 }
 
 Future<WorkoutSummary> updateWorkout(int id, {String? notes}) async {
-  final res = await http.patch(
+  final res = await _handleUnauthorized(() => http.patch(
     _u('/workouts/$id'),
     headers: _headers(),
     body: jsonEncode({
       if (notes != null) 'notes': notes,
     }),
-  );
+  ));
   if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
   return WorkoutSummary.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
 }
@@ -255,14 +299,14 @@ Future<WorkoutSet> updateSet({
   int? reps,
   double? weightKg,
 }) async {
-  final res = await http.patch(
+  final res = await _handleUnauthorized(() => http.patch(
     _u('/workouts/$workoutId/sets/$setId'),
     headers: _headers(),
     body: jsonEncode({
       if (reps != null) 'reps': reps,
       if (weightKg != null) 'weight_kg': weightKg,
     }),
-  );
+  ));
   if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
   return WorkoutSet.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
 }
@@ -270,7 +314,7 @@ Future<WorkoutSet> updateSet({
 // ── Weight ────────────────────────────────────────────────────────────────────
 
 Future<List<WeightEntry>> listWeight() async {
-  final res = await http.get(_u('/weight'), headers: _headers());
+  final res = await _handleUnauthorized(() => http.get(_u('/weight'), headers: _headers()));
   if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
   return (jsonDecode(res.body) as List)
       .map((e) => WeightEntry.fromJson(e as Map<String, dynamic>))
@@ -278,32 +322,32 @@ Future<List<WeightEntry>> listWeight() async {
 }
 
 Future<WeightEntry> createWeightEntry({required double weightKg, String? measuredAt}) async {
-  final res = await http.post(
+  final res = await _handleUnauthorized(() => http.post(
     _u('/weight'),
     headers: _headers(),
     body: jsonEncode({
       'weight_kg': weightKg,
       if (measuredAt != null) 'measured_at': measuredAt,
     }),
-  );
+  ));
   if (res.statusCode != 201) throw Exception('HTTP ${res.statusCode}');
   return WeightEntry.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
 }
 
 Future<void> deleteWeightEntry(int id) async {
-  final res = await http.delete(_u('/weight/$id'), headers: _headers());
+  final res = await _handleUnauthorized(() => http.delete(_u('/weight/$id'), headers: _headers()));
   if (res.statusCode != 204) throw Exception('HTTP ${res.statusCode}');
 }
 
 Future<WeightEntry> updateWeightEntry(int id, {double? weightKg, String? measuredAt}) async {
-  final res = await http.patch(
+  final res = await _handleUnauthorized(() => http.patch(
     _u('/weight/$id'),
     headers: _headers(),
     body: jsonEncode({
       if (weightKg != null) 'weight_kg': weightKg,
       if (measuredAt != null) 'measured_at': measuredAt,
     }),
-  );
+  ));
   if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
   return WeightEntry.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
 }
@@ -311,7 +355,7 @@ Future<WeightEntry> updateWeightEntry(int id, {double? weightKg, String? measure
 // ── Runs ──────────────────────────────────────────────────────────────────────
 
 Future<List<RunSummary>> listRuns() async {
-  final res = await http.get(_u('/runs'), headers: _headers());
+  final res = await _handleUnauthorized(() => http.get(_u('/runs'), headers: _headers()));
   if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
   return (jsonDecode(res.body) as List)
       .map((e) => RunSummary.fromJson(e as Map<String, dynamic>))
@@ -319,7 +363,7 @@ Future<List<RunSummary>> listRuns() async {
 }
 
 Future<RunDetail> getRun(int id) async {
-  final res = await http.get(_u('/runs/$id'), headers: _headers());
+  final res = await _handleUnauthorized(() => http.get(_u('/runs/$id'), headers: _headers()));
   if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
   return RunDetail.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
 }
@@ -341,7 +385,7 @@ Future<RunSummary> importGpx(List<int> bytes, String filename) async {
 }
 
 Future<List<List<List<double>>>> fetchHeatmap() async {
-  final res = await http.get(_u('/runs/heatmap'), headers: _headers());
+  final res = await _handleUnauthorized(() => http.get(_u('/runs/heatmap'), headers: _headers()));
   if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
   return (jsonDecode(res.body) as List)
       .map((route) => (route as List)
@@ -352,32 +396,32 @@ Future<List<List<List<double>>>> fetchHeatmap() async {
 
 
 Future<void> deleteRun(int id) async {
-  final res = await http.delete(_u('/runs/$id'), headers: _headers());
+  final res = await _handleUnauthorized(() => http.delete(_u('/runs/$id'), headers: _headers()));
   if (res.statusCode != 204) throw Exception('HTTP ${res.statusCode}');
 }
 
 Future<void> deleteAllRuns() async {
-  final res = await http.delete(_u('/runs'), headers: _headers());
+  final res = await _handleUnauthorized(() => http.delete(_u('/runs'), headers: _headers()));
   if (res.statusCode != 204) throw Exception('HTTP ${res.statusCode}');
 }
 
 Future<void> markRunInvalid(int id, {required bool isInvalid}) async {
-  final res = await http.patch(
+  final res = await _handleUnauthorized(() => http.patch(
     _u('/runs/$id'),
     headers: _headers(),
     body: jsonEncode({'is_invalid': isInvalid}),
-  );
+  ));
   if (res.statusCode != 204) throw Exception('HTTP ${res.statusCode}');
 }
 
 Future<Map<String, dynamic>> syncGadgetbridge() async {
-  final res = await http.post(_u('/runs/sync'), headers: _headers());
+  final res = await _handleUnauthorized(() => http.post(_u('/runs/sync'), headers: _headers()));
   if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
   return jsonDecode(res.body) as Map<String, dynamic>;
 }
 
 Future<List<ExerciseHistoryPoint>> getExerciseHistory(int exerciseId) async {
-  final res = await http.get(_u('/exercises/$exerciseId/history'), headers: _headers());
+  final res = await _handleUnauthorized(() => http.get(_u('/exercises/$exerciseId/history'), headers: _headers()));
   if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
   return (jsonDecode(res.body) as List)
       .map((e) => ExerciseHistoryPoint.fromJson(e as Map<String, dynamic>))
@@ -385,7 +429,7 @@ Future<List<ExerciseHistoryPoint>> getExerciseHistory(int exerciseId) async {
 }
 
 Future<ExercisePersonalRecord> getExercisePersonalRecords(int exerciseId) async {
-  final res = await http.get(_u('/exercises/$exerciseId/pr'), headers: _headers());
+  final res = await _handleUnauthorized(() => http.get(_u('/exercises/$exerciseId/pr'), headers: _headers()));
   if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
   return ExercisePersonalRecord.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
 }
@@ -394,7 +438,7 @@ Future<ExercisePersonalRecord> getExercisePersonalRecords(int exerciseId) async 
 // ── Health ────────────────────────────────────────────────────────────────────
 
 Future<List<DailyHealth>> listDailyHealth() async {
-  final res = await http.get(_u('/health/daily'), headers: _headers());
+  final res = await _handleUnauthorized(() => http.get(_u('/health/daily'), headers: _headers()));
   if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
   return (jsonDecode(res.body) as List)
       .map((e) => DailyHealth.fromJson(e as Map<String, dynamic>))

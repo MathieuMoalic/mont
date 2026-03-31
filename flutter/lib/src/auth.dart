@@ -12,6 +12,7 @@ class Auth {
     _token = await kv.getString(_kAuthTokenKey);
     _refreshToken = await kv.getString(_kRefreshTokenKey);
     api.setAuthToken(_token);
+    api.setRefreshToken(_refreshToken);
   }
 
   static String? get token => _token;
@@ -23,6 +24,7 @@ class Auth {
     await kv.setString(_kAuthTokenKey, token);
     await kv.setString(_kRefreshTokenKey, refreshToken);
     api.setAuthToken(token);
+    api.setRefreshToken(refreshToken);
   }
 
   static Future<void> saveAccessToken(String token) async {
@@ -37,6 +39,7 @@ class Auth {
     await kv.setString(_kAuthTokenKey, '');
     await kv.setString(_kRefreshTokenKey, '');
     api.setAuthToken(null);
+    api.setRefreshToken(null);
   }
 
   static Future<void> login({required String password}) async {
