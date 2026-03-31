@@ -438,7 +438,7 @@ Future<ExercisePersonalRecord> getExercisePersonalRecords(int exerciseId) async 
 // ── Health ────────────────────────────────────────────────────────────────────
 
 Future<List<DailyHealth>> listDailyHealth() async {
-  final res = await _handleUnauthorized(() => http.get(_u('/health/daily'), headers: _headers()));
+  final res = await _handleUnauthorized(() => http.get(_u('/health/daily?limit=500'), headers: _headers()));
   if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
   return (jsonDecode(res.body) as List)
       .map((e) => DailyHealth.fromJson(e as Map<String, dynamic>))

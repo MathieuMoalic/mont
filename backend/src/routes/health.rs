@@ -24,7 +24,7 @@ pub async fn list_daily_health(
 ) -> AppResult<Json<Vec<DailyHealth>>> {
     let rows = sqlx::query_as::<_, DailyHealth>(
         "SELECT date, avg_hr, min_hr, max_hr, hrv_rmssd, steps \
-         FROM daily_health ORDER BY date LIMIT ? OFFSET ?",
+         FROM daily_health ORDER BY date DESC LIMIT ? OFFSET ?",
     )
     .bind(pagination.limit)
     .bind(pagination.offset)
