@@ -246,65 +246,76 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
 
     final muscleGroups = _distinctMuscleGroups();
     final equipmentList = _distinctEquipment();
+    final hasFilters = muscleGroups.isNotEmpty || equipmentList.isNotEmpty;
 
-    Widget listContent;
     if (_filtered.isEmpty) {
       final q = _searchCtrl.text.trim();
-      listContent = Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('No exercises found.'),
-            TextButton(
-              onPressed: _createExercise,
-              child: Text('Create "${q.isEmpty ? 'new exercise' : q}"'),
-            ),
-          ],
-        ),
-      );
-    } else {
-      listContent = ListView.builder(
-        shrinkWrap: muscleGroups.isNotEmpty,
-        physics: muscleGroups.isNotEmpty
-            ? const NeverScrollableScrollPhysics()
-            : null,
-        itemCount: _filtered.length,
-        itemBuilder: (ctx, i) {
-          final e = _filtered[i];
-          final sub = [
-            if (e.muscleGroup != null) e.muscleGroup!,
-            if (e.equipment != null) e.equipment!,
-          ].join(' • ');
-          return ListTile(
-            leading: Container(
-              width: 4,
-              height: 40,
-              decoration: BoxDecoration(
-                color: MontColors.getMuscleAccent(e.muscleGroup),
-                borderRadius: BorderRadius.circular(2),
+      return Column(
+        children: [
+          if (hasFilters) _buildFilters(muscleGroups, equipmentList),
+          Expanded(
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('No exercises found.'),
+                  TextButton(
+                    onPressed: _createExercise,
+                    child: Text('Create "${q.isEmpty ? 'new exercise' : q}"'),
+                  ),
+                ],
               ),
             ),
-            title: Text(e.displayName),
-            subtitle: sub.isNotEmpty ? Text(sub) : null,
-            onTap: () => Navigator.pop(context, e),
-            trailing: IconButton(
-              icon: const Icon(Icons.edit),
-              onPressed: () => _editExercise(e),
-              tooltip: 'Edit exercise',
-            ),
-          );
-        },
+          ),
+        ],
       );
     }
 
-    if (muscleGroups.isEmpty && equipmentList.isEmpty) return listContent;
+    return Column(
+      children: [
+        if (hasFilters) _buildFilters(muscleGroups, equipmentList),
+        Expanded(
+          child: ListView.builder(
+            itemCount: _filtered.length,
+            itemBuilder: (ctx, i) {
+              final e = _filtered[i];
+              final sub = [
+                if (e.muscleGroup != null) e.muscleGroup!,
+                if (e.equipment != null) e.equipment!,
+              ].join(' • ');
+              return ListTile(
+                leading: Container(
+                  width: 4,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: MontColors.getMuscleAccent(e.muscleGroup),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                title: Text(e.displayName),
+                subtitle: sub.isNotEmpty ? Text(sub) : null,
+                onTap: () => Navigator.pop(context, e),
+                trailing: IconButton(
+                  icon: const Icon(Icons.edit),
+                  onPressed: () => _editExercise(e),
+                  tooltip: 'Edit exercise',
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
 
-    return CustomScrollView(
-      slivers: [
-        // Muscle group filter
-        if (muscleGroups.isNotEmpty)
-          SliverToBoxAdapter(
-            child: SingleChildScrollView(
+  Widget _buildFilters(List<String> muscleGroups, List<String> equipmentList) {
+    return Container(
+      color: MontColors.background,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (muscleGroups.isNotEmpty)
+            SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               child: Row(
@@ -333,11 +344,8 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
                 ],
               ),
             ),
-          ),
-        // Equipment filter
-        if (equipmentList.isNotEmpty)
-          SliverToBoxAdapter(
-            child: SingleChildScrollView(
+          if (equipmentList.isNotEmpty)
+            SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
               child: Row(
@@ -360,9 +368,8 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
                 ],
               ),
             ),
-          ),
-        SliverFillRemaining(child: listContent),
-      ],
+        ],
+      ),
     );
   }
 }
