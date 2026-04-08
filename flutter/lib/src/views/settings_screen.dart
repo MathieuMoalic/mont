@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../api.dart' as api;
 
 const String kSmoothingKey = 'chart_smoothing';
 const int kSmoothingDefault = 5;
@@ -13,6 +16,8 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   int _smoothing = kSmoothingDefault;
+  String? _clientVersion;
+  String? _serverVersion;
 
   @override
   void initState() {
@@ -22,9 +27,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
+    final packageInfo = await PackageInfo.fromPlatform();
+    String? serverVersion;
+    try {
+      serverVersion = await api.fetchBackendVersion();
+    } catch (_) {
+      serverVersion = 'unavailable';
+    }
     if (!mounted) return;
     setState(() {
       _smoothing = prefs.getInt(kSmoothingKey) ?? kSmoothingDefault;
+      _clientVersion = packageInfo.version;
+      _serverVersion = serverVersion;
     });
   }
 
@@ -65,6 +79,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ? 'No smoothing — raw data'
                 : 'Each point is the average of $_smoothing consecutive measurements',
             style: const TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+          const SizedBox(height: 32),
+          const Text('About', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Client version'),
+              Text(_clientVersion ?? '...', style: const TextStyle(fontWeight: FontWeight.bold)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Server version'),
+              Text(_serverVersion ?? '...', style: const TextStyle(fontWeight: FontWeight.bold)),
+            ],
           ),
         ],
       ),

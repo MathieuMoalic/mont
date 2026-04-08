@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../api.dart' as api;
 import '../models.dart';
+import '../theme.dart';
 
 class ExercisePickerScreen extends StatefulWidget {
   const ExercisePickerScreen({super.key});
@@ -275,6 +276,14 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
             if (e.equipment != null) e.equipment!,
           ].join(' • ');
           return ListTile(
+            leading: Container(
+              width: 4,
+              height: 40,
+              decoration: BoxDecoration(
+                color: MontColors.getMuscleAccent(e.muscleGroup),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
             title: Text(e.displayName),
             subtitle: sub.isNotEmpty ? Text(sub) : null,
             onTap: () => Navigator.pop(context, e),
@@ -311,6 +320,12 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
                         child: FilterChip(
                           label: Text(g),
                           selected: _muscleFilter == g,
+                          backgroundColor: MontColors.getMuscleColor(g),
+                          selectedColor: MontColors.getMuscleAccent(g),
+                          side: BorderSide(
+                            color: MontColors.getMuscleAccent(g),
+                            width: _muscleFilter == g ? 2 : 1,
+                          ),
                           onSelected: (_) =>
                               setState(() { _muscleFilter = g; _filter(); }),
                         ),

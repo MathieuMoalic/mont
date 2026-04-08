@@ -62,8 +62,8 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
   }
 
   String _duration(WorkoutSummary w) {
-    if (w.finishedAt == null) return 'In progress';
-    final d = w.finishedAt!.difference(w.startedAt);
+    final end = w.finishedAt ?? DateTime.now();
+    final d = end.difference(w.startedAt);
     final h = d.inHours;
     final m = d.inMinutes % 60;
     return h > 0 ? '${h}h ${m}m' : '${m}m';
@@ -214,7 +214,7 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
             title: Text(_formatDate(w.startedAt)),
             subtitle: Text(
               w.isActive
-                  ? '${w.setCount} set${w.setCount == 1 ? '' : 's'} · In progress'
+                  ? '${w.setCount} set${w.setCount == 1 ? '' : 's'} · ${_duration(w)}'
                   : _duration(w) + (w.notes != null && w.notes!.isNotEmpty ? '\n${w.notes}' : ''),
             ),
             isThreeLine: !w.isActive && w.notes != null && w.notes!.isNotEmpty,

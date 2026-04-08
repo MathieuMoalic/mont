@@ -30,6 +30,7 @@ pub struct WorkoutSetRow {
     pub id: i64,
     pub exercise_id: i64,
     pub exercise_name: String,
+    pub muscle_group: Option<String>,
     pub set_number: i64,
     pub reps: i64,
     pub weight_kg: f64,
@@ -114,11 +115,12 @@ pub async fn get_workout(
     .ok_or(StatusCode::NOT_FOUND)?;
 
     let sets = sqlx::query_as::<_, WorkoutSetRow>(
-        r"SELECT s.id, s.exercise_id, 
-                  CASE WHEN e.equipment IS NOT NULL AND e.equipment != '' 
-                       THEN e.name || ' (' || e.equipment || ')' 
-                       ELSE e.name 
+        r"SELECT s.id, s.exercise_id,
+                  CASE WHEN e.equipment IS NOT NULL AND e.equipment != ''
+                       THEN e.name || ' (' || e.equipment || ')'
+                       ELSE e.name
                   END as exercise_name,
+                  e.muscle_group,
                   s.set_number, s.reps, s.weight_kg, s.logged_at
            FROM workout_sets s
            JOIN exercises e ON e.id = s.exercise_id
@@ -223,10 +225,11 @@ pub async fn add_set(
         r"INSERT INTO workout_sets (workout_id, exercise_id, set_number, reps, weight_kg)
            VALUES (?, ?, ?, ?, ?)
            RETURNING id, exercise_id,
-               (SELECT CASE WHEN equipment IS NOT NULL AND equipment != '' 
-                            THEN name || ' (' || equipment || ')' 
-                            ELSE name 
+               (SELECT CASE WHEN equipment IS NOT NULL AND equipment != ''
+                            THEN name || ' (' || equipment || ')'
+                            ELSE name
                        END FROM exercises WHERE id = exercise_id) as exercise_name,
+               (SELECT muscle_group FROM exercises WHERE id = exercise_id) as muscle_group,
                set_number, reps, weight_kg, logged_at",
     )
     .bind(workout_id)
@@ -319,6 +322,7 @@ pub async fn update_set(
                            THEN name || ' (' || equipment || ')'
                            ELSE name
                       END FROM exercises WHERE id = exercise_id) as exercise_name,
+              (SELECT muscle_group FROM exercises WHERE id = exercise_id) as muscle_group,
               set_number, reps, weight_kg, logged_at",
     )
     .bind(body.reps)

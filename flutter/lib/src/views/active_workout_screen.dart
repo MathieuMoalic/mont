@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../api.dart' as api;
 import '../models.dart';
+import '../theme.dart';
 import 'exercise_picker_screen.dart';
 
 class ActiveWorkoutScreen extends StatefulWidget {
@@ -273,54 +274,70 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       itemBuilder: (ctx, i) {
         final sets = byExercise[order[i]]!;
         final theme = Theme.of(ctx);
+        final muscleGroup = sets.first.muscleGroup;
         return Card(
           margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          color: MontColors.getMuscleColor(muscleGroup),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 8, 12, 2),
-                child: Text(
-                  sets.first.exerciseName,
-                  style: theme.textTheme.titleSmall,
-                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        sets.first.exerciseName,
+                        style: theme.textTheme.titleSmall,
+                      ),
+                    ),
+                    if (muscleGroup != null)
+                    Text(
+                      muscleGroup,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: MontColors.textSecondary.withValues(alpha: 0.7),
+                        fontSize: 11,
+                      ),
+                    ),
+                ],
               ),
-              ...sets.map(
-                (s) => Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 1),
-                  child: Row(
-                    children: [
-                      SizedBox(
-                        width: 44,
-                        child: Text('S${s.setNumber}',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant)),
+            ),
+            ...sets.map(
+              (s) => Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 1),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 44,
+                      child: Text('S${s.setNumber}',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant)),
+                    ),
+                    Expanded(
+                      child: Text(
+                        _setDisplay(s.weightKg, s.reps),
+                        style: theme.textTheme.bodyMedium,
                       ),
-                      Expanded(
-                        child: Text(
-                          _setDisplay(s.weightKg, s.reps),
-                          style: theme.textTheme.bodyMedium,
-                        ),
-                      ),
-                      Text(
-                        '${s.loggedAt.toLocal().hour.toString().padLeft(2, '0')}:${s.loggedAt.toLocal().minute.toString().padLeft(2, '0')}',
-                        style: theme.textTheme.bodySmall?.copyWith(
+                    ),
+                    Text(
+                      '${s.loggedAt.toLocal().hour.toString().padLeft(2, '0')}:${s.loggedAt.toLocal().minute.toString().padLeft(2, '0')}',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant),
+                    ),
+                    const SizedBox(width: 8),
+                    InkWell(
+                      onTap: () => _deleteSet(s.id),
+                      borderRadius: BorderRadius.circular(12),
+                      child: Padding(
+                        padding: const EdgeInsets.all(6),
+                        child: Icon(Icons.close, size: 14,
                             color: theme.colorScheme.onSurfaceVariant),
                       ),
-                      const SizedBox(width: 8),
-                      InkWell(
-                        onTap: () => _deleteSet(s.id),
-                        borderRadius: BorderRadius.circular(12),
-                        child: Padding(
-                          padding: const EdgeInsets.all(6),
-                          child: Icon(Icons.close, size: 14,
-                              color: theme.colorScheme.onSurfaceVariant),
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
+            ),
               const SizedBox(height: 6),
             ],
           ),

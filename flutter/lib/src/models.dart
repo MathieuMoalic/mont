@@ -219,6 +219,7 @@ class WorkoutSet {
   final int id;
   final int exerciseId;
   final String exerciseName;
+  final String? muscleGroup;
   final int setNumber;
   final int reps;
   final double weightKg;
@@ -228,6 +229,7 @@ class WorkoutSet {
     required this.id,
     required this.exerciseId,
     required this.exerciseName,
+    this.muscleGroup,
     required this.setNumber,
     required this.reps,
     required this.weightKg,
@@ -238,6 +240,7 @@ class WorkoutSet {
         id: j['id'] as int,
         exerciseId: j['exercise_id'] as int,
         exerciseName: j['exercise_name'] as String,
+        muscleGroup: j['muscle_group'] as String?,
         setNumber: j['set_number'] as int,
         reps: j['reps'] as int,
         weightKg: (j['weight_kg'] as num).toDouble(),
