@@ -355,7 +355,7 @@ Future<WeightEntry> updateWeightEntry(int id, {double? weightKg, String? measure
 // ── Runs ──────────────────────────────────────────────────────────────────────
 
 Future<List<RunSummary>> listRuns() async {
-  final res = await _handleUnauthorized(() => http.get(_u('/runs'), headers: _headers()));
+  final res = await _handleUnauthorized(() => http.get(_u('/runs?limit=500'), headers: _headers()));
   if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
   return (jsonDecode(res.body) as List)
       .map((e) => RunSummary.fromJson(e as Map<String, dynamic>))

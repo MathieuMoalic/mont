@@ -437,6 +437,23 @@ pub struct SyncResult {
     pub errors: Vec<String>,
 }
 
+#[derive(Serialize)]
+pub struct SyncDebugFile {
+    pub filename: String,
+    pub in_db: bool,
+    pub activity_type: Option<String>,
+    pub is_running: bool,
+    pub started_at: Option<String>,
+    pub parse_error: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct SyncDebugResult {
+    pub total_gpx_files: usize,
+    pub running_filenames_in_db: usize,
+    pub files: Vec<SyncDebugFile>,
+}
+
 /// Aggregate struct returned by the blocking GB extraction task.
 struct GbHealthRow {
     date: String,
@@ -653,8 +670,17 @@ pub async fn gb_debug(
 }
 
 
+/// Categorized activity files from the Gadgetbridge database.
+struct GbActivityFiles {
+    /// Files categorized as running (`ACTIVITY_KIND` & 3 == 1)
+    running: std::collections::HashSet<String>,
+    /// All files in the database (to detect non-running activities)
+    all_in_db: std::collections::HashSet<String>,
+}
+
+/// Load activity filenames from the Gadgetbridge database.
 /// Running activities have `ACTIVITY_KIND & 3 == 1` (bit 0 set, bit 1 clear).
-fn load_running_filenames(db_path: &std::path::Path) -> Result<std::collections::HashSet<String>, String> {
+fn load_activity_filenames(db_path: &std::path::Path) -> Result<GbActivityFiles, String> {
     let conn = rusqlite::Connection::open(db_path)
         .map_err(|e| format!("Cannot open Gadgetbridge DB: {e}"))?;
     let mut stmt = conn.prepare(
@@ -663,15 +689,17 @@ fn load_running_filenames(db_path: &std::path::Path) -> Result<std::collections:
     let rows = stmt.query_map([], |row| {
         Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
     }).map_err(|e| e.to_string())?;
-    let mut set = std::collections::HashSet::new();
+    let mut running = std::collections::HashSet::new();
+    let mut all_in_db = std::collections::HashSet::new();
     for r in rows {
         let (path, kind) = r.map_err(|e| e.to_string())?;
+        let fname = path.rsplit('/').next().unwrap_or(&path).to_owned();
+        all_in_db.insert(fname.clone());
         if kind & 3 == 1 {
-            let fname = path.rsplit('/').next().unwrap_or(&path).to_owned();
-            set.insert(fname);
+            running.insert(fname);
         }
     }
-    Ok(set)
+    Ok(GbActivityFiles { running, all_in_db })
 }
 
 /// Import a single parsed GPX file into the runs table.
@@ -744,7 +772,7 @@ pub async fn perform_sync(state: &AppState) -> Result<SyncResult, String> {
         .clone()
         .ok_or_else(|| "MONT_GADGETBRIDGE_ZIP not configured".to_string())?;
 
-    let (running_filenames, gpx_files, health_rows) = tokio::task::spawn_blocking(move || -> Result<_, String> {
+    let (activity_files, gpx_files, health_rows) = tokio::task::spawn_blocking(move || -> Result<_, String> {
         let file = std::fs::File::open(&zip_path)
             .map_err(|e| format!("Cannot open zip {}: {e}", zip_path.display()))?;
         let mut archive = zip::ZipArchive::new(file)
@@ -764,10 +792,10 @@ pub async fn perform_sync(state: &AppState) -> Result<SyncResult, String> {
         let tmp_path = std::env::temp_dir()
             .join(format!("gadgetbridge_{}.sqlite", uuid::Uuid::new_v4()));
         std::fs::write(&tmp_path, &db_bytes).map_err(|e| e.to_string())?;
-        let running_filenames = load_running_filenames(&tmp_path);
+        let activity_files = load_activity_filenames(&tmp_path);
         let health_rows = extract_daily_health(&tmp_path);
         let _ = std::fs::remove_file(&tmp_path);
-        let running_filenames = running_filenames?;
+        let activity_files = activity_files?;
 
         // Extract GPX files from the files/ directory in the zip.
         let mut gpx_files: Vec<(String, Vec<u8>)> = Vec::new();
@@ -783,7 +811,7 @@ pub async fn perform_sync(state: &AppState) -> Result<SyncResult, String> {
             gpx_files.push((basename, buf));
         }
 
-        Ok((running_filenames, gpx_files, health_rows))
+        Ok((activity_files, gpx_files, health_rows))
     })
     .await
     .map_err(|e| e.to_string())??;
@@ -792,8 +820,12 @@ pub async fn perform_sync(state: &AppState) -> Result<SyncResult, String> {
     let mut errors: Vec<String> = Vec::new();
 
     for (name, bytes) in gpx_files {
-        // Skip any file not listed as a running activity in the Gadgetbridge DB.
-        if !running_filenames.contains(&name) {
+        // Check activity classification from Gadgetbridge DB
+        let is_running_in_db = activity_files.running.contains(&name);
+        let is_in_db = activity_files.all_in_db.contains(&name);
+
+        // Skip files that are in the DB but not classified as running (e.g., cycling, walking)
+        if is_in_db && !is_running_in_db {
             continue;
         }
 
@@ -803,8 +835,9 @@ pub async fn perform_sync(state: &AppState) -> Result<SyncResult, String> {
                 errors.push(format!("{name}: {e}"));
             }
             Ok(mut parsed) => {
-                // Skip non-running activities based on GPX <type> field (when present)
-                if !is_running_activity(parsed.activity_type.as_deref()) {
+                // If file is classified as running in DB, import it.
+                // If file is NOT in DB at all, fall back to GPX <type> field.
+                if !is_running_in_db && !is_running_activity(parsed.activity_type.as_deref()) {
                     continue;
                 }
                 match import_gpx_run(&name, &mut parsed, &state.pool, &state.http).await {
@@ -853,6 +886,100 @@ pub async fn sync_gadgetbridge(
         .await
         .map(Json)
         .map_err(|e| (StatusCode::BAD_REQUEST, e).into())
+}
+
+/// Debug endpoint to see what GPX files are found and why they're being skipped.
+///
+/// # Errors
+/// Returns `SERVICE_UNAVAILABLE` if `MONT_GADGETBRIDGE_ZIP` is not configured.
+pub async fn sync_debug(
+    State(state): State<AppState>,
+) -> AppResult<Json<SyncDebugResult>> {
+    let zip_path = state
+        .config
+        .gadgetbridge_zip
+        .clone()
+        .ok_or_else(|| (StatusCode::SERVICE_UNAVAILABLE, "MONT_GADGETBRIDGE_ZIP not configured".to_string()))?;
+
+    let (activity_files, gpx_files) = tokio::task::spawn_blocking(move || -> Result<_, String> {
+        let file = std::fs::File::open(&zip_path)
+            .map_err(|e| format!("Cannot open zip {}: {e}", zip_path.display()))?;
+        let mut archive = zip::ZipArchive::new(file)
+            .map_err(|e| format!("Invalid zip: {e}"))?;
+
+        let db_bytes = {
+            use std::io::Read;
+            let mut entry = archive.by_name("database/Gadgetbridge")
+                .map_err(|e| format!("Cannot find database/Gadgetbridge in zip: {e}"))?;
+            let mut buf = Vec::new();
+            entry.read_to_end(&mut buf).map_err(|e| e.to_string())?;
+            buf
+        };
+
+        let tmp_path = std::env::temp_dir()
+            .join(format!("gadgetbridge_debug_{}.sqlite", uuid::Uuid::new_v4()));
+        std::fs::write(&tmp_path, &db_bytes).map_err(|e| e.to_string())?;
+        let activity_files = load_activity_filenames(&tmp_path)?;
+        let _ = std::fs::remove_file(&tmp_path);
+
+        let mut gpx_files: Vec<(String, Vec<u8>)> = Vec::new();
+        for i in 0..archive.len() {
+            use std::io::Read;
+            let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
+            let name = entry.name().to_owned();
+            if !name.starts_with("files/") { continue; }
+            let basename = name.rsplit('/').next().unwrap_or(&name).to_owned();
+            if !basename.to_ascii_lowercase().ends_with(".gpx") { continue; }
+            let mut buf = Vec::new();
+            entry.read_to_end(&mut buf).map_err(|e| e.to_string())?;
+            gpx_files.push((basename, buf));
+        }
+
+        Ok((activity_files, gpx_files))
+    })
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+
+    let mut files = Vec::new();
+    for (name, bytes) in &gpx_files {
+        let is_running_in_db = activity_files.running.contains(name);
+        let is_in_db = activity_files.all_in_db.contains(name);
+        match parse_gpx(bytes) {
+            Err(e) => {
+                files.push(SyncDebugFile {
+                    filename: name.clone(),
+                    in_db: is_in_db,
+                    activity_type: None,
+                    is_running: false,
+                    started_at: None,
+                    parse_error: Some(e.to_string()),
+                });
+            }
+            Ok(parsed) => {
+                // Skip if in DB but not running (e.g., cycling)
+                // Import if: running in DB, OR not in DB and GPX type is running
+                let is_running = is_running_in_db || (!is_in_db && is_running_activity(parsed.activity_type.as_deref()));
+                files.push(SyncDebugFile {
+                    filename: name.clone(),
+                    in_db: is_in_db,
+                    activity_type: parsed.activity_type.clone(),
+                    is_running,
+                    started_at: Some(parsed.started_at.clone()),
+                    parse_error: None,
+                });
+            }
+        }
+    }
+
+    // Sort by started_at descending
+    files.sort_by(|a, b| b.started_at.cmp(&a.started_at));
+
+    Ok(Json(SyncDebugResult {
+        total_gpx_files: gpx_files.len(),
+        running_filenames_in_db: activity_files.running.len(),
+        files,
+    }))
 }
 
 // ── Heatmap ───────────────────────────────────────────────────────────────────
