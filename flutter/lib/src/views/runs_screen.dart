@@ -7,6 +7,8 @@ import 'run_calendar_screen.dart';
 import 'run_detail_screen.dart';
 import 'run_stats_screen.dart';
 
+enum RunSortField { date, distance, duration, pace, avgHr, elevation }
+
 class RunsScreen extends StatefulWidget {
   const RunsScreen({super.key});
 
@@ -18,6 +20,8 @@ class _RunsScreenState extends State<RunsScreen> {
   List<RunSummary> _runs = [];
   List<PersonalRecord> _prs = [];
   bool _loading = true;
+  RunSortField _sortField = RunSortField.date;
+  bool _sortAscending = false; // false = descending (newest/longest first)
 
   @override
   void initState() {
@@ -109,12 +113,125 @@ class _RunsScreenState extends State<RunsScreen> {
 
   Set<int> get _prRunIds => _prs.map((p) => p.runId).toSet();
 
+  double _getPace(RunSummary run) {
+    if (run.distanceM < 1) return double.infinity;
+    return run.durationS / (run.distanceM / 1000); // seconds per km
+  }
+
+  List<RunSummary> get _sortedRuns {
+    final sorted = List<RunSummary>.from(_runs);
+    sorted.sort((a, b) {
+      int cmp;
+      switch (_sortField) {
+        case RunSortField.date:
+          cmp = a.startedAt.compareTo(b.startedAt);
+        case RunSortField.distance:
+          cmp = a.distanceM.compareTo(b.distanceM);
+        case RunSortField.duration:
+          cmp = a.durationS.compareTo(b.durationS);
+        case RunSortField.pace:
+          cmp = _getPace(a).compareTo(_getPace(b));
+        case RunSortField.avgHr:
+          final aHr = a.avgHr ?? 0;
+          final bHr = b.avgHr ?? 0;
+          cmp = aHr.compareTo(bHr);
+        case RunSortField.elevation:
+          final aElev = a.elevationGainM ?? 0;
+          final bElev = b.elevationGainM ?? 0;
+          cmp = aElev.compareTo(bElev);
+      }
+      return _sortAscending ? cmp : -cmp;
+    });
+    return sorted;
+  }
+
+  String _getSortLabel() {
+    final arrow = _sortAscending ? '↑' : '↓';
+    switch (_sortField) {
+      case RunSortField.date:
+        return 'Date $arrow';
+      case RunSortField.distance:
+        return 'Distance $arrow';
+      case RunSortField.duration:
+        return 'Duration $arrow';
+      case RunSortField.pace:
+        return 'Pace $arrow';
+      case RunSortField.avgHr:
+        return 'Avg HR $arrow';
+      case RunSortField.elevation:
+        return 'Elevation $arrow';
+    }
+  }
+
+  void _showSortMenu() {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text('Sort by', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+            ),
+            ...RunSortField.values.map((field) {
+              final isSelected = field == _sortField;
+              String label;
+              switch (field) {
+                case RunSortField.date:
+                  label = 'Date';
+                case RunSortField.distance:
+                  label = 'Distance';
+                case RunSortField.duration:
+                  label = 'Duration';
+                case RunSortField.pace:
+                  label = 'Pace';
+                case RunSortField.avgHr:
+                  label = 'Avg Heart Rate';
+                case RunSortField.elevation:
+                  label = 'Elevation Gain';
+              }
+              return ListTile(
+                leading: Icon(
+                  isSelected
+                      ? (_sortAscending ? Icons.arrow_upward : Icons.arrow_downward)
+                      : Icons.sort,
+                  color: isSelected ? Theme.of(context).colorScheme.primary : null,
+                ),
+                title: Text(label),
+                selected: isSelected,
+                onTap: () {
+                  Navigator.pop(ctx);
+                  setState(() {
+                    if (_sortField == field) {
+                      _sortAscending = !_sortAscending;
+                    } else {
+                      _sortField = field;
+                      // Default directions that make sense
+                      _sortAscending = field == RunSortField.pace; // fastest first for pace
+                    }
+                  });
+                },
+              );
+            }),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Runs'),
         actions: [
+          TextButton.icon(
+            icon: const Icon(Icons.sort, size: 18),
+            label: Text(_getSortLabel(), style: const TextStyle(fontSize: 12)),
+            onPressed: _runs.isEmpty ? null : _showSortMenu,
+          ),
           IconButton(
             icon: const Icon(Icons.map_outlined),
             tooltip: 'Heatmap',
@@ -168,9 +285,9 @@ class _RunsScreenState extends State<RunsScreen> {
               : RefreshIndicator(
                   onRefresh: _load,
                   child: ListView.builder(
-                    itemCount: _runs.length,
+                    itemCount: _sortedRuns.length,
                     itemBuilder: (context, i) {
-                      final run = _runs[i];
+                      final run = _sortedRuns[i];
                       final isPr = _prRunIds.contains(run.id);
                       return ListTile(
                         leading: run.isInvalid
