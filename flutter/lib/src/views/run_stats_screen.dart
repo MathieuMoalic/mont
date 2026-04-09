@@ -57,6 +57,22 @@ class _RunStatsScreenState extends State<RunStatsScreen> {
     return "$m:${s.toString().padLeft(2, '0')}";
   }
 
+  // Format date as relative or DD/MM
+  static String _fmtDate(DateTime date) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final d = DateTime(date.year, date.month, date.day);
+    final diff = today.difference(d).inDays;
+    if (diff == 0) return 'today';
+    if (diff == 1) return '1d';
+    if (diff < 7) return '${diff}d';
+    if (diff < 14) return '1w';
+    if (diff < 21) return '2w';
+    if (diff < 28) return '3w';
+    // DD/MM format
+    return '${date.day}/${date.month}';
+  }
+
   // Monday-anchored ISO week key "YYYY-Www"
   static String _weekKey(DateTime d) {
     final monday = d.subtract(Duration(days: d.weekday - 1));
@@ -204,7 +220,7 @@ class _RunStatsScreenState extends State<RunStatsScreen> {
                   final idx = v.toInt();
                   if (idx >= sorted.length) return const SizedBox.shrink();
                   return Text(
-                    sorted[idx].startedAt.toLocal().toString().substring(5, 10),
+                    _fmtDate(sorted[idx].startedAt.toLocal()),
                     style: const TextStyle(fontSize: 8),
                   );
                 },
@@ -460,7 +476,7 @@ class _RunStatsScreenState extends State<RunStatsScreen> {
                 final idx = v.toInt();
                 if (idx >= pts.length) return const SizedBox.shrink();
                 return Text(
-                  pts[idx].$1.startedAt.toLocal().toString().substring(5, 10),
+                  _fmtDate(pts[idx].$1.startedAt.toLocal()),
                   style: const TextStyle(fontSize: 8),
                 );
               },

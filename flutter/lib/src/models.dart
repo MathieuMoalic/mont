@@ -34,6 +34,7 @@ class RunSummary {
   final double? weatherWindKph;
   final double? weatherPrecipMm;
   final int? weatherCode;
+  final int? calories;
 
   RunSummary({
     required this.id,
@@ -51,6 +52,7 @@ class RunSummary {
     this.weatherWindKph,
     this.weatherPrecipMm,
     this.weatherCode,
+    this.calories,
   });
 
    factory RunSummary.fromJson(Map<String, dynamic> j) => RunSummary(
@@ -69,6 +71,7 @@ class RunSummary {
         weatherWindKph: (j['weather_wind_kph'] as num?)?.toDouble(),
         weatherPrecipMm: (j['weather_precip_mm'] as num?)?.toDouble(),
         weatherCode: (j['weather_code'] as num?)?.toInt(),
+        calories: (j['calories'] as num?)?.toInt(),
       );
 }
 
@@ -91,6 +94,7 @@ class RunDetail extends RunSummary {
     super.weatherWindKph,
     super.weatherPrecipMm,
     super.weatherCode,
+    super.calories,
     required this.route,
   });
 
@@ -110,6 +114,7 @@ class RunDetail extends RunSummary {
         weatherWindKph: (j['weather_wind_kph'] as num?)?.toDouble(),
         weatherPrecipMm: (j['weather_precip_mm'] as num?)?.toDouble(),
         weatherCode: (j['weather_code'] as num?)?.toInt(),
+        calories: (j['calories'] as num?)?.toInt(),
         route: (j['route'] as List)
             .map((e) => RunPoint.fromJson(e as Map<String, dynamic>))
             .toList(),
@@ -204,15 +209,19 @@ class WorkoutSummary {
 
   bool get isActive => finishedAt == null;
 
-  factory WorkoutSummary.fromJson(Map<String, dynamic> j) => WorkoutSummary(
+  factory WorkoutSummary.fromJson(Map<String, dynamic> j) {
+    final startedAtStr = j['started_at'] as String;
+    final finishedAtStr = j['finished_at'] as String?;
+    return WorkoutSummary(
         id: j['id'] as int,
-        startedAt: DateTime.parse(j['started_at'] as String),
-        finishedAt: j['finished_at'] != null
-            ? DateTime.parse(j['finished_at'] as String)
+        startedAt: DateTime.parse(startedAtStr.endsWith('Z') ? startedAtStr : '${startedAtStr}Z'),
+        finishedAt: finishedAtStr != null
+            ? DateTime.parse(finishedAtStr.endsWith('Z') ? finishedAtStr : '${finishedAtStr}Z')
             : null,
         notes: j['notes'] as String?,
         setCount: j['set_count'] as int,
       );
+  }
 }
 
 class WorkoutSet {
@@ -236,7 +245,9 @@ class WorkoutSet {
     required this.loggedAt,
   });
 
-  factory WorkoutSet.fromJson(Map<String, dynamic> j) => WorkoutSet(
+  factory WorkoutSet.fromJson(Map<String, dynamic> j) {
+    final loggedAtStr = j['logged_at'] as String;
+    return WorkoutSet(
         id: j['id'] as int,
         exerciseId: j['exercise_id'] as int,
         exerciseName: j['exercise_name'] as String,
@@ -244,8 +255,9 @@ class WorkoutSet {
         setNumber: j['set_number'] as int,
         reps: j['reps'] as int,
         weightKg: (j['weight_kg'] as num).toDouble(),
-        loggedAt: DateTime.parse(j['logged_at'] as String),
+        loggedAt: DateTime.parse(loggedAtStr.endsWith('Z') ? loggedAtStr : '${loggedAtStr}Z'),
       );
+  }
 }
 
 class WorkoutDetail {
@@ -265,17 +277,21 @@ class WorkoutDetail {
 
   bool get isActive => finishedAt == null;
 
-  factory WorkoutDetail.fromJson(Map<String, dynamic> j) => WorkoutDetail(
+  factory WorkoutDetail.fromJson(Map<String, dynamic> j) {
+    final startedAtStr = j['started_at'] as String;
+    final finishedAtStr = j['finished_at'] as String?;
+    return WorkoutDetail(
         id: j['id'] as int,
-        startedAt: DateTime.parse(j['started_at'] as String),
-        finishedAt: j['finished_at'] != null
-            ? DateTime.parse(j['finished_at'] as String)
+        startedAt: DateTime.parse(startedAtStr.endsWith('Z') ? startedAtStr : '${startedAtStr}Z'),
+        finishedAt: finishedAtStr != null
+            ? DateTime.parse(finishedAtStr.endsWith('Z') ? finishedAtStr : '${finishedAtStr}Z')
             : null,
         notes: j['notes'] as String?,
         sets: (j['sets'] as List)
             .map((s) => WorkoutSet.fromJson(s as Map<String, dynamic>))
             .toList(),
       );
+  }
 }
 
 class DailyHealth {

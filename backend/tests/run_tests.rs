@@ -1,6 +1,6 @@
 mod common;
 
-// A minimal valid GPX with 3 track points and heart rate extensions
+// A minimal valid GPX with track points every 30 seconds (realistic GPS sampling)
 const SAMPLE_GPX: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <gpx version="1.1" creator="GadgetBridge"
      xmlns="http://www.topografix.com/GPX/1/1"
@@ -12,14 +12,24 @@ const SAMPLE_GPX: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
         <time>2026-01-15T09:00:00Z</time>
         <extensions><gpxtpx:TrackPointExtension><gpxtpx:hr>140</gpxtpx:hr></gpxtpx:TrackPointExtension></extensions>
       </trkpt>
+      <trkpt lat="48.8570" lon="2.3526">
+        <ele>36.0</ele>
+        <time>2026-01-15T09:00:30Z</time>
+        <extensions><gpxtpx:TrackPointExtension><gpxtpx:hr>145</gpxtpx:hr></gpxtpx:TrackPointExtension></extensions>
+      </trkpt>
       <trkpt lat="48.8576" lon="2.3532">
         <ele>37.5</ele>
-        <time>2026-01-15T09:05:00Z</time>
+        <time>2026-01-15T09:01:00Z</time>
         <extensions><gpxtpx:TrackPointExtension><gpxtpx:hr>155</gpxtpx:hr></gpxtpx:TrackPointExtension></extensions>
+      </trkpt>
+      <trkpt lat="48.8580" lon="2.3536">
+        <ele>36.5</ele>
+        <time>2026-01-15T09:01:30Z</time>
+        <extensions><gpxtpx:TrackPointExtension><gpxtpx:hr>158</gpxtpx:hr></gpxtpx:TrackPointExtension></extensions>
       </trkpt>
       <trkpt lat="48.8586" lon="2.3542">
         <ele>36.0</ele>
-        <time>2026-01-15T09:10:00Z</time>
+        <time>2026-01-15T09:02:00Z</time>
         <extensions><gpxtpx:TrackPointExtension><gpxtpx:hr>160</gpxtpx:hr></gpxtpx:TrackPointExtension></extensions>
       </trkpt>
     </trkseg>
@@ -73,7 +83,7 @@ async fn import_run_extracts_distance_and_duration() {
     assert!(body["id"].as_i64().is_some());
     let distance = body["distance_m"].as_f64().unwrap();
     assert!(distance > 100.0, "expected distance > 100m, got {distance}");
-    assert_eq!(body["duration_s"], 600); // 10 minutes
+    assert_eq!(body["duration_s"], 120); // 2 minutes active time (4 x 30s gaps)
     assert_eq!(body["started_at"], "2026-01-15T09:00:00Z");
 }
 
@@ -91,7 +101,7 @@ async fn import_run_extracts_elevation_gain() {
     let app = common::TestApp::spawn().await;
     let body = import_sample(&app).await;
 
-    // ele goes 35 → 37.5 → 36 so gain should be 2.5m
+    // ele goes 35 → 36 → 37.5 → 36.5 → 36 so gain = 1 + 1.5 = 2.5m
     let gain = body["elevation_gain_m"].as_f64().unwrap();
     assert!((gain - 2.5).abs() < 0.01, "expected ~2.5m gain, got {gain}");
 }
@@ -121,7 +131,7 @@ async fn get_run_returns_detail_with_route() {
 
     let detail: serde_json::Value = app.get(&format!("/runs/{id}")).await.json().await.unwrap();
     let route = detail["route"].as_array().unwrap();
-    assert_eq!(route.len(), 3);
+    assert_eq!(route.len(), 5);
     assert!(route[0]["lat"].as_f64().is_some());
     assert!(route[0]["lon"].as_f64().is_some());
 }
@@ -333,8 +343,9 @@ async fn sync_from_zip_imports_running_activities() {
             let conn = rusqlite::Connection::open(tmp.path()).unwrap();
             conn.execute_batch(
                 "CREATE TABLE BASE_ACTIVITY_SUMMARY \
-                 (GPX_TRACK TEXT, ACTIVITY_KIND INTEGER); \
-                 INSERT INTO BASE_ACTIVITY_SUMMARY VALUES ('files/run.gpx', 1);",
+                 (GPX_TRACK TEXT, ACTIVITY_KIND INTEGER, SUMMARY_DATA TEXT); \
+                 INSERT INTO BASE_ACTIVITY_SUMMARY VALUES ('files/run.gpx', 1, \
+                 '{\"activeSeconds\":{\"value\":120},\"caloriesBurnt\":{\"value\":150}}');",
             )
             .unwrap();
             drop(conn);
@@ -372,7 +383,7 @@ fn make_gpx_with_type(activity_type: &str) -> Vec<u8> {
     <type>{activity_type}</type>
     <trkseg>
       <trkpt lat="48.8566" lon="2.3522"><ele>35.0</ele><time>2026-02-01T09:00:00Z</time></trkpt>
-      <trkpt lat="48.8576" lon="2.3532"><ele>37.5</ele><time>2026-02-01T09:05:00Z</time></trkpt>
+      <trkpt lat="48.8576" lon="2.3532"><ele>37.5</ele><time>2026-02-01T09:00:30Z</time></trkpt>
     </trkseg>
   </trk>
 </gpx>"#).into_bytes()

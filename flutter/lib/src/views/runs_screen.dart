@@ -7,7 +7,7 @@ import 'run_calendar_screen.dart';
 import 'run_detail_screen.dart';
 import 'run_stats_screen.dart';
 
-enum RunSortField { date, distance, duration, pace, avgHr, elevation }
+enum RunSortField { date, distance, duration, pace, avgHr, elevation, calories }
 
 class RunsScreen extends StatefulWidget {
   const RunsScreen({super.key});
@@ -139,6 +139,10 @@ class _RunsScreenState extends State<RunsScreen> {
           final aElev = a.elevationGainM ?? 0;
           final bElev = b.elevationGainM ?? 0;
           cmp = aElev.compareTo(bElev);
+        case RunSortField.calories:
+          final aCal = a.calories ?? 0;
+          final bCal = b.calories ?? 0;
+          cmp = aCal.compareTo(bCal);
       }
       return _sortAscending ? cmp : -cmp;
     });
@@ -160,62 +164,77 @@ class _RunsScreenState extends State<RunsScreen> {
         return 'Avg HR $arrow';
       case RunSortField.elevation:
         return 'Elevation $arrow';
+      case RunSortField.calories:
+        return 'Calories $arrow';
     }
   }
 
   void _showSortMenu() {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Padding(
-              padding: EdgeInsets.all(16),
-              child: Text('Sort by', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-            ),
-            ...RunSortField.values.map((field) {
-              final isSelected = field == _sortField;
-              String label;
-              switch (field) {
-                case RunSortField.date:
-                  label = 'Date';
-                case RunSortField.distance:
-                  label = 'Distance';
-                case RunSortField.duration:
-                  label = 'Duration';
-                case RunSortField.pace:
-                  label = 'Pace';
-                case RunSortField.avgHr:
-                  label = 'Avg Heart Rate';
-                case RunSortField.elevation:
-                  label = 'Elevation Gain';
-              }
-              return ListTile(
-                leading: Icon(
-                  isSelected
-                      ? (_sortAscending ? Icons.arrow_upward : Icons.arrow_downward)
-                      : Icons.sort,
-                  color: isSelected ? Theme.of(context).colorScheme.primary : null,
-                ),
-                title: Text(label),
-                selected: isSelected,
-                onTap: () {
-                  Navigator.pop(ctx);
-                  setState(() {
-                    if (_sortField == field) {
-                      _sortAscending = !_sortAscending;
-                    } else {
-                      _sortField = field;
-                      // Default directions that make sense
-                      _sortAscending = field == RunSortField.pace; // fastest first for pace
+        child: DraggableScrollableSheet(
+          initialChildSize: 0.5,
+          minChildSize: 0.3,
+          maxChildSize: 0.7,
+          expand: false,
+          builder: (context, scrollController) => Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: Text('Sort by', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+              ),
+              Expanded(
+                child: ListView(
+                  controller: scrollController,
+                  children: RunSortField.values.map((field) {
+                    final isSelected = field == _sortField;
+                    String label;
+                    switch (field) {
+                      case RunSortField.date:
+                        label = 'Date';
+                      case RunSortField.distance:
+                        label = 'Distance';
+                      case RunSortField.duration:
+                        label = 'Duration';
+                      case RunSortField.pace:
+                        label = 'Pace';
+                      case RunSortField.avgHr:
+                        label = 'Avg Heart Rate';
+                      case RunSortField.elevation:
+                        label = 'Elevation Gain';
+                      case RunSortField.calories:
+                        label = 'Calories';
                     }
-                  });
-                },
-              );
-            }),
-            const SizedBox(height: 8),
-          ],
+                    return ListTile(
+                      leading: Icon(
+                        isSelected
+                            ? (_sortAscending ? Icons.arrow_upward : Icons.arrow_downward)
+                            : Icons.sort,
+                        color: isSelected ? Theme.of(context).colorScheme.primary : null,
+                      ),
+                      title: Text(label),
+                      selected: isSelected,
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        setState(() {
+                          if (_sortField == field) {
+                            _sortAscending = !_sortAscending;
+                          } else {
+                            _sortField = field;
+                            // Default directions that make sense
+                            _sortAscending = field == RunSortField.pace; // fastest first for pace
+                          }
+                        });
+                      },
+                    );
+                  }).toList(),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -290,25 +309,14 @@ class _RunsScreenState extends State<RunsScreen> {
                       final run = _sortedRuns[i];
                       final isPr = _prRunIds.contains(run.id);
                       return ListTile(
-                        leading: run.isInvalid
-                            ? const Icon(Icons.not_interested, color: Colors.grey)
-                            : isPr
-                                ? const Icon(Icons.emoji_events, color: Colors.amber)
-                                : const Icon(Icons.directions_run),
+                        leading: isPr
+                            ? const Icon(Icons.emoji_events, color: Colors.amber)
+                            : const Icon(Icons.directions_run),
                         title: Text(
                           '${(run.distanceM / 1000).toStringAsFixed(2)} km  ·  ${_formatDuration(run.durationS)}',
-                          style: run.isInvalid
-                              ? const TextStyle(
-                                  color: Colors.grey,
-                                  decoration: TextDecoration.lineThrough,
-                                )
-                              : null,
                         ),
                         subtitle: Text(
-                          '${run.startedAt.toLocal().toString().substring(0, 16)}  ·  ${_formatPace(run)}${run.isInvalid ? '  · ⚠ invalid' : ''}',
-                          style: run.isInvalid
-                              ? const TextStyle(color: Colors.grey)
-                              : null,
+                          '${run.startedAt.toLocal().toString().substring(0, 16)}  ·  ${_formatPace(run)}',
                         ),
                         trailing: Text(
                           run.avgHr != null ? '♥ ${run.avgHr}' : '',

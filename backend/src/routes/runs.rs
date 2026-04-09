@@ -26,6 +26,7 @@ pub struct RunSummary {
     pub weather_wind_kph: Option<f64>,
     pub weather_precip_mm: Option<f64>,
     pub weather_code: Option<i64>,
+    pub calories: Option<i64>,
 }
 
 #[derive(Serialize)]
@@ -43,6 +44,7 @@ pub struct RunDetail {
     pub weather_wind_kph: Option<f64>,
     pub weather_precip_mm: Option<f64>,
     pub weather_code: Option<i64>,
+    pub calories: Option<i64>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -86,6 +88,7 @@ struct ParsedRun {
     weather_wind_kph: Option<f64>,
     weather_precip_mm: Option<f64>,
     weather_code: Option<i64>,
+    calories: Option<i64>,
 }
 
 fn is_running_activity(activity_type: Option<&str>) -> bool {
@@ -170,6 +173,9 @@ fn parse_trkpt(node: roxmltree::Node<'_, '_>) -> anyhow::Result<TrackPoint> {
     Ok(TrackPoint { lat, lon, ele, time_secs, hr, cad, speed })
 }
 
+/// Maximum gap (seconds) between points before we consider it a pause.
+const PAUSE_THRESHOLD_SECS: i64 = 60;
+
 fn compute_timing(points: &[TrackPoint]) -> (String, i64) {
     let started_at = points
         .first()
@@ -181,10 +187,23 @@ fn compute_timing(points: &[TrackPoint]) -> (String, i64) {
                 .unwrap_or_default()
         })
         .unwrap_or_default();
-    let duration_s = match (points.first().and_then(|p| p.time_secs), points.last().and_then(|p| p.time_secs)) {
-        (Some(s), Some(e)) => (e - s).max(0),
-        _ => 0,
-    };
+
+    // Calculate active time by summing segment durations, excluding pauses.
+    // A pause is detected when the gap between consecutive points exceeds the threshold.
+    let duration_s: i64 = points
+        .windows(2)
+        .filter_map(|w| {
+            match (w[0].time_secs, w[1].time_secs) {
+                (Some(t0), Some(t1)) => {
+                    let gap = (t1 - t0).max(0);
+                    // Only count segments shorter than the pause threshold
+                    if gap < PAUSE_THRESHOLD_SECS { Some(gap) } else { None }
+                }
+                _ => None,
+            }
+        })
+        .sum();
+
     (started_at, duration_s)
 }
 
@@ -231,6 +250,24 @@ fn parse_gpx(data: &[u8]) -> anyhow::Result<ParsedRun> {
         }).collect()
     };
 
+    // Estimate calories: ~60 kcal per km (calibrated to match Gadgetbridge)
+    // If heart rate available, use HR-based formula scaled to match GB
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_precision_loss)]
+    let calories = if distance_m > 0.0 {
+        let dist_km = distance_m / 1000.0;
+        let estimated = stats.avg_hr.map_or(dist_km * 60.0, |hr| {
+            // HR-based estimate scaled to match Gadgetbridge (~0.8x Keytel formula)
+            // Assumes 70kg, 35 years old
+            let duration_min = duration_s as f64 / 60.0;
+            let hr_f = hr as f64;
+            let base = 0.6309f64.mul_add(hr_f, 0.1988f64.mul_add(70.0, 0.2017f64.mul_add(35.0, -55.0969)));
+            (duration_min * base / 4.184 * 0.8).max(0.0)
+        });
+        Some(estimated.round() as i64)
+    } else {
+        None
+    };
+
     Ok(ParsedRun {
         started_at, duration_s, distance_m, elevation_gain_m,
         avg_hr: stats.avg_hr, max_hr: stats.max_hr,
@@ -238,6 +275,7 @@ fn parse_gpx(data: &[u8]) -> anyhow::Result<ParsedRun> {
         route, activity_type,
         weather_temp_c: None, weather_wind_kph: None,
         weather_precip_mm: None, weather_code: None,
+        calories,
     })
 }
 
@@ -303,10 +341,10 @@ pub async fn import_run(
     let run = sqlx::query_as::<_, RunSummary>(
         "INSERT INTO runs \
          (started_at, duration_s, distance_m, elevation_gain_m, avg_hr, max_hr, route_json, avg_cadence, avg_stride_m, \
-          weather_temp_c, weather_wind_kph, weather_precip_mm, weather_code) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
+          weather_temp_c, weather_wind_kph, weather_precip_mm, weather_code, calories) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
          RETURNING id, started_at, duration_s, distance_m, elevation_gain_m, avg_hr, max_hr, notes, is_invalid, \
-                   avg_cadence, avg_stride_m, weather_temp_c, weather_wind_kph, weather_precip_mm, weather_code",
+                   avg_cadence, avg_stride_m, weather_temp_c, weather_wind_kph, weather_precip_mm, weather_code, calories",
     )
     .bind(&parsed.started_at)
     .bind(parsed.duration_s)
@@ -321,6 +359,7 @@ pub async fn import_run(
     .bind(parsed.weather_wind_kph)
     .bind(parsed.weather_precip_mm)
     .bind(parsed.weather_code)
+    .bind(parsed.calories)
     .fetch_one(&state.pool)
     .await?;
 
@@ -335,7 +374,7 @@ pub async fn list_runs(
 ) -> AppResult<Json<Vec<RunSummary>>> {
     let runs = sqlx::query_as::<_, RunSummary>(
         "SELECT id, started_at, duration_s, distance_m, elevation_gain_m, avg_hr, max_hr, notes, is_invalid, \
-                avg_cadence, avg_stride_m, weather_temp_c, weather_wind_kph, weather_precip_mm, weather_code \
+                avg_cadence, avg_stride_m, weather_temp_c, weather_wind_kph, weather_precip_mm, weather_code, calories \
          FROM runs ORDER BY started_at DESC LIMIT ? OFFSET ?",
     )
     .bind(pagination.limit)
@@ -366,12 +405,13 @@ pub async fn get_run(
         weather_wind_kph: Option<f64>,
         weather_precip_mm: Option<f64>,
         weather_code: Option<i64>,
+        calories: Option<i64>,
     }
 
     let row = sqlx::query_as::<_, RunRow>(
         "SELECT id, started_at, duration_s, distance_m, elevation_gain_m, \
                 avg_hr, max_hr, notes, route_json, \
-                weather_temp_c, weather_wind_kph, weather_precip_mm, weather_code \
+                weather_temp_c, weather_wind_kph, weather_precip_mm, weather_code, calories \
          FROM runs WHERE id = ?",
     )
     .bind(id)
@@ -398,22 +438,39 @@ pub async fn get_run(
         weather_wind_kph: row.weather_wind_kph,
         weather_precip_mm: row.weather_precip_mm,
         weather_code: row.weather_code,
+        calories: row.calories,
     }))
 }
 
+/// Deletes a run and blocks its source file from future imports.
+///
 /// # Errors
 /// Returns `NOT_FOUND` if the run doesn't exist.
 pub async fn delete_run(
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> AppResult<StatusCode> {
-    let result = sqlx::query("DELETE FROM runs WHERE id = ?")
+    // Get source_file before deleting so we can block it
+    let source_file: Option<String> = sqlx::query_scalar("SELECT source_file FROM runs WHERE id = ?")
+        .bind(id)
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    // Block this file from future imports
+    if let Some(src) = source_file {
+        sqlx::query("INSERT OR IGNORE INTO blocked_runs (source_file) VALUES (?)")
+            .bind(&src)
+            .execute(&state.pool)
+            .await?;
+    }
+
+    // Delete the run
+    sqlx::query("DELETE FROM runs WHERE id = ?")
         .bind(id)
         .execute(&state.pool)
         .await?;
-    if result.rows_affected() == 0 {
-        return Err(StatusCode::NOT_FOUND.into());
-    }
+
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -670,45 +727,89 @@ pub async fn gb_debug(
 }
 
 
-/// Categorized activity files from the Gadgetbridge database.
-struct GbActivityFiles {
-    /// Files categorized as running (`ACTIVITY_KIND` & 3 == 1)
-    running: std::collections::HashSet<String>,
-    /// All files in the database (to detect non-running activities)
-    all_in_db: std::collections::HashSet<String>,
+/// Activity metadata from the Gadgetbridge database.
+#[derive(Clone)]
+struct GbActivityMeta {
+    is_running: bool,
+    active_seconds: Option<i64>,
+    calories: Option<i64>,
 }
 
-/// Load activity filenames from the Gadgetbridge database.
+/// Categorized activity files from the Gadgetbridge database.
+struct GbActivityFiles {
+    /// Metadata for each GPX file (keyed by filename)
+    activities: std::collections::HashMap<String, GbActivityMeta>,
+}
+
+impl GbActivityFiles {
+    fn get_meta(&self, filename: &str) -> Option<&GbActivityMeta> {
+        self.activities.get(filename)
+    }
+}
+
+/// Extract active seconds and calories from Gadgetbridge `SUMMARY_DATA` JSON.
+fn parse_summary_data(json: &str) -> (Option<i64>, Option<i64>) {
+    serde_json::from_str::<serde_json::Value>(json).map_or((None, None), |v| {
+        let active_secs = v.get("activeSeconds")
+            .and_then(|o| o.get("value"))
+            .and_then(serde_json::Value::as_i64);
+        let calories = v.get("caloriesBurnt")
+            .and_then(|o| o.get("value"))
+            .and_then(serde_json::Value::as_i64);
+        (active_secs, calories)
+    })
+}
+
+/// Load activity filenames and metadata from the Gadgetbridge database.
 /// Running activities have `ACTIVITY_KIND & 3 == 1` (bit 0 set, bit 1 clear).
 fn load_activity_filenames(db_path: &std::path::Path) -> Result<GbActivityFiles, String> {
     let conn = rusqlite::Connection::open(db_path)
         .map_err(|e| format!("Cannot open Gadgetbridge DB: {e}"))?;
     let mut stmt = conn.prepare(
-        "SELECT GPX_TRACK, ACTIVITY_KIND FROM BASE_ACTIVITY_SUMMARY WHERE GPX_TRACK IS NOT NULL",
+        "SELECT GPX_TRACK, ACTIVITY_KIND, SUMMARY_DATA FROM BASE_ACTIVITY_SUMMARY WHERE GPX_TRACK IS NOT NULL",
     ).map_err(|e| e.to_string())?;
     let rows = stmt.query_map([], |row| {
-        Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, Option<String>>(2)?,
+        ))
     }).map_err(|e| e.to_string())?;
-    let mut running = std::collections::HashSet::new();
-    let mut all_in_db = std::collections::HashSet::new();
+    let mut activities = std::collections::HashMap::new();
     for r in rows {
-        let (path, kind) = r.map_err(|e| e.to_string())?;
+        let (path, kind, summary_data) = r.map_err(|e| e.to_string())?;
         let fname = path.rsplit('/').next().unwrap_or(&path).to_owned();
-        all_in_db.insert(fname.clone());
-        if kind & 3 == 1 {
-            running.insert(fname);
-        }
+        let (active_seconds, calories) = summary_data
+            .as_ref()
+            .map_or((None, None), |s| parse_summary_data(s));
+        activities.insert(fname, GbActivityMeta {
+            is_running: kind & 3 == 1,
+            active_seconds,
+            calories,
+        });
     }
-    Ok(GbActivityFiles { running, all_in_db })
+    Ok(GbActivityFiles { activities })
 }
 
 /// Import a single parsed GPX file into the runs table.
+/// If `gb_meta` is provided, uses Gadgetbridge's `active_seconds` and calories.
 async fn import_gpx_run(
     name: &str,
     parsed: &mut ParsedRun,
+    gb_meta: Option<&GbActivityMeta>,
     pool: &sqlx::SqlitePool,
     http: &reqwest::Client,
 ) -> Result<(), String> {
+    // Use Gadgetbridge's active time and calories when available
+    if let Some(meta) = gb_meta {
+        if let Some(active_secs) = meta.active_seconds {
+            parsed.duration_s = active_secs;
+        }
+        if meta.calories.is_some() {
+            parsed.calories = meta.calories;
+        }
+    }
+
     // Fetch weather if not already set
     if parsed.weather_temp_c.is_none()
         && let Some(first) = parsed.route.first()
@@ -725,8 +826,8 @@ async fn import_gpx_run(
     sqlx::query(
         "INSERT INTO runs \
          (started_at, duration_s, distance_m, elevation_gain_m, avg_hr, max_hr, route_json, source_file, \
-          avg_cadence, avg_stride_m, weather_temp_c, weather_wind_kph, weather_precip_mm, weather_code) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
+          avg_cadence, avg_stride_m, weather_temp_c, weather_wind_kph, weather_precip_mm, weather_code, calories) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
          ON CONFLICT(source_file) WHERE source_file IS NOT NULL DO UPDATE SET \
            started_at        = excluded.started_at, \
            duration_s        = excluded.duration_s, \
@@ -740,7 +841,8 @@ async fn import_gpx_run(
            weather_temp_c    = COALESCE(runs.weather_temp_c,    excluded.weather_temp_c), \
            weather_wind_kph  = COALESCE(runs.weather_wind_kph,  excluded.weather_wind_kph), \
            weather_precip_mm = COALESCE(runs.weather_precip_mm, excluded.weather_precip_mm), \
-           weather_code      = COALESCE(runs.weather_code,      excluded.weather_code)",
+           weather_code      = COALESCE(runs.weather_code,      excluded.weather_code), \
+           calories          = excluded.calories",
     )
     .bind(&parsed.started_at)
     .bind(parsed.duration_s)
@@ -756,6 +858,7 @@ async fn import_gpx_run(
     .bind(parsed.weather_wind_kph)
     .bind(parsed.weather_precip_mm)
     .bind(parsed.weather_code)
+    .bind(parsed.calories)
     .execute(pool)
     .await
     .map_err(|e| format!("{name}: {e}"))?;
@@ -816,13 +919,27 @@ pub async fn perform_sync(state: &AppState) -> Result<SyncResult, String> {
     .await
     .map_err(|e| e.to_string())??;
 
+    // Load blocked source files (runs marked as invalid that should never be re-imported)
+    let blocked_files: std::collections::HashSet<String> = sqlx::query_scalar("SELECT source_file FROM blocked_runs")
+        .fetch_all(&state.pool)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .collect();
+
     let mut imported = 0usize;
     let mut errors: Vec<String> = Vec::new();
 
     for (name, bytes) in gpx_files {
+        // Skip files that have been blocked (marked as invalid)
+        if blocked_files.contains(&name) {
+            continue;
+        }
+
         // Check activity classification from Gadgetbridge DB
-        let is_running_in_db = activity_files.running.contains(&name);
-        let is_in_db = activity_files.all_in_db.contains(&name);
+        let gb_meta = activity_files.get_meta(&name);
+        let is_running_in_db = gb_meta.is_some_and(|m| m.is_running);
+        let is_in_db = gb_meta.is_some();
 
         // Skip files that are in the DB but not classified as running (e.g., cycling, walking)
         if is_in_db && !is_running_in_db {
@@ -840,7 +957,7 @@ pub async fn perform_sync(state: &AppState) -> Result<SyncResult, String> {
                 if !is_running_in_db && !is_running_activity(parsed.activity_type.as_deref()) {
                     continue;
                 }
-                match import_gpx_run(&name, &mut parsed, &state.pool, &state.http).await {
+                match import_gpx_run(&name, &mut parsed, gb_meta, &state.pool, &state.http).await {
                     Ok(()) => imported += 1,
                     Err(e) => errors.push(e),
                 }
@@ -942,9 +1059,14 @@ pub async fn sync_debug(
     .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
 
     let mut files = Vec::new();
+    let mut running_count = 0usize;
     for (name, bytes) in &gpx_files {
-        let is_running_in_db = activity_files.running.contains(name);
-        let is_in_db = activity_files.all_in_db.contains(name);
+        let gb_meta = activity_files.get_meta(name);
+        let is_in_db = gb_meta.is_some();
+        let is_running_in_db = gb_meta.is_some_and(|m| m.is_running);
+        if is_running_in_db {
+            running_count += 1;
+        }
         match parse_gpx(bytes) {
             Err(e) => {
                 files.push(SyncDebugFile {
@@ -977,7 +1099,7 @@ pub async fn sync_debug(
 
     Ok(Json(SyncDebugResult {
         total_gpx_files: gpx_files.len(),
-        running_filenames_in_db: activity_files.running.len(),
+        running_filenames_in_db: running_count,
         files,
     }))
 }
@@ -1084,7 +1206,9 @@ pub struct SetInvalidBody {
     pub is_invalid: bool,
 }
 
-/// Toggle the `is_invalid` flag on a run (keeps it in the DB so re-import won't duplicate it).
+/// Toggle the `is_invalid` flag on a run.
+/// When marking as invalid, also adds the source file to `blocked_runs` so it won't be
+/// re-imported even after a reset. When unmarking, removes from `blocked_runs`.
 ///
 /// # Errors
 /// Returns `NOT_FOUND` if the run doesn't exist, or a database error.
@@ -1093,14 +1217,36 @@ pub async fn set_invalid(
     Path(id): Path<i64>,
     Json(body): Json<SetInvalidBody>,
 ) -> AppResult<StatusCode> {
-    let rows = sqlx::query("UPDATE runs SET is_invalid = ? WHERE id = ?")
+    // Get the source_file for this run
+    let source_file: Option<String> = sqlx::query_scalar("SELECT source_file FROM runs WHERE id = ?")
+        .bind(id)
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    // Update the is_invalid flag
+    sqlx::query("UPDATE runs SET is_invalid = ? WHERE id = ?")
         .bind(body.is_invalid)
         .bind(id)
         .execute(&state.pool)
-        .await?
-        .rows_affected();
-    if rows == 0 {
-        return Err((StatusCode::NOT_FOUND, "Run not found".to_string()).into());
+        .await?;
+
+    // Add or remove from blocked_runs based on is_invalid
+    if let Some(src) = source_file {
+        if body.is_invalid {
+            // Block this file from future imports
+            sqlx::query("INSERT OR IGNORE INTO blocked_runs (source_file) VALUES (?)")
+                .bind(&src)
+                .execute(&state.pool)
+                .await?;
+        } else {
+            // Unblock this file
+            sqlx::query("DELETE FROM blocked_runs WHERE source_file = ?")
+                .bind(&src)
+                .execute(&state.pool)
+                .await?;
+        }
     }
+
     Ok(StatusCode::NO_CONTENT)
 }

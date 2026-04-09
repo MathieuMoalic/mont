@@ -243,18 +243,36 @@ class _HealthScreenState extends State<HealthScreen> {
 
   // ── Shared helpers ────────────────────────────────────────────────────────
 
-  FlTitlesData _axisTitles({required double yReserved}) => FlTitlesData(
+  // Format date string (YYYY-MM-DD) as DD/MM
+  static String _fmtDate(String dateStr) {
+    final date = DateTime.tryParse(dateStr);
+    if (date == null) return dateStr;
+    return '${date.day}/${date.month}';
+  }
+
+  FlTitlesData _axisTitlesWithDates({required double yReserved, required List<DailyHealth> days, double? yInterval}) => FlTitlesData(
     leftTitles: AxisTitles(
       sideTitles: SideTitles(
         showTitles: true,
         reservedSize: yReserved,
+        interval: yInterval,
         getTitlesWidget: (v, meta) {
-          if (v == meta.min || v == meta.max) return const SizedBox.shrink();
-          return Text(meta.formattedValue, style: const TextStyle(fontSize: 10));
+          return Text(v.toInt().toString(), style: const TextStyle(fontSize: 9));
         },
       ),
     ),
-    bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+    bottomTitles: AxisTitles(
+      sideTitles: SideTitles(
+        showTitles: true,
+        reservedSize: 20,
+        interval: days.length > 20 ? (days.length / 4).ceilToDouble() : (days.length > 10 ? 3 : 2),
+        getTitlesWidget: (v, _) {
+          final idx = v.toInt();
+          if (idx < 0 || idx >= days.length) return const SizedBox.shrink();
+          return Text(_fmtDate(days[idx].date), style: const TextStyle(fontSize: 8));
+        },
+      ),
+    ),
     rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
     topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
   );
@@ -445,18 +463,17 @@ class _HealthScreenState extends State<HealthScreen> {
     final minSpots = indexed.map((e) => FlSpot(e.key.toDouble(), (e.value.minHr ?? e.value.avgHr!).toDouble())).toList();
     final maxSpots = indexed.map((e) => FlSpot(e.key.toDouble(), (e.value.maxHr ?? e.value.avgHr!).toDouble())).toList();
     final allHr = hrDays.expand((d) => [d.minHr ?? d.avgHr!, d.maxHr ?? d.avgHr!]).map((v) => v.toDouble());
-    final minY = (allHr.reduce((a, b) => a < b ? a : b) - 5).clamp(0, 300).toDouble();
-    final maxY = allHr.reduce((a, b) => a > b ? a : b) + 5;
+    final maxY = ((allHr.reduce((a, b) => a > b ? a : b) + 10) / 20).ceil() * 20.0;
     final scheme = Theme.of(context).colorScheme;
     return _chartSection(
       label: 'Heart Rate (bpm)',
       height: 160,
       action: _detailsBtn(() => _showHrDetails(hrDays)),
       child: LineChart(LineChartData(
-        minY: minY, maxY: maxY,
-        gridData: FlGridData(show: false),
+        minY: 0, maxY: maxY,
+        gridData: FlGridData(show: true, horizontalInterval: 40, verticalInterval: 1000),
         borderData: FlBorderData(show: false),
-        titlesData: _axisTitles(yReserved: 44),
+        titlesData: _axisTitlesWithDates(yReserved: 36, days: hrDays, yInterval: 40),
         lineTouchData: _intTooltip(hrDays),
         lineBarsData: [
           LineChartBarData(spots: minSpots, isCurved: true, color: scheme.primary.withValues(alpha: 0.45), dotData: FlDotData(show: false), barWidth: 1.5, dashArray: [4, 4]),
@@ -475,19 +492,16 @@ class _HealthScreenState extends State<HealthScreen> {
     }
     final indexed = hrvDays.asMap().entries.toList();
     final spots = indexed.map((e) => FlSpot(e.key.toDouble(), e.value.hrvRmssd!)).toList();
-    final values = hrvDays.map((d) => d.hrvRmssd!);
-    final minY = (values.reduce((a, b) => a < b ? a : b) - 2).clamp(0, 9999).toDouble();
-    final maxY = values.reduce((a, b) => a > b ? a : b) + 2;
     final scheme = Theme.of(context).colorScheme;
     return _chartSection(
       label: 'HRV (ms)',
       height: 120,
       action: _detailsBtn(() => _showHrvDetails(hrvDays)),
       child: LineChart(LineChartData(
-        minY: minY, maxY: maxY,
-        gridData: FlGridData(show: false),
+        minY: 0, maxY: 180,
+        gridData: FlGridData(show: true, horizontalInterval: 30, verticalInterval: 1000),
         borderData: FlBorderData(show: false),
-        titlesData: _axisTitles(yReserved: 44),
+        titlesData: _axisTitlesWithDates(yReserved: 36, days: hrvDays, yInterval: 30),
         lineTouchData: _intTooltip(hrvDays),
         lineBarsData: [
           LineChartBarData(
@@ -506,27 +520,29 @@ class _HealthScreenState extends State<HealthScreen> {
       return _chartSection(label: 'Steps per day', height: 48,
           child: const Center(child: Text('No steps data in range', style: TextStyle(fontSize: 12))));
     }
+    final indexed = stepDays.asMap().entries.toList();
+    final spots = indexed.map((e) => FlSpot(e.key.toDouble(), e.value.steps!.toDouble())).toList();
+    final maxSteps = stepDays.map((d) => d.steps!.toDouble()).reduce((a, b) => a > b ? a : b);
+    final maxY = ((maxSteps + 2000) / 5000).ceil() * 5000.0;
+    final yInterval = maxY > 20000 ? 10000.0 : 5000.0;
     final scheme = Theme.of(context).colorScheme;
-    final bars = stepDays.asMap().entries.map((e) => BarChartGroupData(
-      x: e.key,
-      barRods: [BarChartRodData(
-        toY: e.value.steps!.toDouble(), color: scheme.secondary,
-        width: stepDays.length > 60 ? 2 : 5,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(2)),
-      )],
-    )).toList();
-    final maxY = stepDays.map((d) => d.steps!.toDouble()).reduce((a, b) => a > b ? a : b) * 1.1;
     return _chartSection(
       label: 'Steps per day',
       height: 120,
       action: _detailsBtn(() => _showStepsDetails(stepDays)),
-      child: BarChart(BarChartData(
-        maxY: maxY,
-        gridData: FlGridData(show: false),
+      child: LineChart(LineChartData(
+        minY: 0, maxY: maxY,
+        gridData: FlGridData(show: true, horizontalInterval: yInterval, verticalInterval: 1000),
         borderData: FlBorderData(show: false),
-        titlesData: _axisTitles(yReserved: 52),
-        barGroups: bars,
-        barTouchData: BarTouchData(enabled: false),
+        titlesData: _axisTitlesWithDates(yReserved: 44, days: stepDays, yInterval: yInterval),
+        lineTouchData: _intTooltip(stepDays),
+        lineBarsData: [
+          LineChartBarData(
+            spots: spots, isCurved: true, color: scheme.secondary,
+            dotData: FlDotData(show: false), barWidth: 2,
+            belowBarData: BarAreaData(show: true, color: scheme.secondary.withValues(alpha: 0.10)),
+          ),
+        ],
       )),
     );
   }
@@ -546,26 +562,36 @@ class _HealthScreenState extends State<HealthScreen> {
     final ws = weights.map((w) => w.weightKg);
     final minW = ws.reduce((a, b) => a < b ? a : b);
     final maxW = ws.reduce((a, b) => a > b ? a : b);
-    final pad = (maxW - minW) < 1 ? 1.0 : (maxW - minW) * 0.15;
+    final minY = (minW - 2).floorToDouble();
+    final maxY = (maxW + 2).ceilToDouble();
     final scheme = Theme.of(context).colorScheme;
     return _chartSection(
       label: 'Body Mass (kg)',
       height: 160,
       action: _detailsBtn(() => _showWeightDetails(weights)),
       child: LineChart(LineChartData(
-        minY: (minW - pad).floorToDouble(),
-        maxY: (maxW + pad).ceilToDouble(),
-        gridData: FlGridData(show: false),
+        minY: minY,
+        maxY: maxY,
+        gridData: FlGridData(show: true, horizontalInterval: 2, verticalInterval: 1000),
         borderData: FlBorderData(show: false),
         titlesData: FlTitlesData(
           leftTitles: AxisTitles(sideTitles: SideTitles(
-            showTitles: true, reservedSize: 44,
+            showTitles: true, reservedSize: 36, interval: 2,
             getTitlesWidget: (v, meta) {
-              if (v == meta.min || v == meta.max) return const SizedBox.shrink();
-              return Text(v.toStringAsFixed(1), style: const TextStyle(fontSize: 10));
+              return Text(v.toInt().toString(), style: const TextStyle(fontSize: 9));
             },
           )),
-          bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          bottomTitles: AxisTitles(sideTitles: SideTitles(
+            showTitles: true,
+            reservedSize: 20,
+            interval: weights.length > 20 ? (weights.length / 4).ceilToDouble() : (weights.length > 10 ? 3 : 2),
+            getTitlesWidget: (v, _) {
+              final idx = v.toInt();
+              if (idx < 0 || idx >= weights.length) return const SizedBox.shrink();
+              final d = weights[idx].measuredAt.toLocal();
+              return Text('${d.day}/${d.month}', style: const TextStyle(fontSize: 8));
+            },
+          )),
           rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
           topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
         ),
