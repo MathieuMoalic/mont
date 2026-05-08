@@ -6,7 +6,6 @@ import '../models.dart';
 import 'active_workout_screen.dart';
 import 'exercise_history_screen.dart';
 import 'login_page.dart';
-import 'workout_heatmap_screen.dart';
 
 class WorkoutsScreen extends StatefulWidget {
   const WorkoutsScreen({super.key});
@@ -18,6 +17,11 @@ class WorkoutsScreen extends StatefulWidget {
 class _WorkoutsScreenState extends State<WorkoutsScreen> {
   List<WorkoutSummary>? _workouts;
   String? _error;
+  DateTime _visibleMonth = DateTime(
+    DateTime.now().year,
+    DateTime.now().month,
+    1,
+  );
 
   @override
   void initState() {
@@ -28,7 +32,12 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
   Future<void> _load() async {
     try {
       final workouts = await api.listWorkouts();
-      if (mounted) setState(() { _workouts = workouts; _error = null; });
+      if (mounted) {
+        setState(() {
+          _workouts = workouts;
+          _error = null;
+        });
+      }
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     }
@@ -40,13 +49,16 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
       if (!mounted) return;
       await Navigator.push<void>(
         context,
-        MaterialPageRoute(builder: (_) => ActiveWorkoutScreen(workoutId: summary.id)),
+        MaterialPageRoute(
+          builder: (_) => ActiveWorkoutScreen(workoutId: summary.id),
+        ),
       );
       _load();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(e.toString())));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.toString())));
       }
     }
   }
@@ -61,40 +73,109 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
     }
   }
 
-  String _duration(WorkoutSummary w) {
-    final end = w.finishedAt ?? DateTime.now();
-    final d = end.difference(w.startedAt);
+  Duration _sessionDuration(WorkoutSummary w) {
+    final end = w.finishedAt ?? w.startedAt;
+    return end.difference(w.startedAt);
+  }
+
+  String _durationText(Duration d) {
     final h = d.inHours;
     final m = d.inMinutes % 60;
-    return h > 0 ? '${h}h ${m}m' : '${m}m';
+    return h > 0 ? '${h}h ${m}m' : '${d.inMinutes}m';
   }
 
-  String _formatDate(DateTime utc) {
+  DateTime _dayKey(DateTime utc) {
+    final local = utc.toLocal();
+    return DateTime(local.year, local.month, local.day);
+  }
+
+  Map<DateTime, List<WorkoutSummary>> _workoutsByDay() {
+    final byDay = <DateTime, List<WorkoutSummary>>{};
+    for (final w in _workouts!) {
+      final key = _dayKey(w.startedAt);
+      (byDay[key] ??= []).add(w);
+    }
+    for (final sessions in byDay.values) {
+      sessions.sort((a, b) => b.startedAt.compareTo(a.startedAt));
+    }
+    return byDay;
+  }
+
+  String _monthLabel(DateTime d) {
+    const monthNames = [
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
+    ];
+    return '${monthNames[d.month - 1]} ${d.year}';
+  }
+
+  String _clock(DateTime utc) {
     final d = utc.toLocal();
-    final now = DateTime.now();
-    final h = d.hour.toString().padLeft(2, '0');
-    final min = d.minute.toString().padLeft(2, '0');
-    final time = '$h:$min';
-    if (d.year == now.year && d.month == now.month && d.day == now.day) {
-      return 'Today, $time';
-    }
-    final yest = now.subtract(const Duration(days: 1));
-    if (d.year == yest.year && d.month == yest.month && d.day == yest.day) {
-      return 'Yesterday, $time';
-    }
-    return '${d.day}/${d.month}/${d.year}, $time';
+    final hh = d.hour.toString().padLeft(2, '0');
+    final mm = d.minute.toString().padLeft(2, '0');
+    return '$hh:$mm';
   }
 
-  Future<void> _deleteWorkout(int id) async {
-    try {
-      await api.deleteWorkout(id);
+  Future<void> _openDaySessions(
+    DateTime day,
+    List<WorkoutSummary> sessions,
+  ) async {
+    if (sessions.length == 1) {
+      await Navigator.push<void>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ActiveWorkoutScreen(workoutId: sessions.first.id),
+        ),
+      );
       _load();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(e.toString())));
-      }
+      return;
     }
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) {
+        return SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              ListTile(
+                title: Text('${day.day}/${day.month}/${day.year}'),
+                subtitle: Text('${sessions.length} sessions'),
+              ),
+              ...sessions.map((w) {
+                final duration = _durationText(_sessionDuration(w));
+                return ListTile(
+                  title: Text(
+                    '${w.setCount} set${w.setCount == 1 ? '' : 's'} · $duration',
+                  ),
+                  subtitle: Text(_clock(w.startedAt)),
+                  onTap: () async {
+                    Navigator.pop(ctx);
+                    await Navigator.push<void>(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ActiveWorkoutScreen(workoutId: w.id),
+                      ),
+                    );
+                    _load();
+                  },
+                );
+              }),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -109,14 +190,6 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
             onPressed: () => Navigator.push<void>(
               context,
               MaterialPageRoute(builder: (_) => const ExerciseHistoryScreen()),
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.grid_view),
-            tooltip: 'Workout heatmap',
-            onPressed: () => Navigator.push<void>(
-              context,
-              MaterialPageRoute(builder: (_) => const WorkoutHeatmapScreen()),
             ),
           ),
           IconButton(
@@ -147,7 +220,9 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
         ),
       );
     }
-    if (_workouts == null) return const Center(child: CircularProgressIndicator());
+    if (_workouts == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
     if (_workouts!.isEmpty) {
       return const Center(
         child: Text(
@@ -158,78 +233,212 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
     }
     return RefreshIndicator(
       onRefresh: _load,
-      child: ListView.builder(
+      child: ListView(
         padding: const EdgeInsets.only(bottom: 80),
-        itemCount: _workouts!.length,
-        itemBuilder: (ctx, i) {
-          final w = _workouts![i];
-          return Dismissible(
-            key: ValueKey(w.id),
-            direction: DismissDirection.endToStart,
-            background: Container(
-              alignment: Alignment.centerRight,
-              padding: const EdgeInsets.only(right: 20),
-              color: Theme.of(context).colorScheme.error,
-              child: const Icon(Icons.delete_outline, color: Colors.white),
-            ),
-            confirmDismiss: (_) => showDialog<bool>(
-              context: context,
-              builder: (ctx) => AlertDialog(
-                title: const Text('Delete workout?'),
-                content: const Text('This cannot be undone.'),
-                actions: [
-                  TextButton(
-                      onPressed: () => Navigator.pop(ctx, false),
-                      child: const Text('Cancel')),
-                  FilledButton(
-                      onPressed: () => Navigator.pop(ctx, true),
-                      child: const Text('Delete')),
-                ],
+        children: [_buildCalendar()],
+      ),
+    );
+  }
+
+  Widget _buildCalendar() {
+    final byDay = _workoutsByDay();
+    final firstOfMonth = DateTime(_visibleMonth.year, _visibleMonth.month, 1);
+    final daysInMonth = DateTime(
+      _visibleMonth.year,
+      _visibleMonth.month + 1,
+      0,
+    ).day;
+    final leadingBlanks = firstOfMonth.weekday - 1; // Monday-first
+    final cellCount = ((leadingBlanks + daysInMonth + 6) ~/ 7) * 7;
+    const weekdays = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+    final today = _dayKey(DateTime.now());
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              IconButton(
+                onPressed: () {
+                  setState(() {
+                    _visibleMonth = DateTime(
+                      _visibleMonth.year,
+                      _visibleMonth.month - 1,
+                      1,
+                    );
+                  });
+                },
+                icon: const Icon(Icons.chevron_left),
               ),
-            ),
-            onDismissed: (_) => _deleteWorkout(w.id),
-            child: ListTile(
-            leading: Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: w.isActive
-                    ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.2)
-                    : Theme.of(context).colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(8),
+              Expanded(
+                child: Center(
+                  child: Text(
+                    _monthLabel(_visibleMonth),
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
               ),
-              child: Center(
-                child: w.isActive
-                    ? Icon(Icons.fitness_center, color: Theme.of(context).colorScheme.primary)
-                    : Text(
-                        '${w.setCount}',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 18,
-                          color: Theme.of(context).colorScheme.onSurface,
+              IconButton(
+                onPressed: () {
+                  setState(() {
+                    _visibleMonth = DateTime(
+                      _visibleMonth.year,
+                      _visibleMonth.month + 1,
+                      1,
+                    );
+                  });
+                },
+                icon: const Icon(Icons.chevron_right),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              for (final day in weekdays)
+                Expanded(
+                  child: Center(
+                    child: Text(
+                      day,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              const spacing = 4.0;
+              final cellWidth = (constraints.maxWidth - (spacing * 6)) / 7;
+              final cellHeight = (cellWidth * 1.05).clamp(54.0, 74.0);
+              final aspectRatio = cellWidth / cellHeight;
+
+              return GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 7,
+                  crossAxisSpacing: spacing,
+                  mainAxisSpacing: spacing,
+                  childAspectRatio: aspectRatio,
+                ),
+                itemCount: cellCount,
+                itemBuilder: (ctx, index) {
+                  final dayNum = index - leadingBlanks + 1;
+                  if (dayNum < 1 || dayNum > daysInMonth) {
+                    return Container(
+                      decoration: BoxDecoration(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.surfaceContainerLowest,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    );
+                  }
+
+                  final day = DateTime(
+                    _visibleMonth.year,
+                    _visibleMonth.month,
+                    dayNum,
+                  );
+                  final sessions = byDay[day] ?? [];
+                  final hasSession = sessions.isNotEmpty;
+                  final totalSets = sessions.fold<int>(
+                    0,
+                    (sum, w) => sum + w.setCount,
+                  );
+                  final totalDuration = sessions.fold<Duration>(
+                    Duration.zero,
+                    (sum, w) => sum + _sessionDuration(w),
+                  );
+                  final isToday = day == today;
+                  final colors = Theme.of(context).colorScheme;
+                  final cellColor = isToday
+                      ? colors.tertiaryContainer
+                      : hasSession
+                      ? colors.primaryContainer
+                      : colors.surfaceContainerLow;
+                  final textColor = hasSession
+                      ? colors.onPrimaryContainer
+                      : colors.onSurface;
+
+                  return Material(
+                    color: cellColor,
+                    borderRadius: BorderRadius.circular(10),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(10),
+                      onTap: hasSession
+                          ? () => _openDaySessions(day, sessions)
+                          : null,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(10),
+                          border: isToday
+                              ? Border.all(color: colors.tertiary, width: 1.8)
+                              : null,
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(4, 4, 4, 3),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 5,
+                                  vertical: 1,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: isToday
+                                      ? colors.tertiary
+                                      : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: Text(
+                                  '$dayNum',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: isToday
+                                        ? colors.onTertiary
+                                        : textColor,
+                                  ),
+                                ),
+                              ),
+                              const Spacer(),
+                              if (hasSession) ...[
+                                Text(
+                                  '$totalSets sets',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700,
+                                    height: 1.05,
+                                  ).copyWith(color: textColor),
+                                ),
+                                Text(
+                                  _durationText(totalDuration),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 10,
+                                    height: 1.05,
+                                  ).copyWith(color: textColor),
+                                ),
+                              ],
+                            ],
+                          ),
                         ),
                       ),
-              ),
-            ),
-            title: Text(_formatDate(w.startedAt)),
-            subtitle: Text(
-              w.isActive
-                  ? '${w.setCount} set${w.setCount == 1 ? '' : 's'} · ${_duration(w)}'
-                  : _duration(w) + (w.notes != null && w.notes!.isNotEmpty ? '\n${w.notes}' : ''),
-            ),
-            isThreeLine: !w.isActive && w.notes != null && w.notes!.isNotEmpty,
-            onTap: () async {
-              await Navigator.push<void>(
-                ctx,
-                MaterialPageRoute(
-                  builder: (_) => ActiveWorkoutScreen(workoutId: w.id),
-                ),
+                    ),
+                  );
+                },
               );
-              _load();
             },
           ),
-          );
-        },
+        ],
       ),
     );
   }

@@ -101,8 +101,9 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
     } catch (e) {
       if (mounted) {
         final msg = e.toString().replaceFirst('Exception: ', '');
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(msg)));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(msg)));
       }
     }
   }
@@ -127,8 +128,9 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
     } catch (e) {
       if (mounted) {
         final msg = e.toString().replaceFirst('Exception: ', '');
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(msg)));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(msg)));
       }
     }
   }
@@ -144,64 +146,92 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
     String? selectedMuscleGroup = initialMuscleGroup;
     String? selectedEquipment = initialEquipment;
     const muscleGroups = [
-      'Chest', 'Back', 'Shoulders', 'Biceps', 'Triceps',
-      'Core', 'Quads', 'Hamstrings', 'Glutes', 'Calves',
-      'Full Body', 'Cardio',
+      'Chest',
+      'Back',
+      'Shoulders',
+      'Biceps',
+      'Triceps',
+      'Core',
+      'Quads',
+      'Hamstrings',
+      'Glutes',
+      'Calves',
+      'Full Body',
+      'Cardio',
     ];
     const equipment = [
-      'Barbell', 'Dumbbell', 'Machine', 'Cable', 'Smith',
-      'Bodyweight', 'Kettlebell', 'Band',
+      'Barbell',
+      'Dumbbell',
+      'Machine',
+      'Cable',
+      'Smith',
+      'Bodyweight',
+      'Kettlebell',
+      'Band',
     ];
     return showDialog<(String, String?, String?)>(
       context: context,
       builder: (ctx) {
-        return StatefulBuilder(builder: (ctx, setSt) {
-          return AlertDialog(
-            title: Text(title),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: ctrl,
-                    autofocus: true,
-                    textCapitalization: TextCapitalization.words,
-                    decoration: const InputDecoration(labelText: 'Name'),
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    initialValue: selectedMuscleGroup,
-                    hint: const Text('Muscle group (optional)'),
-                    decoration: const InputDecoration(labelText: 'Muscle group'),
-                    items: muscleGroups
-                        .map((g) => DropdownMenuItem(value: g, child: Text(g)))
-                        .toList(),
-                    onChanged: (v) => setSt(() => selectedMuscleGroup = v),
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    initialValue: selectedEquipment,
-                    hint: const Text('Equipment (optional)'),
-                    decoration: const InputDecoration(labelText: 'Equipment'),
-                    items: equipment
-                        .map((e) => DropdownMenuItem(value: e, child: Text(e)))
-                        .toList(),
-                    onChanged: (v) => setSt(() => selectedEquipment = v),
-                  ),
-                ],
+        return StatefulBuilder(
+          builder: (ctx, setSt) {
+            return AlertDialog(
+              title: Text(title),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: ctrl,
+                      autofocus: true,
+                      textCapitalization: TextCapitalization.words,
+                      decoration: const InputDecoration(labelText: 'Name'),
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      initialValue: selectedMuscleGroup,
+                      hint: const Text('Muscle group (optional)'),
+                      decoration: const InputDecoration(
+                        labelText: 'Muscle group',
+                      ),
+                      items: muscleGroups
+                          .map(
+                            (g) => DropdownMenuItem(value: g, child: Text(g)),
+                          )
+                          .toList(),
+                      onChanged: (v) => setSt(() => selectedMuscleGroup = v),
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      initialValue: selectedEquipment,
+                      hint: const Text('Equipment (optional)'),
+                      decoration: const InputDecoration(labelText: 'Equipment'),
+                      items: equipment
+                          .map(
+                            (e) => DropdownMenuItem(value: e, child: Text(e)),
+                          )
+                          .toList(),
+                      onChanged: (v) => setSt(() => selectedEquipment = v),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            actions: [
-              TextButton(
+              actions: [
+                TextButton(
                   onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Cancel')),
-              FilledButton(
-                  onPressed: () => Navigator.pop(
-                      ctx, (ctrl.text.trim(), selectedMuscleGroup, selectedEquipment)),
-                  child: const Text('Save')),
-            ],
-          );
-        });
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(ctx, (
+                    ctrl.text.trim(),
+                    selectedMuscleGroup,
+                    selectedEquipment,
+                  )),
+                  child: const Text('Save'),
+                ),
+              ],
+            );
+          },
+        );
       },
     ).whenComplete(() => ctrl.dispose());
   }
@@ -315,56 +345,64 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (muscleGroups.isNotEmpty)
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
+            Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              child: Row(
+              child: Wrap(
+                spacing: 6,
+                runSpacing: 6,
                 children: [
                   FilterChip(
                     label: const Text('All muscles'),
                     selected: _muscleFilter == null,
-                    onSelected: (_) =>
-                        setState(() { _muscleFilter = null; _filter(); }),
+                    onSelected: (_) => setState(() {
+                      _muscleFilter = null;
+                      _filter();
+                    }),
                   ),
-                  ...muscleGroups.map((g) => Padding(
-                        padding: const EdgeInsets.only(left: 6),
-                        child: FilterChip(
-                          label: Text(g),
-                          selected: _muscleFilter == g,
-                          backgroundColor: MontColors.getMuscleColor(g),
-                          selectedColor: MontColors.getMuscleAccent(g),
-                          side: BorderSide(
-                            color: MontColors.getMuscleAccent(g),
-                            width: _muscleFilter == g ? 2 : 1,
-                          ),
-                          onSelected: (_) =>
-                              setState(() { _muscleFilter = g; _filter(); }),
-                        ),
-                      )),
+                  ...muscleGroups.map(
+                    (g) => FilterChip(
+                      label: Text(g),
+                      selected: _muscleFilter == g,
+                      backgroundColor: MontColors.getMuscleColor(g),
+                      selectedColor: MontColors.getMuscleAccent(g),
+                      side: BorderSide(
+                        color: MontColors.getMuscleAccent(g),
+                        width: _muscleFilter == g ? 2 : 1,
+                      ),
+                      onSelected: (_) => setState(() {
+                        _muscleFilter = g;
+                        _filter();
+                      }),
+                    ),
+                  ),
                 ],
               ),
             ),
           if (equipmentList.isNotEmpty)
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
+            Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              child: Row(
+              child: Wrap(
+                spacing: 6,
+                runSpacing: 6,
                 children: [
                   FilterChip(
                     label: const Text('All equipment'),
                     selected: _equipmentFilter == null,
-                    onSelected: (_) =>
-                        setState(() { _equipmentFilter = null; _filter(); }),
+                    onSelected: (_) => setState(() {
+                      _equipmentFilter = null;
+                      _filter();
+                    }),
                   ),
-                  ...equipmentList.map((e) => Padding(
-                        padding: const EdgeInsets.only(left: 6),
-                        child: FilterChip(
-                          label: Text(e),
-                          selected: _equipmentFilter == e,
-                          onSelected: (_) =>
-                              setState(() { _equipmentFilter = e; _filter(); }),
-                        ),
-                      )),
+                  ...equipmentList.map(
+                    (e) => FilterChip(
+                      label: Text(e),
+                      selected: _equipmentFilter == e,
+                      onSelected: (_) => setState(() {
+                        _equipmentFilter = e;
+                        _filter();
+                      }),
+                    ),
+                  ),
                 ],
               ),
             ),

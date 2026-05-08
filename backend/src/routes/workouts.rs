@@ -1,7 +1,7 @@
 use axum::{
+    Json,
     extract::{Path, Query, State},
     http::StatusCode,
-    Json,
 };
 use serde::{Deserialize, Serialize};
 
@@ -71,12 +71,15 @@ pub async fn list_workouts(
     Query(pagination): Query<Pagination>,
 ) -> AppResult<Json<Vec<WorkoutSummary>>> {
     let workouts = sqlx::query_as::<_, WorkoutSummary>(
-        r"SELECT w.id, w.started_at, w.finished_at, w.notes,
+        r"SELECT w.id,
+                  COALESCE(MIN(s.logged_at), w.started_at) as started_at,
+                  MAX(s.logged_at) as finished_at,
+                  w.notes,
                   COUNT(s.id) as set_count
            FROM workouts w
            LEFT JOIN workout_sets s ON s.workout_id = w.id
            GROUP BY w.id
-           ORDER BY w.started_at DESC
+           ORDER BY COALESCE(MAX(s.logged_at), w.started_at) DESC
            LIMIT ? OFFSET ?",
     )
     .bind(pagination.limit)
@@ -213,13 +216,25 @@ pub async fn add_set(
     Json(body): Json<AddSet>,
 ) -> AppResult<(StatusCode, Json<WorkoutSetRow>)> {
     if body.set_number <= 0 {
-        return Err((StatusCode::BAD_REQUEST, "Set number must be positive".to_string()).into());
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Set number must be positive".to_string(),
+        )
+            .into());
     }
     if body.reps < 0 {
-        return Err((StatusCode::BAD_REQUEST, "Reps cannot be negative".to_string()).into());
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Reps cannot be negative".to_string(),
+        )
+            .into());
     }
     if body.weight_kg < 0.0 {
-        return Err((StatusCode::BAD_REQUEST, "Weight cannot be negative".to_string()).into());
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Weight cannot be negative".to_string(),
+        )
+            .into());
     }
     let set = sqlx::query_as::<_, WorkoutSetRow>(
         r"INSERT INTO workout_sets (workout_id, exercise_id, set_number, reps, weight_kg)
@@ -304,12 +319,20 @@ pub async fn update_set(
     if let Some(reps) = body.reps
         && reps < 0
     {
-        return Err((StatusCode::BAD_REQUEST, "Reps cannot be negative".to_string()).into());
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Reps cannot be negative".to_string(),
+        )
+            .into());
     }
     if let Some(weight) = body.weight_kg
         && weight < 0.0
     {
-        return Err((StatusCode::BAD_REQUEST, "Weight cannot be negative".to_string()).into());
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Weight cannot be negative".to_string(),
+        )
+            .into());
     }
 
     let set = sqlx::query_as::<_, WorkoutSetRow>(

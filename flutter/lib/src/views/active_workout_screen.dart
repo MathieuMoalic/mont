@@ -27,10 +27,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   @override
   void dispose() {
     _scrollCtrl.dispose();
-    // Auto-finish workout when leaving the screen
-    if (_workout != null && _workout!.sets.isNotEmpty) {
-      api.finishWorkout(widget.workoutId).catchError((_) {});
-    }
     super.dispose();
   }
 
@@ -38,7 +34,10 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     try {
       final w = await api.getWorkout(widget.workoutId);
       if (mounted) {
-        setState(() { _workout = w; _error = null; });
+        setState(() {
+          _workout = w;
+          _error = null;
+        });
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (_scrollCtrl.hasClients) {
             _scrollCtrl.animateTo(
@@ -61,8 +60,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     );
     if (exercise == null || !mounted) return;
 
-    final setsForExercise =
-        _workout!.sets.where((s) => s.exerciseId == exercise.id).toList();
+    final setsForExercise = _workout!.sets
+        .where((s) => s.exerciseId == exercise.id)
+        .toList();
     final setNum = setsForExercise.length + 1;
 
     // Pre-fill with last logged values for this exercise
@@ -84,8 +84,12 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     }
     if (!mounted) return;
 
-    final result = await _showAddSetDialog(exercise.name, setNum,
-        defaultReps: defaultReps, defaultWeight: defaultWeight);
+    final result = await _showAddSetDialog(
+      exercise.name,
+      setNum,
+      defaultReps: defaultReps,
+      defaultWeight: defaultWeight,
+    );
     if (result == null || !mounted) return;
 
     try {
@@ -99,14 +103,19 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       _load();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(e.toString())));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.toString())));
       }
     }
   }
 
-  Future<(int, double)?> _showAddSetDialog(String exerciseName, int setNum,
-      {int defaultReps = 8, double defaultWeight = 0}) {
+  Future<(int, double)?> _showAddSetDialog(
+    String exerciseName,
+    int setNum, {
+    int defaultReps = 8,
+    double defaultWeight = 0,
+  }) {
     String _fmt(double v) =>
         v % 1 == 0 ? v.toInt().toString() : v.toStringAsFixed(1);
     final repsCtrl = TextEditingController(text: defaultReps.toString());
@@ -129,29 +138,37 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Set $setNum',
-                style: Theme.of(ctx).textTheme.titleSmall),
+            Text('Set $setNum', style: Theme.of(ctx).textTheme.titleSmall),
             const SizedBox(height: 16),
-            _counterRow('Weight (kg)', weightCtrl,
-                onDec: () => bump(weightCtrl, -1),
-                onInc: () => bump(weightCtrl, 1),
-                decimal: true),
+            _counterRow(
+              'Weight (kg)',
+              weightCtrl,
+              onDec: () => bump(weightCtrl, -1),
+              onInc: () => bump(weightCtrl, 1),
+              decimal: true,
+            ),
             const SizedBox(height: 8),
-            _counterRow('Reps', repsCtrl,
-                onDec: () => bump(repsCtrl, -1),
-                onInc: () => bump(repsCtrl, 1),
-                decimal: false),
+            _counterRow(
+              'Reps',
+              repsCtrl,
+              onDec: () => bump(repsCtrl, -1),
+              onInc: () => bump(repsCtrl, 1),
+              decimal: false,
+            ),
           ],
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel')),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
           FilledButton(
             onPressed: () {
               final reps = (int.tryParse(repsCtrl.text) ?? 1).clamp(1, 9999);
-              final weight =
-                  (double.tryParse(weightCtrl.text) ?? 0).clamp(0.0, 9999.0);
+              final weight = (double.tryParse(weightCtrl.text) ?? 0).clamp(
+                0.0,
+                9999.0,
+              );
               Navigator.pop(ctx, (reps, weight));
             },
             child: const Text('Log Set'),
@@ -195,8 +212,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       _load();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(e.toString())));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.toString())));
       }
     }
   }
@@ -222,11 +240,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           _workout == null ? 'Workout' : _formatDate(_workout!.startedAt),
         ),
       ),
-      body: Column(
-        children: [
-          Expanded(child: _buildBody()),
-        ],
-      ),
+      body: Column(children: [Expanded(child: _buildBody())]),
       floatingActionButton: FloatingActionButton(
         onPressed: _addSet,
         child: const Icon(Icons.add),
@@ -246,7 +260,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         ),
       );
     }
-    if (_workout == null) return const Center(child: CircularProgressIndicator());
+    if (_workout == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
     if (_workout!.sets.isEmpty) {
       return const Center(
         child: Text(
@@ -292,52 +308,64 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                       ),
                     ),
                     if (muscleGroup != null)
-                    Text(
-                      muscleGroup,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: MontColors.textSecondary.withValues(alpha: 0.7),
-                        fontSize: 11,
+                      Text(
+                        muscleGroup,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: MontColors.textSecondary.withValues(
+                            alpha: 0.7,
+                          ),
+                          fontSize: 11,
+                        ),
                       ),
-                    ),
-                ],
-              ),
-            ),
-            ...sets.map(
-              (s) => Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 1),
-                child: Row(
-                  children: [
-                    SizedBox(
-                      width: 44,
-                      child: Text('S${s.setNumber}',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant)),
-                    ),
-                    Expanded(
-                      child: Text(
-                        _setDisplay(s.weightKg, s.reps),
-                        style: theme.textTheme.bodyMedium,
-                      ),
-                    ),
-                    Text(
-                      '${s.loggedAt.toLocal().hour.toString().padLeft(2, '0')}:${s.loggedAt.toLocal().minute.toString().padLeft(2, '0')}',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant),
-                    ),
-                    const SizedBox(width: 8),
-                    InkWell(
-                      onTap: () => _deleteSet(s.id),
-                      borderRadius: BorderRadius.circular(12),
-                      child: Padding(
-                        padding: const EdgeInsets.all(6),
-                        child: Icon(Icons.close, size: 14,
-                            color: theme.colorScheme.onSurfaceVariant),
-                      ),
-                    ),
                   ],
                 ),
               ),
-            ),
+              ...sets.map(
+                (s) => Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 1,
+                  ),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 44,
+                        child: Text(
+                          'S${s.setNumber}',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: Text(
+                          _setDisplay(s.weightKg, s.reps),
+                          style: theme.textTheme.bodyMedium,
+                        ),
+                      ),
+                      Text(
+                        '${s.loggedAt.toLocal().hour.toString().padLeft(2, '0')}:${s.loggedAt.toLocal().minute.toString().padLeft(2, '0')}',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      InkWell(
+                        onTap: () => _deleteSet(s.id),
+                        borderRadius: BorderRadius.circular(12),
+                        child: Padding(
+                          padding: const EdgeInsets.all(6),
+                          child: Icon(
+                            Icons.close,
+                            size: 14,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
               const SizedBox(height: 6),
             ],
           ),
