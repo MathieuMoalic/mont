@@ -176,23 +176,23 @@ pub async fn update_exercise_categories(
         .execute(&mut *tx)
         .await?;
 
-    for (idx, mg) in body.muscle_groups.iter().enumerate() {
+    for (sort_order, mg) in (0_i64..).zip(body.muscle_groups.iter()) {
         sqlx::query(
             "INSERT INTO exercise_categories (kind, name, color_hex, sort_order) VALUES ('muscle_group', ?, ?, ?)",
         )
         .bind(mg.name.trim())
         .bind(mg.color_hex.as_deref())
-        .bind(idx as i64)
+        .bind(sort_order)
         .execute(&mut *tx)
         .await?;
     }
 
-    for (idx, eq) in body.equipment.iter().enumerate() {
+    for (sort_order, eq) in (0_i64..).zip(body.equipment.iter()) {
         sqlx::query(
             "INSERT INTO exercise_categories (kind, name, color_hex, sort_order) VALUES ('equipment', ?, NULL, ?)",
         )
         .bind(eq.trim())
-        .bind(idx as i64)
+        .bind(sort_order)
         .execute(&mut *tx)
         .await?;
     }

@@ -677,6 +677,7 @@ fn extract_daily_health(db_path: &std::path::Path) -> Vec<GbHealthRow> {
 ///
 /// # Errors
 /// Returns an error if the zip is not configured or cannot be read.
+#[allow(clippy::too_many_lines)]
 pub async fn gb_debug(State(state): State<AppState>) -> AppResult<Json<serde_json::Value>> {
     let zip_path = state.config.gadgetbridge_zip.clone().ok_or_else(|| {
         (
@@ -942,6 +943,7 @@ async fn import_gpx_run(
 /// Core sync logic. Called by the HTTP handler and the background scheduler.
 /// # Errors
 /// Returns an error string if the zip cannot be opened or parsed.
+#[allow(clippy::too_many_lines)]
 pub async fn perform_sync(state: &AppState) -> Result<SyncResult, String> {
     let zip_path = state
         .config
