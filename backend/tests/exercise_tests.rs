@@ -118,6 +118,39 @@ async fn create_exercise_without_name_returns_422() {
     assert_eq!(res.status(), 422);
 }
 
+#[tokio::test]
+async fn get_exercise_categories_initially_empty() {
+    let app = common::TestApp::spawn().await;
+    let res = app.get("/exercise-categories").await;
+    assert_eq!(res.status(), 200);
+    let body: serde_json::Value = res.json().await.unwrap();
+    assert_eq!(body["muscle_groups"], serde_json::json!([]));
+    assert_eq!(body["equipment"], serde_json::json!([]));
+}
+
+#[tokio::test]
+async fn update_exercise_categories_round_trip() {
+    let app = common::TestApp::spawn().await;
+    let res = app
+        .put(
+            "/exercise-categories",
+            serde_json::json!({
+                "muscle_groups": [
+                    {"name": "Chest", "color_hex": "#ff4a3548"},
+                    {"name": "Back", "color_hex": null}
+                ],
+                "equipment": ["Barbell", "Cable"]
+            }),
+        )
+        .await;
+    assert_eq!(res.status(), 204);
+
+    let body: serde_json::Value = app.get("/exercise-categories").await.json().await.unwrap();
+    assert_eq!(body["muscle_groups"][0]["name"], "Chest");
+    assert_eq!(body["muscle_groups"][0]["color_hex"], "#ff4a3548");
+    assert_eq!(body["equipment"], serde_json::json!(["Barbell", "Cable"]));
+}
+
 // ── History endpoint ──────────────────────────────────────────────────────────
 
 #[tokio::test]

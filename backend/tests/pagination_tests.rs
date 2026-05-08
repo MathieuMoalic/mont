@@ -145,8 +145,6 @@ async fn exercise_history_with_pagination() {
         let workout = app.create_workout().await;
         let workout_id = workout["id"].as_i64().unwrap();
         app.add_set(workout_id, exercise_id, 1, 10, 100.0).await;
-        app.patch_empty(&format!("/workouts/{}/finish", workout_id))
-            .await;
     }
 
     let res = app
@@ -170,8 +168,6 @@ async fn exercise_history_with_offset() {
         let workout = app.create_workout().await;
         let workout_id = workout["id"].as_i64().unwrap();
         app.add_set(workout_id, exercise_id, 1, 8, 150.0).await;
-        app.patch_empty(&format!("/workouts/{}/finish", workout_id))
-            .await;
     }
 
     let res = app

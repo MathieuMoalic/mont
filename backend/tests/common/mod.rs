@@ -151,6 +151,16 @@ impl TestApp {
             .unwrap()
     }
 
+    pub async fn put(&self, path: &str, body: serde_json::Value) -> reqwest::Response {
+        self.client
+            .put(self.url(path))
+            .bearer_auth(&self.token)
+            .json(&body)
+            .send()
+            .await
+            .unwrap()
+    }
+
     pub async fn delete(&self, path: &str) -> reqwest::Response {
         self.client
             .delete(self.url(path))

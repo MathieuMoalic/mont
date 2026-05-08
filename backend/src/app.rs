@@ -65,6 +65,10 @@ pub fn build_app(state: AppState) -> Router {
             "/exercises",
             get(exercises::list_exercises).post(exercises::create_exercise),
         )
+        .route(
+            "/exercise-categories",
+            get(exercises::get_exercise_categories).put(exercises::update_exercise_categories),
+        )
         .route("/exercises/{id}", patch(exercises::update_exercise))
         .route("/exercises/{id}/history", get(exercises::exercise_history))
         .route(
@@ -82,8 +86,6 @@ pub fn build_app(state: AppState) -> Router {
                 .delete(workouts::delete_workout)
                 .patch(workouts::update_workout),
         )
-        .route("/workouts/{id}/finish", patch(workouts::finish_workout))
-        .route("/workouts/{id}/restart", patch(workouts::restart_workout))
         .route("/workouts/{id}/sets", post(workouts::add_set))
         .route(
             "/workouts/{id}/sets/{set_id}",

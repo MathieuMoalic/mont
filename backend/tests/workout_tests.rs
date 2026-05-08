@@ -56,44 +56,6 @@ async fn get_nonexistent_workout_returns_404() {
     assert_eq!(res.status(), 404);
 }
 
-#[tokio::test]
-async fn finish_workout_returns_204() {
-    let app = common::TestApp::spawn().await;
-    let w = app.create_workout().await;
-    let id = w["id"].as_i64().unwrap();
-
-    let res = app.patch_empty(&format!("/workouts/{id}/finish")).await;
-    assert_eq!(res.status(), 204);
-}
-
-#[tokio::test]
-async fn finish_workout_sets_finished_at() {
-    let app = common::TestApp::spawn().await;
-    let w = app.create_workout().await;
-    let id = w["id"].as_i64().unwrap();
-
-    app.patch_empty(&format!("/workouts/{id}/finish")).await;
-
-    let body: serde_json::Value = app
-        .get(&format!("/workouts/{id}"))
-        .await
-        .json()
-        .await
-        .unwrap();
-    assert!(body["finished_at"].as_str().is_some());
-}
-
-#[tokio::test]
-async fn finish_already_finished_workout_returns_404() {
-    let app = common::TestApp::spawn().await;
-    let w = app.create_workout().await;
-    let id = w["id"].as_i64().unwrap();
-
-    app.patch_empty(&format!("/workouts/{id}/finish")).await;
-    let res = app.patch_empty(&format!("/workouts/{id}/finish")).await;
-    assert_eq!(res.status(), 404);
-}
-
 // ── Sets ─────────────────────────────────────────────────────────────────────
 
 #[tokio::test]
@@ -275,41 +237,6 @@ async fn delete_workout_removes_it_from_list() {
 async fn delete_nonexistent_workout_returns_404() {
     let app = common::TestApp::spawn().await;
     let res = app.delete("/workouts/999").await;
-    assert_eq!(res.status(), 404);
-}
-
-#[tokio::test]
-async fn restart_workout_returns_204() {
-    let app = common::TestApp::spawn().await;
-    let w = app.create_workout().await;
-    let wid = w["id"].as_i64().unwrap();
-    app.patch_empty(&format!("/workouts/{wid}/finish")).await;
-    let res = app.patch_empty(&format!("/workouts/{wid}/restart")).await;
-    assert_eq!(res.status(), 204);
-}
-
-#[tokio::test]
-async fn restart_workout_clears_finished_at() {
-    let app = common::TestApp::spawn().await;
-    let w = app.create_workout().await;
-    let wid = w["id"].as_i64().unwrap();
-    app.patch_empty(&format!("/workouts/{wid}/finish")).await;
-    app.patch_empty(&format!("/workouts/{wid}/restart")).await;
-    let detail: serde_json::Value = app
-        .get(&format!("/workouts/{wid}"))
-        .await
-        .json()
-        .await
-        .unwrap();
-    assert!(detail["finished_at"].is_null());
-}
-
-#[tokio::test]
-async fn restart_active_workout_returns_404() {
-    let app = common::TestApp::spawn().await;
-    let w = app.create_workout().await;
-    let wid = w["id"].as_i64().unwrap();
-    let res = app.patch_empty(&format!("/workouts/{wid}/restart")).await;
     assert_eq!(res.status(), 404);
 }
 

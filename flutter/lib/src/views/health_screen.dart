@@ -37,7 +37,10 @@ class _HealthScreenState extends State<HealthScreen> {
 
   Future<void> _load() async {
     try {
-      final results = await Future.wait([api.listDailyHealth(), api.listWeight()]);
+      final results = await Future.wait([
+        api.listDailyHealth(),
+        api.listWeight(),
+      ]);
       if (mounted) {
         setState(() {
           _days = results[0] as List<DailyHealth>;
@@ -59,14 +62,20 @@ class _HealthScreenState extends State<HealthScreen> {
       final errors = (result['errors'] as List?)?.cast<String>() ?? [];
       await _load();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Synced: $imported runs, $healthDays health days'
-              '${errors.isNotEmpty ? ', ${errors.length} errors' : ''}'),
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Synced: $imported runs, $healthDays health days'
+              '${errors.isNotEmpty ? ', ${errors.length} errors' : ''}',
+            ),
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Sync failed: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Sync failed: $e')));
       }
     } finally {
       if (mounted) setState(() => _syncing = false);
@@ -82,22 +91,35 @@ class _HealthScreenState extends State<HealthScreen> {
         content: TextFormField(
           autofocus: true,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: const InputDecoration(labelText: 'Body mass (kg)', suffixText: 'kg'),
+          decoration: const InputDecoration(
+            labelText: 'Body mass (kg)',
+            suffixText: 'kg',
+          ),
           onChanged: (v) => entered = double.tryParse(v),
           onFieldSubmitted: (_) => Navigator.pop(ctx, true),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Save')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Save'),
+          ),
         ],
       ),
     );
-    if (confirmed != true || entered == null || entered! <= 0 || !mounted) return;
+    if (confirmed != true || entered == null || entered! <= 0 || !mounted)
+      return;
     try {
       await api.createWeightEntry(weightKg: entered!);
       _load();
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+      if (mounted)
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.toString())));
     }
   }
 
@@ -106,16 +128,22 @@ class _HealthScreenState extends State<HealthScreen> {
       await api.deleteWeightEntry(entry.id);
       _load();
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+      if (mounted)
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.toString())));
     }
   }
 
   Future<void> _editWeight(WeightEntry entry) async {
     final d = entry.measuredAt.toLocal();
-    final dateStr = '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+    final dateStr =
+        '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
     double? newKg = entry.weightKg;
     String? newDate = dateStr;
-    final kgCtrl = TextEditingController(text: entry.weightKg.toStringAsFixed(1));
+    final kgCtrl = TextEditingController(
+      text: entry.weightKg.toStringAsFixed(1),
+    );
     final dateCtrl = TextEditingController(text: dateStr);
     final confirmed = await showDialog<bool>(
       context: context,
@@ -127,8 +155,13 @@ class _HealthScreenState extends State<HealthScreen> {
             TextFormField(
               controller: kgCtrl,
               autofocus: true,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(labelText: 'Body mass (kg)', suffixText: 'kg'),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              decoration: const InputDecoration(
+                labelText: 'Body mass (kg)',
+                suffixText: 'kg',
+              ),
               onChanged: (v) => newKg = double.tryParse(v),
             ),
             const SizedBox(height: 8),
@@ -141,8 +174,14 @@ class _HealthScreenState extends State<HealthScreen> {
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Save')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Save'),
+          ),
         ],
       ),
     );
@@ -150,11 +189,20 @@ class _HealthScreenState extends State<HealthScreen> {
     dateCtrl.dispose();
     if (confirmed != true || !mounted) return;
     try {
-      final measuredAt = newDate != null && newDate!.isNotEmpty ? '${newDate!}T12:00:00Z' : null;
-      await api.updateWeightEntry(entry.id, weightKg: newKg, measuredAt: measuredAt);
+      final measuredAt = newDate != null && newDate!.isNotEmpty
+          ? '${newDate!}T12:00:00Z'
+          : null;
+      await api.updateWeightEntry(
+        entry.id,
+        weightKg: newKg,
+        measuredAt: measuredAt,
+      );
       _load();
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+      if (mounted)
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.toString())));
     }
   }
 
@@ -162,7 +210,8 @@ class _HealthScreenState extends State<HealthScreen> {
     final all = _days ?? [];
     if (_range.days == 0 || all.isEmpty) return all;
     final cutoff = DateTime.now().subtract(Duration(days: _range.days));
-    final cutStr = '${cutoff.year}-${cutoff.month.toString().padLeft(2,'0')}-${cutoff.day.toString().padLeft(2,'0')}';
+    final cutStr =
+        '${cutoff.year}-${cutoff.month.toString().padLeft(2, '0')}-${cutoff.day.toString().padLeft(2, '0')}';
     return all.where((d) => d.date.compareTo(cutStr) >= 0).toList();
   }
 
@@ -186,8 +235,8 @@ class _HealthScreenState extends State<HealthScreen> {
         child: _error != null
             ? Center(child: Text(_error!))
             : (_days == null || _weights == null)
-                ? const Center(child: CircularProgressIndicator())
-                : _buildContent(),
+            ? const Center(child: CircularProgressIndicator())
+            : _buildContent(),
       ),
     );
   }
@@ -204,7 +253,11 @@ class _HealthScreenState extends State<HealthScreen> {
             if (_syncing)
               const Padding(
                 padding: EdgeInsets.all(14),
-                child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
               )
             else
               IconButton(
@@ -228,15 +281,19 @@ class _HealthScreenState extends State<HealthScreen> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
       child: Row(
-        children: _Range.values.map((r) => Padding(
-          padding: const EdgeInsets.only(right: 8),
-          child: FilterChip(
-            label: Text(r.label),
-            selected: _range == r,
-            onSelected: (_) => setState(() => _range = r),
-            visualDensity: VisualDensity.compact,
-          ),
-        )).toList(),
+        children: _Range.values
+            .map(
+              (r) => Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: FilterChip(
+                  label: Text(r.label),
+                  selected: _range == r,
+                  onSelected: (_) => setState(() => _range = r),
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+            )
+            .toList(),
       ),
     );
   }
@@ -250,14 +307,21 @@ class _HealthScreenState extends State<HealthScreen> {
     return '${date.day}/${date.month}';
   }
 
-  FlTitlesData _axisTitlesWithDates({required double yReserved, required List<DailyHealth> days, double? yInterval}) => FlTitlesData(
+  FlTitlesData _axisTitlesWithDates({
+    required double yReserved,
+    required List<DailyHealth> days,
+    double? yInterval,
+  }) => FlTitlesData(
     leftTitles: AxisTitles(
       sideTitles: SideTitles(
         showTitles: true,
         reservedSize: yReserved,
         interval: yInterval,
         getTitlesWidget: (v, meta) {
-          return Text(v.toInt().toString(), style: const TextStyle(fontSize: 9));
+          return Text(
+            v.toInt().toString(),
+            style: const TextStyle(fontSize: 9),
+          );
         },
       ),
     ),
@@ -265,11 +329,16 @@ class _HealthScreenState extends State<HealthScreen> {
       sideTitles: SideTitles(
         showTitles: true,
         reservedSize: 20,
-        interval: days.length > 20 ? (days.length / 4).ceilToDouble() : (days.length > 10 ? 3 : 2),
+        interval: days.length > 20
+            ? (days.length / 4).ceilToDouble()
+            : (days.length > 10 ? 3 : 2),
         getTitlesWidget: (v, _) {
           final idx = v.toInt();
           if (idx < 0 || idx >= days.length) return const SizedBox.shrink();
-          return Text(_fmtDate(days[idx].date), style: const TextStyle(fontSize: 8));
+          return Text(
+            _fmtDate(days[idx].date),
+            style: const TextStyle(fontSize: 8),
+          );
         },
       ),
     ),
@@ -277,29 +346,37 @@ class _HealthScreenState extends State<HealthScreen> {
     topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
   );
 
-  LineTouchData _intTooltip(List<DailyHealth> days, {int decimals = 0}) => LineTouchData(
-    touchTooltipData: LineTouchTooltipData(
-      getTooltipItems: (spots) => spots.map((s) {
-        final idx = s.x.toInt();
-        final date = idx >= 0 && idx < days.length ? days[idx].date : '';
-        return LineTooltipItem(
-          '${s.y.toStringAsFixed(decimals)}\n$date',
-          const TextStyle(fontSize: 11),
-        );
-      }).toList(),
-    ),
-  );
+  LineTouchData _intTooltip(List<DailyHealth> days, {int decimals = 0}) =>
+      LineTouchData(
+        touchTooltipData: LineTouchTooltipData(
+          getTooltipItems: (spots) => spots.map((s) {
+            final idx = s.x.toInt();
+            final date = idx >= 0 && idx < days.length ? days[idx].date : '';
+            return LineTooltipItem(
+              '${s.y.toStringAsFixed(decimals)}\n$date',
+              const TextStyle(fontSize: 11),
+            );
+          }).toList(),
+        ),
+      );
 
-  Widget _chartSection({required String label, required double height, required Widget child, Widget? action}) {
+  Widget _chartSection({
+    required String label,
+    required double height,
+    required Widget child,
+    Widget? action,
+  }) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 16, 12, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(children: [
-            Text(label, style: Theme.of(context).textTheme.titleSmall),
-            if (action != null) ...[const Spacer(), action],
-          ]),
+          Row(
+            children: [
+              Text(label, style: Theme.of(context).textTheme.titleSmall),
+              if (action != null) ...[const Spacer(), action],
+            ],
+          ),
           const SizedBox(height: 8),
           SizedBox(height: height, child: child),
         ],
@@ -331,17 +408,25 @@ class _HealthScreenState extends State<HealthScreen> {
           children: [
             const SizedBox(height: 8),
             Container(
-              width: 40, height: 4,
+              width: 40,
+              height: 4,
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.4),
+                color: Theme.of(
+                  context,
+                ).colorScheme.outline.withValues(alpha: 0.4),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 12),
-              child: Text(title, style: Theme.of(context).textTheme.titleMedium),
+              child: Text(
+                title,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
             ),
-            Expanded(child: ListView(controller: scroll, children: rows)),
+            Expanded(
+              child: ListView(controller: scroll, children: rows),
+            ),
           ],
         ),
       ),
@@ -349,38 +434,59 @@ class _HealthScreenState extends State<HealthScreen> {
   }
 
   void _showHrDetails(List<DailyHealth> days) {
-    _showSheet('Heart Rate (bpm)', days.reversed.map((d) => ListTile(
-      dense: true,
-      title: Text(d.date),
-      trailing: Text(
-        d.avgHr != null
-            ? 'avg ${d.avgHr} • min ${d.minHr ?? '—'} • max ${d.maxHr ?? '—'}'
-            : '—',
-        style: const TextStyle(fontSize: 12),
-      ),
-    )).toList());
+    _showSheet(
+      'Heart Rate (bpm)',
+      days.reversed
+          .map(
+            (d) => ListTile(
+              dense: true,
+              title: Text(d.date),
+              trailing: Text(
+                d.avgHr != null
+                    ? 'avg ${d.avgHr} • min ${d.minHr ?? '—'} • max ${d.maxHr ?? '—'}'
+                    : '—',
+                style: const TextStyle(fontSize: 12),
+              ),
+            ),
+          )
+          .toList(),
+    );
   }
 
   void _showHrvDetails(List<DailyHealth> days) {
-    _showSheet('HRV (ms)', days.reversed.map((d) => ListTile(
-      dense: true,
-      title: Text(d.date),
-      trailing: Text(
-        d.hrvRmssd != null ? d.hrvRmssd!.toStringAsFixed(0) : '—',
-        style: const TextStyle(fontSize: 12),
-      ),
-    )).toList());
+    _showSheet(
+      'HRV (ms)',
+      days.reversed
+          .map(
+            (d) => ListTile(
+              dense: true,
+              title: Text(d.date),
+              trailing: Text(
+                d.hrvRmssd != null ? d.hrvRmssd!.toStringAsFixed(0) : '—',
+                style: const TextStyle(fontSize: 12),
+              ),
+            ),
+          )
+          .toList(),
+    );
   }
 
   void _showStepsDetails(List<DailyHealth> days) {
-    _showSheet('Steps per day', days.reversed.map((d) => ListTile(
-      dense: true,
-      title: Text(d.date),
-      trailing: Text(
-        d.steps != null ? '${d.steps}' : '—',
-        style: const TextStyle(fontSize: 12),
-      ),
-    )).toList());
+    _showSheet(
+      'Steps per day',
+      days.reversed
+          .map(
+            (d) => ListTile(
+              dense: true,
+              title: Text(d.date),
+              trailing: Text(
+                d.steps != null ? '${d.steps}' : '—',
+                style: const TextStyle(fontSize: 12),
+              ),
+            ),
+          )
+          .toList(),
+    );
   }
 
   void _showWeightDetails(List<WeightEntry> weights) {
@@ -389,7 +495,8 @@ class _HealthScreenState extends State<HealthScreen> {
       isScrollControlled: true,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheetState) {
-          final sorted = [...weights]..sort((a, b) => b.measuredAt.compareTo(a.measuredAt));
+          final sorted = [...weights]
+            ..sort((a, b) => b.measuredAt.compareTo(a.measuredAt));
           return DraggableScrollableSheet(
             initialChildSize: 0.5,
             maxChildSize: 0.9,
@@ -399,15 +506,21 @@ class _HealthScreenState extends State<HealthScreen> {
               children: [
                 const SizedBox(height: 8),
                 Container(
-                  width: 40, height: 4,
+                  width: 40,
+                  height: 4,
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.4),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.outline.withValues(alpha: 0.4),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 12),
-                  child: Text('Body Mass (kg)', style: Theme.of(context).textTheme.titleMedium),
+                  child: Text(
+                    'Body Mass (kg)',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
                 ),
                 Expanded(
                   child: ListView.builder(
@@ -455,74 +568,164 @@ class _HealthScreenState extends State<HealthScreen> {
   Widget _buildHrChart(List<DailyHealth> days) {
     final hrDays = days.where((d) => d.avgHr != null).toList();
     if (hrDays.isEmpty) {
-      return _chartSection(label: 'Heart Rate (bpm)', height: 48,
-          child: const Center(child: Text('No HR data in range', style: TextStyle(fontSize: 12))));
+      return _chartSection(
+        label: 'Heart Rate (bpm)',
+        height: 48,
+        child: const Center(
+          child: Text('No HR data in range', style: TextStyle(fontSize: 12)),
+        ),
+      );
     }
     final indexed = hrDays.asMap().entries.toList();
-    final avgSpots = indexed.map((e) => FlSpot(e.key.toDouble(), e.value.avgHr!.toDouble())).toList();
-    final minSpots = indexed.map((e) => FlSpot(e.key.toDouble(), (e.value.minHr ?? e.value.avgHr!).toDouble())).toList();
-    final maxSpots = indexed.map((e) => FlSpot(e.key.toDouble(), (e.value.maxHr ?? e.value.avgHr!).toDouble())).toList();
-    final allHr = hrDays.expand((d) => [d.minHr ?? d.avgHr!, d.maxHr ?? d.avgHr!]).map((v) => v.toDouble());
-    final maxY = ((allHr.reduce((a, b) => a > b ? a : b) + 10) / 20).ceil() * 20.0;
+    final avgSpots = indexed
+        .map((e) => FlSpot(e.key.toDouble(), e.value.avgHr!.toDouble()))
+        .toList();
+    final minSpots = indexed
+        .map(
+          (e) => FlSpot(
+            e.key.toDouble(),
+            (e.value.minHr ?? e.value.avgHr!).toDouble(),
+          ),
+        )
+        .toList();
+    final maxSpots = indexed
+        .map(
+          (e) => FlSpot(
+            e.key.toDouble(),
+            (e.value.maxHr ?? e.value.avgHr!).toDouble(),
+          ),
+        )
+        .toList();
+    final allHr = hrDays
+        .expand((d) => [d.minHr ?? d.avgHr!, d.maxHr ?? d.avgHr!])
+        .map((v) => v.toDouble());
+    final maxY =
+        ((allHr.reduce((a, b) => a > b ? a : b) + 10) / 20).ceil() * 20.0;
     final scheme = Theme.of(context).colorScheme;
     return _chartSection(
       label: 'Heart Rate (bpm)',
       height: 160,
       action: _detailsBtn(() => _showHrDetails(hrDays)),
-      child: LineChart(LineChartData(
-        minY: 0, maxY: maxY,
-        gridData: FlGridData(show: true, horizontalInterval: 40, verticalInterval: 1000),
-        borderData: FlBorderData(show: false),
-        titlesData: _axisTitlesWithDates(yReserved: 36, days: hrDays, yInterval: 40),
-        lineTouchData: _intTooltip(hrDays),
-        lineBarsData: [
-          LineChartBarData(spots: minSpots, isCurved: true, color: scheme.primary.withValues(alpha: 0.45), dotData: FlDotData(show: false), barWidth: 1.5, dashArray: [4, 4]),
-          LineChartBarData(spots: avgSpots, isCurved: true, color: scheme.primary, dotData: FlDotData(show: false), barWidth: 2),
-          LineChartBarData(spots: maxSpots, isCurved: true, color: scheme.primary.withValues(alpha: 0.45), dotData: FlDotData(show: false), barWidth: 1.5, dashArray: [4, 4]),
-        ],
-      )),
+      child: LineChart(
+        LineChartData(
+          minY: 0,
+          maxY: maxY,
+          gridData: FlGridData(
+            show: true,
+            horizontalInterval: 40,
+            verticalInterval: 1000,
+          ),
+          borderData: FlBorderData(show: false),
+          titlesData: _axisTitlesWithDates(
+            yReserved: 36,
+            days: hrDays,
+            yInterval: 40,
+          ),
+          lineTouchData: _intTooltip(hrDays),
+          lineBarsData: [
+            LineChartBarData(
+              spots: minSpots,
+              isCurved: true,
+              color: scheme.primary.withValues(alpha: 0.45),
+              dotData: FlDotData(show: false),
+              barWidth: 1.5,
+              dashArray: [4, 4],
+            ),
+            LineChartBarData(
+              spots: avgSpots,
+              isCurved: true,
+              color: scheme.primary,
+              dotData: FlDotData(show: false),
+              barWidth: 2,
+            ),
+            LineChartBarData(
+              spots: maxSpots,
+              isCurved: true,
+              color: scheme.primary.withValues(alpha: 0.45),
+              dotData: FlDotData(show: false),
+              barWidth: 1.5,
+              dashArray: [4, 4],
+            ),
+          ],
+        ),
+      ),
     );
   }
 
   Widget _buildHrvChart(List<DailyHealth> days) {
     final hrvDays = days.where((d) => d.hrvRmssd != null).toList();
     if (hrvDays.isEmpty) {
-      return _chartSection(label: 'HRV (ms)', height: 48,
-          child: const Center(child: Text('No HRV data in range', style: TextStyle(fontSize: 12))));
+      return _chartSection(
+        label: 'HRV (ms)',
+        height: 48,
+        child: const Center(
+          child: Text('No HRV data in range', style: TextStyle(fontSize: 12)),
+        ),
+      );
     }
     final indexed = hrvDays.asMap().entries.toList();
-    final spots = indexed.map((e) => FlSpot(e.key.toDouble(), e.value.hrvRmssd!)).toList();
+    final spots = indexed
+        .map((e) => FlSpot(e.key.toDouble(), e.value.hrvRmssd!))
+        .toList();
     final scheme = Theme.of(context).colorScheme;
     return _chartSection(
       label: 'HRV (ms)',
       height: 120,
       action: _detailsBtn(() => _showHrvDetails(hrvDays)),
-      child: LineChart(LineChartData(
-        minY: 0, maxY: 180,
-        gridData: FlGridData(show: true, horizontalInterval: 30, verticalInterval: 1000),
-        borderData: FlBorderData(show: false),
-        titlesData: _axisTitlesWithDates(yReserved: 36, days: hrvDays, yInterval: 30),
-        lineTouchData: _intTooltip(hrvDays),
-        lineBarsData: [
-          LineChartBarData(
-            spots: spots, isCurved: true, color: scheme.tertiary,
-            dotData: FlDotData(show: false), barWidth: 2,
-            belowBarData: BarAreaData(show: true, color: scheme.tertiary.withValues(alpha: 0.10)),
+      child: LineChart(
+        LineChartData(
+          minY: 0,
+          maxY: 180,
+          gridData: FlGridData(
+            show: true,
+            horizontalInterval: 30,
+            verticalInterval: 1000,
           ),
-        ],
-      )),
+          borderData: FlBorderData(show: false),
+          titlesData: _axisTitlesWithDates(
+            yReserved: 36,
+            days: hrvDays,
+            yInterval: 30,
+          ),
+          lineTouchData: _intTooltip(hrvDays),
+          lineBarsData: [
+            LineChartBarData(
+              spots: spots,
+              isCurved: true,
+              color: scheme.tertiary,
+              dotData: FlDotData(show: false),
+              barWidth: 2,
+              belowBarData: BarAreaData(
+                show: true,
+                color: scheme.tertiary.withValues(alpha: 0.10),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
   Widget _buildStepsChart(List<DailyHealth> days) {
-    final stepDays = days.where((d) => d.steps != null && d.steps! > 0).toList();
+    final stepDays = days
+        .where((d) => d.steps != null && d.steps! > 0)
+        .toList();
     if (stepDays.isEmpty) {
-      return _chartSection(label: 'Steps per day', height: 48,
-          child: const Center(child: Text('No steps data in range', style: TextStyle(fontSize: 12))));
+      return _chartSection(
+        label: 'Steps per day',
+        height: 48,
+        child: const Center(
+          child: Text('No steps data in range', style: TextStyle(fontSize: 12)),
+        ),
+      );
     }
     final indexed = stepDays.asMap().entries.toList();
-    final spots = indexed.map((e) => FlSpot(e.key.toDouble(), e.value.steps!.toDouble())).toList();
-    final maxSteps = stepDays.map((d) => d.steps!.toDouble()).reduce((a, b) => a > b ? a : b);
+    final spots = indexed
+        .map((e) => FlSpot(e.key.toDouble(), e.value.steps!.toDouble()))
+        .toList();
+    final maxSteps = stepDays
+        .map((d) => d.steps!.toDouble())
+        .reduce((a, b) => a > b ? a : b);
     final maxY = ((maxSteps + 2000) / 5000).ceil() * 5000.0;
     final yInterval = maxY > 20000 ? 10000.0 : 5000.0;
     final scheme = Theme.of(context).colorScheme;
@@ -530,20 +733,37 @@ class _HealthScreenState extends State<HealthScreen> {
       label: 'Steps per day',
       height: 120,
       action: _detailsBtn(() => _showStepsDetails(stepDays)),
-      child: LineChart(LineChartData(
-        minY: 0, maxY: maxY,
-        gridData: FlGridData(show: true, horizontalInterval: yInterval, verticalInterval: 1000),
-        borderData: FlBorderData(show: false),
-        titlesData: _axisTitlesWithDates(yReserved: 44, days: stepDays, yInterval: yInterval),
-        lineTouchData: _intTooltip(stepDays),
-        lineBarsData: [
-          LineChartBarData(
-            spots: spots, isCurved: true, color: scheme.secondary,
-            dotData: FlDotData(show: false), barWidth: 2,
-            belowBarData: BarAreaData(show: true, color: scheme.secondary.withValues(alpha: 0.10)),
+      child: LineChart(
+        LineChartData(
+          minY: 0,
+          maxY: maxY,
+          gridData: FlGridData(
+            show: true,
+            horizontalInterval: yInterval,
+            verticalInterval: 1000,
           ),
-        ],
-      )),
+          borderData: FlBorderData(show: false),
+          titlesData: _axisTitlesWithDates(
+            yReserved: 44,
+            days: stepDays,
+            yInterval: yInterval,
+          ),
+          lineTouchData: _intTooltip(stepDays),
+          lineBarsData: [
+            LineChartBarData(
+              spots: spots,
+              isCurved: true,
+              color: scheme.secondary,
+              dotData: FlDotData(show: false),
+              barWidth: 2,
+              belowBarData: BarAreaData(
+                show: true,
+                color: scheme.secondary.withValues(alpha: 0.10),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -552,13 +772,30 @@ class _HealthScreenState extends State<HealthScreen> {
       return _chartSection(
         label: 'Body Mass (kg)',
         height: 48,
-        child: Center(child: Text(
-          weights.isEmpty ? 'No body mass entries in range' : 'Need at least 2 entries to show chart',
-          style: const TextStyle(fontSize: 12),
-        )),
+        child: Center(
+          child: Text(
+            weights.isEmpty
+                ? 'No body mass entries in range'
+                : 'Need at least 2 entries to show chart',
+            style: const TextStyle(fontSize: 12),
+          ),
+        ),
       );
     }
-    final spots = weights.asMap().entries.map((e) => FlSpot(e.key.toDouble(), e.value.weightKg)).toList();
+    final sorted = [...weights]
+      ..sort((a, b) => a.measuredAt.compareTo(b.measuredAt));
+    final base = sorted.first.measuredAt.toLocal();
+    double xFor(DateTime dt) =>
+        dt.toLocal().difference(base).inMinutes.toDouble() / (60 * 24);
+    DateTime dateForX(double x) =>
+        base.add(Duration(minutes: (x * 60 * 24).round()));
+    final spots = sorted
+        .map((w) => FlSpot(xFor(w.measuredAt), w.weightKg))
+        .toList();
+    final minX = spots.first.x;
+    final maxX = spots.last.x;
+    final xSpan = (maxX - minX).abs();
+    final xInterval = xSpan <= 4 ? 1.0 : (xSpan / 4).ceilToDouble();
     final ws = weights.map((w) => w.weightKg);
     final minW = ws.reduce((a, b) => a < b ? a : b);
     final maxW = ws.reduce((a, b) => a > b ? a : b);
@@ -569,51 +806,80 @@ class _HealthScreenState extends State<HealthScreen> {
       label: 'Body Mass (kg)',
       height: 160,
       action: _detailsBtn(() => _showWeightDetails(weights)),
-      child: LineChart(LineChartData(
-        minY: minY,
-        maxY: maxY,
-        gridData: FlGridData(show: true, horizontalInterval: 2, verticalInterval: 1000),
-        borderData: FlBorderData(show: false),
-        titlesData: FlTitlesData(
-          leftTitles: AxisTitles(sideTitles: SideTitles(
-            showTitles: true, reservedSize: 36, interval: 2,
-            getTitlesWidget: (v, meta) {
-              return Text(v.toInt().toString(), style: const TextStyle(fontSize: 9));
-            },
-          )),
-          bottomTitles: AxisTitles(sideTitles: SideTitles(
-            showTitles: true,
-            reservedSize: 20,
-            interval: weights.length > 20 ? (weights.length / 4).ceilToDouble() : (weights.length > 10 ? 3 : 2),
-            getTitlesWidget: (v, _) {
-              final idx = v.toInt();
-              if (idx < 0 || idx >= weights.length) return const SizedBox.shrink();
-              final d = weights[idx].measuredAt.toLocal();
-              return Text('${d.day}/${d.month}', style: const TextStyle(fontSize: 8));
-            },
-          )),
-          rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-        ),
-        lineTouchData: LineTouchData(
-          touchTooltipData: LineTouchTooltipData(
-            getTooltipItems: (spots) => spots.map((s) {
-              final idx = s.x.toInt();
-              final d = idx >= 0 && idx < weights.length ? weights[idx].measuredAt.toLocal() : null;
-              final date = d != null ? '${d.day}/${d.month}/${d.year}' : '';
-              return LineTooltipItem('${s.y.toStringAsFixed(1)} kg\n$date', const TextStyle(fontSize: 11));
-            }).toList(),
+      child: LineChart(
+        LineChartData(
+          minX: minX,
+          maxX: maxX,
+          minY: minY,
+          maxY: maxY,
+          gridData: FlGridData(
+            show: true,
+            horizontalInterval: 2,
+            verticalInterval: 1000,
           ),
-        ),
-        lineBarsData: [
-          LineChartBarData(
-            spots: spots, isCurved: true, curveSmoothness: 0.3,
-            color: scheme.primary, barWidth: 2.5,
-            dotData: FlDotData(show: spots.length <= 30),
-            belowBarData: BarAreaData(show: true, color: scheme.primary.withValues(alpha: 0.10)),
+          borderData: FlBorderData(show: false),
+          titlesData: FlTitlesData(
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 36,
+                interval: 2,
+                getTitlesWidget: (v, meta) {
+                  return Text(
+                    v.toInt().toString(),
+                    style: const TextStyle(fontSize: 9),
+                  );
+                },
+              ),
+            ),
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 20,
+                interval: xInterval,
+                getTitlesWidget: (v, _) {
+                  final d = dateForX(v);
+                  return Text(
+                    '${d.day}/${d.month}',
+                    style: const TextStyle(fontSize: 8),
+                  );
+                },
+              ),
+            ),
+            rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
           ),
-        ],
-      )),
+          lineTouchData: LineTouchData(
+            touchTooltipData: LineTouchTooltipData(
+              getTooltipItems: (spots) => spots.map((s) {
+                final idx = s.spotIndex;
+                final d = idx >= 0 && idx < sorted.length
+                    ? sorted[idx].measuredAt.toLocal()
+                    : null;
+                final date = d != null ? '${d.day}/${d.month}/${d.year}' : '';
+                return LineTooltipItem(
+                  '${s.y.toStringAsFixed(1)} kg\n$date',
+                  const TextStyle(fontSize: 11),
+                );
+              }).toList(),
+            ),
+          ),
+          lineBarsData: [
+            LineChartBarData(
+              spots: spots,
+              isCurved: true,
+              curveSmoothness: 0.3,
+              color: scheme.primary,
+              barWidth: 2.5,
+              dotData: FlDotData(show: spots.length <= 30),
+              belowBarData: BarAreaData(
+                show: true,
+                color: scheme.primary.withValues(alpha: 0.10),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

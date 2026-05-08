@@ -255,191 +255,238 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              IconButton(
-                onPressed: () {
-                  setState(() {
-                    _visibleMonth = DateTime(
-                      _visibleMonth.year,
-                      _visibleMonth.month - 1,
-                      1,
-                    );
-                  });
-                },
-                icon: const Icon(Icons.chevron_left),
-              ),
-              Expanded(
-                child: Center(
-                  child: Text(
-                    _monthLabel(_visibleMonth),
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
+      child: GestureDetector(
+        onHorizontalDragEnd: (details) {
+          final velocity = details.primaryVelocity ?? 0;
+          if (velocity.abs() < 120) return;
+          setState(() {
+            _visibleMonth = DateTime(
+              _visibleMonth.year,
+              _visibleMonth.month + (velocity < 0 ? 1 : -1),
+              1,
+            );
+          });
+        },
+        child: Column(
+          children: [
+            Row(
+              children: [
+                IconButton(
+                  onPressed: () {
+                    setState(() {
+                      _visibleMonth = DateTime(
+                        _visibleMonth.year,
+                        _visibleMonth.month - 1,
+                        1,
+                      );
+                    });
+                  },
+                  icon: const Icon(Icons.chevron_left),
                 ),
-              ),
-              IconButton(
-                onPressed: () {
-                  setState(() {
-                    _visibleMonth = DateTime(
-                      _visibleMonth.year,
-                      _visibleMonth.month + 1,
-                      1,
-                    );
-                  });
-                },
-                icon: const Icon(Icons.chevron_right),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              for (final day in weekdays)
                 Expanded(
                   child: Center(
                     child: Text(
-                      day,
-                      style: Theme.of(context).textTheme.bodySmall,
+                      _monthLabel(_visibleMonth),
+                      style: Theme.of(context).textTheme.titleMedium,
                     ),
                   ),
                 ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              const spacing = 4.0;
-              final cellWidth = (constraints.maxWidth - (spacing * 6)) / 7;
-              final cellHeight = (cellWidth * 1.05).clamp(54.0, 74.0);
-              final aspectRatio = cellWidth / cellHeight;
-
-              return GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 7,
-                  crossAxisSpacing: spacing,
-                  mainAxisSpacing: spacing,
-                  childAspectRatio: aspectRatio,
+                IconButton(
+                  onPressed: () {
+                    setState(() {
+                      _visibleMonth = DateTime(
+                        DateTime.now().year,
+                        DateTime.now().month,
+                        1,
+                      );
+                    });
+                  },
+                  icon: const Icon(Icons.today_outlined),
+                  tooltip: 'Jump to today',
                 ),
-                itemCount: cellCount,
-                itemBuilder: (ctx, index) {
-                  final dayNum = index - leadingBlanks + 1;
-                  if (dayNum < 1 || dayNum > daysInMonth) {
-                    return Container(
-                      decoration: BoxDecoration(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.surfaceContainerLowest,
-                        borderRadius: BorderRadius.circular(10),
+                IconButton(
+                  onPressed: () {
+                    setState(() {
+                      _visibleMonth = DateTime(
+                        _visibleMonth.year,
+                        _visibleMonth.month + 1,
+                        1,
+                      );
+                    });
+                  },
+                  icon: const Icon(Icons.chevron_right),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _legendDot(
+                  Theme.of(context).colorScheme.surfaceContainerLow,
+                  'No session',
+                ),
+                const SizedBox(width: 12),
+                _legendDot(
+                  Theme.of(context).colorScheme.primaryContainer,
+                  'Session',
+                ),
+                const SizedBox(width: 12),
+                _legendDot(
+                  Theme.of(context).colorScheme.tertiaryContainer,
+                  'Today',
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                for (final day in weekdays)
+                  Expanded(
+                    child: Center(
+                      child: Text(
+                        day,
+                        style: Theme.of(context).textTheme.bodySmall,
                       ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                const spacing = 4.0;
+                final cellWidth = (constraints.maxWidth - (spacing * 6)) / 7;
+                final cellHeight = (cellWidth * 1.05).clamp(54.0, 74.0);
+                final aspectRatio = cellWidth / cellHeight;
+
+                return GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 7,
+                    crossAxisSpacing: spacing,
+                    mainAxisSpacing: spacing,
+                    childAspectRatio: aspectRatio,
+                  ),
+                  itemCount: cellCount,
+                  itemBuilder: (ctx, index) {
+                    final day = firstOfMonth.subtract(
+                      Duration(days: leadingBlanks - index),
                     );
-                  }
+                    final sessions = byDay[day] ?? [];
+                    final hasSession = sessions.isNotEmpty;
+                    final totalSets = sessions.fold<int>(
+                      0,
+                      (sum, w) => sum + w.setCount,
+                    );
+                    final totalDuration = sessions.fold<Duration>(
+                      Duration.zero,
+                      (sum, w) => sum + _sessionDuration(w),
+                    );
+                    final isToday = day == today;
+                    final colors = Theme.of(context).colorScheme;
+                    final cellColor = isToday
+                        ? colors.tertiaryContainer
+                        : hasSession
+                        ? colors.primaryContainer
+                        : colors.surfaceContainerLow;
+                    final textColor = hasSession
+                        ? colors.onPrimaryContainer
+                        : colors.onSurface;
 
-                  final day = DateTime(
-                    _visibleMonth.year,
-                    _visibleMonth.month,
-                    dayNum,
-                  );
-                  final sessions = byDay[day] ?? [];
-                  final hasSession = sessions.isNotEmpty;
-                  final totalSets = sessions.fold<int>(
-                    0,
-                    (sum, w) => sum + w.setCount,
-                  );
-                  final totalDuration = sessions.fold<Duration>(
-                    Duration.zero,
-                    (sum, w) => sum + _sessionDuration(w),
-                  );
-                  final isToday = day == today;
-                  final colors = Theme.of(context).colorScheme;
-                  final cellColor = isToday
-                      ? colors.tertiaryContainer
-                      : hasSession
-                      ? colors.primaryContainer
-                      : colors.surfaceContainerLow;
-                  final textColor = hasSession
-                      ? colors.onPrimaryContainer
-                      : colors.onSurface;
-
-                  return Material(
-                    color: cellColor,
-                    borderRadius: BorderRadius.circular(10),
-                    child: InkWell(
+                    return Material(
+                      color: cellColor,
                       borderRadius: BorderRadius.circular(10),
-                      onTap: hasSession
-                          ? () => _openDaySessions(day, sessions)
-                          : null,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(10),
-                          border: isToday
-                              ? Border.all(color: colors.tertiary, width: 1.8)
-                              : null,
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(4, 4, 4, 3),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 5,
-                                  vertical: 1,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: isToday
-                                      ? colors.tertiary
-                                      : Colors.transparent,
-                                  borderRadius: BorderRadius.circular(999),
-                                ),
-                                child: Text(
-                                  '$dayNum',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(10),
+                        onTap: hasSession
+                            ? () => _openDaySessions(day, sessions)
+                            : null,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(10),
+                            border: isToday
+                                ? Border.all(color: colors.tertiary, width: 1.8)
+                                : null,
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(4, 4, 4, 3),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 5,
+                                    vertical: 1,
+                                  ),
+                                  decoration: BoxDecoration(
                                     color: isToday
-                                        ? colors.onTertiary
-                                        : textColor,
+                                        ? colors.tertiary
+                                        : Colors.transparent,
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                  child: Text(
+                                    '${day.day}',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                      color: isToday
+                                          ? colors.onTertiary
+                                          : textColor,
+                                    ),
                                   ),
                                 ),
-                              ),
-                              const Spacer(),
-                              if (hasSession) ...[
-                                Text(
-                                  '$totalSets sets',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w700,
-                                    height: 1.05,
-                                  ).copyWith(color: textColor),
-                                ),
-                                Text(
-                                  _durationText(totalDuration),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontSize: 10,
-                                    height: 1.05,
-                                  ).copyWith(color: textColor),
-                                ),
+                                const Spacer(),
+                                if (hasSession) ...[
+                                  Text(
+                                    '$totalSets sets',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                      height: 1.05,
+                                    ).copyWith(color: textColor),
+                                  ),
+                                  Text(
+                                    _durationText(totalDuration),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 10,
+                                      height: 1.05,
+                                    ).copyWith(color: textColor),
+                                  ),
+                                ],
                               ],
-                            ],
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                  );
-                },
-              );
-            },
-          ),
-        ],
+                    );
+                  },
+                );
+              },
+            ),
+          ],
+        ),
       ),
+    );
+  }
+
+  Widget _legendDot(Color color, String label) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 4),
+        Text(label, style: Theme.of(context).textTheme.bodySmall),
+      ],
     );
   }
 }

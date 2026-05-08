@@ -279,37 +279,6 @@ async fn weight_entry_with_past_timestamp() {
     assert_eq!(res.status(), 201);
 }
 
-// ── Workout State Transitions ───────────────────────────────────────────────
-
-#[tokio::test]
-async fn workout_can_be_finished_immediately() {
-    let app = TestApp::spawn().await;
-    let workout = app.create_workout().await;
-    let id = workout["id"].as_i64().unwrap();
-
-    // Finish without adding any sets
-    let res = app.patch_empty(&format!("/workouts/{}/finish", id)).await;
-    assert_eq!(res.status(), 204);
-}
-
-#[tokio::test]
-async fn workout_restart_then_finish_again() {
-    let app = TestApp::spawn().await;
-    let workout = app.create_workout().await;
-    let id = workout["id"].as_i64().unwrap();
-
-    // Finish
-    app.patch_empty(&format!("/workouts/{}/finish", id)).await;
-
-    // Restart
-    let res = app.patch_empty(&format!("/workouts/{}/restart", id)).await;
-    assert_eq!(res.status(), 204);
-
-    // Finish again
-    let res = app.patch_empty(&format!("/workouts/{}/finish", id)).await;
-    assert_eq!(res.status(), 204);
-}
-
 #[tokio::test]
 async fn cannot_add_set_to_nonexistent_workout() {
     let app = TestApp::spawn().await;

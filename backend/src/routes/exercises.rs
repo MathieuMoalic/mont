@@ -4,6 +4,7 @@ use axum::{
     http::StatusCode,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 use crate::{error::AppResult, models::AppState, pagination::Pagination};
 
@@ -48,6 +49,24 @@ pub struct UpdateExercise {
     pub equipment: Option<String>,
 }
 
+#[derive(Serialize, Deserialize, Clone)]
+pub struct MuscleGroupCategory {
+    pub name: String,
+    pub color_hex: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct ExerciseCategories {
+    pub muscle_groups: Vec<MuscleGroupCategory>,
+    pub equipment: Vec<String>,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateExerciseCategories {
+    pub muscle_groups: Vec<MuscleGroupCategory>,
+    pub equipment: Vec<String>,
+}
+
 /// # Errors
 /// Returns an error if the database query fails.
 pub async fn list_exercises(
@@ -68,6 +87,118 @@ pub async fn list_exercises(
     .fetch_all(&state.pool)
     .await?;
     Ok(Json(exercises))
+}
+
+#[derive(sqlx::FromRow)]
+struct ExerciseCategoryRow {
+    kind: String,
+    name: String,
+    color_hex: Option<String>,
+}
+
+/// # Errors
+/// Returns an error if the database query fails.
+pub async fn get_exercise_categories(
+    State(state): State<AppState>,
+) -> AppResult<Json<ExerciseCategories>> {
+    let rows = sqlx::query_as::<_, ExerciseCategoryRow>(
+        "SELECT kind, name, color_hex FROM exercise_categories ORDER BY sort_order, name",
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    let mut muscle_groups = Vec::new();
+    let mut equipment = Vec::new();
+    for row in rows {
+        if row.kind == "muscle_group" {
+            muscle_groups.push(MuscleGroupCategory {
+                name: row.name,
+                color_hex: row.color_hex,
+            });
+        } else if row.kind == "equipment" {
+            equipment.push(row.name);
+        }
+    }
+
+    Ok(Json(ExerciseCategories {
+        muscle_groups,
+        equipment,
+    }))
+}
+
+/// # Errors
+/// Returns an error if the database query fails or request contains empty/duplicate values.
+pub async fn update_exercise_categories(
+    State(state): State<AppState>,
+    Json(body): Json<UpdateExerciseCategories>,
+) -> AppResult<StatusCode> {
+    let mut seen_muscle = HashSet::new();
+    let mut seen_equipment = HashSet::new();
+
+    for mg in &body.muscle_groups {
+        let name = mg.name.trim();
+        if name.is_empty() {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                "Muscle group names cannot be empty".to_string(),
+            )
+                .into());
+        }
+        if !seen_muscle.insert(name.to_lowercase()) {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                format!("Duplicate muscle group: {name}"),
+            )
+                .into());
+        }
+    }
+
+    for eq in &body.equipment {
+        let name = eq.trim();
+        if name.is_empty() {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                "Equipment names cannot be empty".to_string(),
+            )
+                .into());
+        }
+        if !seen_equipment.insert(name.to_lowercase()) {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                format!("Duplicate equipment: {name}"),
+            )
+                .into());
+        }
+    }
+
+    let mut tx = state.pool.begin().await?;
+    sqlx::query("DELETE FROM exercise_categories")
+        .execute(&mut *tx)
+        .await?;
+
+    for (idx, mg) in body.muscle_groups.iter().enumerate() {
+        sqlx::query(
+            "INSERT INTO exercise_categories (kind, name, color_hex, sort_order) VALUES ('muscle_group', ?, ?, ?)",
+        )
+        .bind(mg.name.trim())
+        .bind(mg.color_hex.as_deref())
+        .bind(idx as i64)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    for (idx, eq) in body.equipment.iter().enumerate() {
+        sqlx::query(
+            "INSERT INTO exercise_categories (kind, name, color_hex, sort_order) VALUES ('equipment', ?, NULL, ?)",
+        )
+        .bind(eq.trim())
+        .bind(idx as i64)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    tx.commit().await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// # Errors

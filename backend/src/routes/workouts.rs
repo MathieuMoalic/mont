@@ -165,49 +165,6 @@ pub async fn update_workout(
 }
 
 /// # Errors
-/// Returns `NOT_FOUND` if the workout doesn't exist.
-pub async fn finish_workout(
-    State(state): State<AppState>,
-    Path(id): Path<i64>,
-) -> AppResult<StatusCode> {
-    // Get first and last set timestamps to calculate actual workout duration
-    let timestamps: Option<(String, String)> = sqlx::query_as(
-        "SELECT MIN(logged_at), MAX(logged_at) FROM workout_sets WHERE workout_id = ?",
-    )
-    .bind(id)
-    .fetch_optional(&state.pool)
-    .await?;
-
-    // Update workout: set started_at to first set, finished_at to last set
-    // Only update if not already finished
-    let result = if let Some((first, last)) = timestamps {
-        sqlx::query(
-            "UPDATE workouts SET started_at = ?, finished_at = ? \
-             WHERE id = ? AND finished_at IS NULL",
-        )
-        .bind(first)
-        .bind(last)
-        .bind(id)
-        .execute(&state.pool)
-        .await?
-    } else {
-        // No sets logged, just set finished_at to now
-        sqlx::query(
-            "UPDATE workouts SET finished_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') \
-             WHERE id = ? AND finished_at IS NULL",
-        )
-        .bind(id)
-        .execute(&state.pool)
-        .await?
-    };
-
-    if result.rows_affected() == 0 {
-        return Err(StatusCode::NOT_FOUND.into());
-    }
-    Ok(StatusCode::NO_CONTENT)
-}
-
-/// # Errors
 /// Returns an error if the database insert fails (e.g. invalid workout or exercise id),
 /// or `BAD_REQUEST` if `set_number`, `reps`, or `weight_kg` are invalid.
 pub async fn add_set(
@@ -267,24 +224,6 @@ pub async fn delete_workout(
         .bind(id)
         .execute(&state.pool)
         .await?;
-    if result.rows_affected() == 0 {
-        return Err(StatusCode::NOT_FOUND.into());
-    }
-    Ok(StatusCode::NO_CONTENT)
-}
-
-/// # Errors
-/// Returns `NOT_FOUND` if the workout doesn't exist or is still active.
-pub async fn restart_workout(
-    State(state): State<AppState>,
-    Path(id): Path<i64>,
-) -> AppResult<StatusCode> {
-    let result = sqlx::query(
-        "UPDATE workouts SET finished_at = NULL WHERE id = ? AND finished_at IS NOT NULL",
-    )
-    .bind(id)
-    .execute(&state.pool)
-    .await?;
     if result.rows_affected() == 0 {
         return Err(StatusCode::NOT_FOUND.into());
     }

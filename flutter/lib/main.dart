@@ -17,6 +17,7 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await api.initApi();
+  await MontColors.loadCustomMuscleColors();
   await Auth.init();
 
   // Set up auth failure callback to redirect to login
@@ -65,10 +66,7 @@ class MontApp extends StatelessWidget {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      supportedLocales: const [
-        Locale('en', 'GB'),
-        Locale('en', 'US'),
-      ],
+      supportedLocales: const [Locale('en', 'GB'), Locale('en', 'US')],
       home: _initialHome(),
       debugShowCheckedModeBanner: false,
     );

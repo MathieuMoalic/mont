@@ -6,16 +6,23 @@ class RunPoint {
   final int? t; // seconds since run start
   final int? cad; // steps per minute
 
-  RunPoint({required this.lat, required this.lon, this.ele, this.hr, this.t, this.cad});
+  RunPoint({
+    required this.lat,
+    required this.lon,
+    this.ele,
+    this.hr,
+    this.t,
+    this.cad,
+  });
 
   factory RunPoint.fromJson(Map<String, dynamic> j) => RunPoint(
-        lat: (j['lat'] as num).toDouble(),
-        lon: (j['lon'] as num).toDouble(),
-        ele: (j['ele'] as num?)?.toDouble(),
-        hr: j['hr'] as int?,
-        t: j['t'] as int?,
-        cad: (j['cad'] as num?)?.toInt(),
-      );
+    lat: (j['lat'] as num).toDouble(),
+    lon: (j['lon'] as num).toDouble(),
+    ele: (j['ele'] as num?)?.toDouble(),
+    hr: j['hr'] as int?,
+    t: j['t'] as int?,
+    cad: (j['cad'] as num?)?.toInt(),
+  );
 }
 
 class RunSummary {
@@ -55,24 +62,24 @@ class RunSummary {
     this.calories,
   });
 
-   factory RunSummary.fromJson(Map<String, dynamic> j) => RunSummary(
-        id: j['id'] as int,
-        startedAt: DateTime.parse(j['started_at'] as String),
-        durationS: j['duration_s'] as int,
-        distanceM: (j['distance_m'] as num).toDouble(),
-        elevationGainM: (j['elevation_gain_m'] as num?)?.toDouble(),
-        avgHr: j['avg_hr'] as int?,
-        maxHr: j['max_hr'] as int?,
-        notes: j['notes'] as String?,
-        isInvalid: (j['is_invalid'] as bool?) ?? false,
-        avgCadence: (j['avg_cadence'] as num?)?.toInt(),
-        avgStrideM: (j['avg_stride_m'] as num?)?.toDouble(),
-        weatherTempC: (j['weather_temp_c'] as num?)?.toDouble(),
-        weatherWindKph: (j['weather_wind_kph'] as num?)?.toDouble(),
-        weatherPrecipMm: (j['weather_precip_mm'] as num?)?.toDouble(),
-        weatherCode: (j['weather_code'] as num?)?.toInt(),
-        calories: (j['calories'] as num?)?.toInt(),
-      );
+  factory RunSummary.fromJson(Map<String, dynamic> j) => RunSummary(
+    id: j['id'] as int,
+    startedAt: DateTime.parse(j['started_at'] as String),
+    durationS: j['duration_s'] as int,
+    distanceM: (j['distance_m'] as num).toDouble(),
+    elevationGainM: (j['elevation_gain_m'] as num?)?.toDouble(),
+    avgHr: j['avg_hr'] as int?,
+    maxHr: j['max_hr'] as int?,
+    notes: j['notes'] as String?,
+    isInvalid: (j['is_invalid'] as bool?) ?? false,
+    avgCadence: (j['avg_cadence'] as num?)?.toInt(),
+    avgStrideM: (j['avg_stride_m'] as num?)?.toDouble(),
+    weatherTempC: (j['weather_temp_c'] as num?)?.toDouble(),
+    weatherWindKph: (j['weather_wind_kph'] as num?)?.toDouble(),
+    weatherPrecipMm: (j['weather_precip_mm'] as num?)?.toDouble(),
+    weatherCode: (j['weather_code'] as num?)?.toInt(),
+    calories: (j['calories'] as num?)?.toInt(),
+  );
 }
 
 class RunDetail extends RunSummary {
@@ -99,26 +106,26 @@ class RunDetail extends RunSummary {
   });
 
   factory RunDetail.fromJson(Map<String, dynamic> j) => RunDetail(
-        id: j['id'] as int,
-        startedAt: DateTime.parse(j['started_at'] as String),
-        durationS: j['duration_s'] as int,
-        distanceM: (j['distance_m'] as num).toDouble(),
-        elevationGainM: (j['elevation_gain_m'] as num?)?.toDouble(),
-        avgHr: j['avg_hr'] as int?,
-        maxHr: j['max_hr'] as int?,
-        notes: j['notes'] as String?,
-        isInvalid: (j['is_invalid'] as bool?) ?? false,
-        avgCadence: (j['avg_cadence'] as num?)?.toInt(),
-        avgStrideM: (j['avg_stride_m'] as num?)?.toDouble(),
-        weatherTempC: (j['weather_temp_c'] as num?)?.toDouble(),
-        weatherWindKph: (j['weather_wind_kph'] as num?)?.toDouble(),
-        weatherPrecipMm: (j['weather_precip_mm'] as num?)?.toDouble(),
-        weatherCode: (j['weather_code'] as num?)?.toInt(),
-        calories: (j['calories'] as num?)?.toInt(),
-        route: (j['route'] as List)
-            .map((e) => RunPoint.fromJson(e as Map<String, dynamic>))
-            .toList(),
-      );
+    id: j['id'] as int,
+    startedAt: DateTime.parse(j['started_at'] as String),
+    durationS: j['duration_s'] as int,
+    distanceM: (j['distance_m'] as num).toDouble(),
+    elevationGainM: (j['elevation_gain_m'] as num?)?.toDouble(),
+    avgHr: j['avg_hr'] as int?,
+    maxHr: j['max_hr'] as int?,
+    notes: j['notes'] as String?,
+    isInvalid: (j['is_invalid'] as bool?) ?? false,
+    avgCadence: (j['avg_cadence'] as num?)?.toInt(),
+    avgStrideM: (j['avg_stride_m'] as num?)?.toDouble(),
+    weatherTempC: (j['weather_temp_c'] as num?)?.toDouble(),
+    weatherWindKph: (j['weather_wind_kph'] as num?)?.toDouble(),
+    weatherPrecipMm: (j['weather_precip_mm'] as num?)?.toDouble(),
+    weatherCode: (j['weather_code'] as num?)?.toInt(),
+    calories: (j['calories'] as num?)?.toInt(),
+    route: (j['route'] as List)
+        .map((e) => RunPoint.fromJson(e as Map<String, dynamic>))
+        .toList(),
+  );
 }
 
 class PersonalRecord {
@@ -135,11 +142,11 @@ class PersonalRecord {
   });
 
   factory PersonalRecord.fromJson(Map<String, dynamic> j) => PersonalRecord(
-        distanceLabel: j['distance_label'] as String,
-        runId: j['run_id'] as int,
-        runDate: DateTime.parse(j['run_date'] as String),
-        estimatedSeconds: (j['estimated_seconds'] as num).toDouble(),
-      );
+    distanceLabel: j['distance_label'] as String,
+    runId: j['run_id'] as int,
+    runDate: DateTime.parse(j['run_date'] as String),
+    estimatedSeconds: (j['estimated_seconds'] as num).toDouble(),
+  );
 
   String get formattedTime {
     final total = estimatedSeconds.round();
@@ -158,13 +165,17 @@ class WeightEntry {
   final DateTime measuredAt;
   final double weightKg;
 
-  WeightEntry({required this.id, required this.measuredAt, required this.weightKg});
+  WeightEntry({
+    required this.id,
+    required this.measuredAt,
+    required this.weightKg,
+  });
 
   factory WeightEntry.fromJson(Map<String, dynamic> j) => WeightEntry(
-        id: j['id'] as int,
-        measuredAt: DateTime.parse(j['measured_at'] as String),
-        weightKg: (j['weight_kg'] as num).toDouble(),
-      );
+    id: j['id'] as int,
+    measuredAt: DateTime.parse(j['measured_at'] as String),
+    weightKg: (j['weight_kg'] as num).toDouble(),
+  );
 }
 
 class Exercise {
@@ -174,15 +185,21 @@ class Exercise {
   final String? muscleGroup;
   final String? equipment;
 
-  Exercise({required this.id, required this.name, this.notes, this.muscleGroup, this.equipment});
+  Exercise({
+    required this.id,
+    required this.name,
+    this.notes,
+    this.muscleGroup,
+    this.equipment,
+  });
 
   factory Exercise.fromJson(Map<String, dynamic> j) => Exercise(
-        id: j['id'] as int,
-        name: j['name'] as String,
-        notes: j['notes'] as String?,
-        muscleGroup: j['muscle_group'] as String?,
-        equipment: j['equipment'] as String?,
-      );
+    id: j['id'] as int,
+    name: j['name'] as String,
+    notes: j['notes'] as String?,
+    muscleGroup: j['muscle_group'] as String?,
+    equipment: j['equipment'] as String?,
+  );
 
   String get displayName {
     if (equipment != null && equipment!.isNotEmpty) {
@@ -190,6 +207,46 @@ class Exercise {
     }
     return name;
   }
+}
+
+class MuscleGroupCategory {
+  final String name;
+  final String? colorHex;
+
+  MuscleGroupCategory({required this.name, this.colorHex});
+
+  factory MuscleGroupCategory.fromJson(Map<String, dynamic> j) =>
+      MuscleGroupCategory(
+        name: j['name'] as String,
+        colorHex: j['color_hex'] as String?,
+      );
+
+  Map<String, dynamic> toJson() => {
+    'name': name,
+    if (colorHex != null) 'color_hex': colorHex,
+  };
+}
+
+class ExerciseCategories {
+  final List<MuscleGroupCategory> muscleGroups;
+  final List<String> equipment;
+
+  ExerciseCategories({required this.muscleGroups, required this.equipment});
+
+  factory ExerciseCategories.fromJson(Map<String, dynamic> j) =>
+      ExerciseCategories(
+        muscleGroups: ((j['muscle_groups'] as List?) ?? const [])
+            .map((e) => MuscleGroupCategory.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        equipment: ((j['equipment'] as List?) ?? const [])
+            .map((e) => e.toString())
+            .toList(),
+      );
+
+  Map<String, dynamic> toJson() => {
+    'muscle_groups': muscleGroups.map((e) => e.toJson()).toList(),
+    'equipment': equipment,
+  };
 }
 
 class WorkoutSummary {
@@ -213,14 +270,18 @@ class WorkoutSummary {
     final startedAtStr = j['started_at'] as String;
     final finishedAtStr = j['finished_at'] as String?;
     return WorkoutSummary(
-        id: j['id'] as int,
-        startedAt: DateTime.parse(startedAtStr.endsWith('Z') ? startedAtStr : '${startedAtStr}Z'),
-        finishedAt: finishedAtStr != null
-            ? DateTime.parse(finishedAtStr.endsWith('Z') ? finishedAtStr : '${finishedAtStr}Z')
-            : null,
-        notes: j['notes'] as String?,
-        setCount: j['set_count'] as int,
-      );
+      id: j['id'] as int,
+      startedAt: DateTime.parse(
+        startedAtStr.endsWith('Z') ? startedAtStr : '${startedAtStr}Z',
+      ),
+      finishedAt: finishedAtStr != null
+          ? DateTime.parse(
+              finishedAtStr.endsWith('Z') ? finishedAtStr : '${finishedAtStr}Z',
+            )
+          : null,
+      notes: j['notes'] as String?,
+      setCount: j['set_count'] as int,
+    );
   }
 }
 
@@ -248,15 +309,17 @@ class WorkoutSet {
   factory WorkoutSet.fromJson(Map<String, dynamic> j) {
     final loggedAtStr = j['logged_at'] as String;
     return WorkoutSet(
-        id: j['id'] as int,
-        exerciseId: j['exercise_id'] as int,
-        exerciseName: j['exercise_name'] as String,
-        muscleGroup: j['muscle_group'] as String?,
-        setNumber: j['set_number'] as int,
-        reps: j['reps'] as int,
-        weightKg: (j['weight_kg'] as num).toDouble(),
-        loggedAt: DateTime.parse(loggedAtStr.endsWith('Z') ? loggedAtStr : '${loggedAtStr}Z'),
-      );
+      id: j['id'] as int,
+      exerciseId: j['exercise_id'] as int,
+      exerciseName: j['exercise_name'] as String,
+      muscleGroup: j['muscle_group'] as String?,
+      setNumber: j['set_number'] as int,
+      reps: j['reps'] as int,
+      weightKg: (j['weight_kg'] as num).toDouble(),
+      loggedAt: DateTime.parse(
+        loggedAtStr.endsWith('Z') ? loggedAtStr : '${loggedAtStr}Z',
+      ),
+    );
   }
 }
 
@@ -281,16 +344,20 @@ class WorkoutDetail {
     final startedAtStr = j['started_at'] as String;
     final finishedAtStr = j['finished_at'] as String?;
     return WorkoutDetail(
-        id: j['id'] as int,
-        startedAt: DateTime.parse(startedAtStr.endsWith('Z') ? startedAtStr : '${startedAtStr}Z'),
-        finishedAt: finishedAtStr != null
-            ? DateTime.parse(finishedAtStr.endsWith('Z') ? finishedAtStr : '${finishedAtStr}Z')
-            : null,
-        notes: j['notes'] as String?,
-        sets: (j['sets'] as List)
-            .map((s) => WorkoutSet.fromJson(s as Map<String, dynamic>))
-            .toList(),
-      );
+      id: j['id'] as int,
+      startedAt: DateTime.parse(
+        startedAtStr.endsWith('Z') ? startedAtStr : '${startedAtStr}Z',
+      ),
+      finishedAt: finishedAtStr != null
+          ? DateTime.parse(
+              finishedAtStr.endsWith('Z') ? finishedAtStr : '${finishedAtStr}Z',
+            )
+          : null,
+      notes: j['notes'] as String?,
+      sets: (j['sets'] as List)
+          .map((s) => WorkoutSet.fromJson(s as Map<String, dynamic>))
+          .toList(),
+    );
   }
 }
 
@@ -312,15 +379,14 @@ class DailyHealth {
   });
 
   factory DailyHealth.fromJson(Map<String, dynamic> j) => DailyHealth(
-        date: j['date'] as String,
-        avgHr: j['avg_hr'] as int?,
-        minHr: j['min_hr'] as int?,
-        maxHr: j['max_hr'] as int?,
-        hrvRmssd: (j['hrv_rmssd'] as num?)?.toDouble(),
-        steps: j['steps'] as int?,
-      );
+    date: j['date'] as String,
+    avgHr: j['avg_hr'] as int?,
+    minHr: j['min_hr'] as int?,
+    maxHr: j['max_hr'] as int?,
+    hrvRmssd: (j['hrv_rmssd'] as num?)?.toDouble(),
+    steps: j['steps'] as int?,
+  );
 }
-
 
 class ExerciseHistoryPoint {
   final DateTime workoutDate;
@@ -383,7 +449,8 @@ class ExercisePersonalRecord {
     required this.bestSetReps,
   });
 
-  factory ExercisePersonalRecord.fromJson(Map<String, dynamic> j) => ExercisePersonalRecord(
+  factory ExercisePersonalRecord.fromJson(Map<String, dynamic> j) =>
+      ExercisePersonalRecord(
         maxWeightKg: (j['max_weight_kg'] as num).toDouble(),
         maxWeightDate: DateTime.parse(j['max_weight_date'] as String),
         maxWeightReps: j['max_weight_reps'] as int,
@@ -398,4 +465,3 @@ class ExercisePersonalRecord {
         bestSetReps: j['best_set_reps'] as int,
       );
 }
-
