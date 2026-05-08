@@ -189,8 +189,7 @@ async fn import_without_file_field_returns_400() {
 #[tokio::test]
 async fn import_invalid_gpx_returns_422() {
     let app = common::TestApp::spawn().await;
-    let part = reqwest::multipart::Part::bytes(b"this is not gpx".to_vec())
-        .file_name("bad.gpx");
+    let part = reqwest::multipart::Part::bytes(b"this is not gpx".to_vec()).file_name("bad.gpx");
     let form = reqwest::multipart::Form::new().part("file", part);
     let res = app
         .client
@@ -205,7 +204,12 @@ async fn import_invalid_gpx_returns_422() {
 
 // ── Personal records tests ───────────────────────────────────────────────────
 
-async fn insert_run(app: &common::TestApp, started_at: &str, duration_s: i64, distance_m: f64) -> i64 {
+async fn insert_run(
+    app: &common::TestApp,
+    started_at: &str,
+    duration_s: i64,
+    distance_m: f64,
+) -> i64 {
     let row: (i64,) = sqlx::query_as(
         "INSERT INTO runs (started_at, duration_s, distance_m, route_json) VALUES (?, ?, ?, '[]') RETURNING id",
     )
@@ -266,7 +270,12 @@ async fn mark_run_invalid_returns_204() {
     insert_run(&app, "2026-01-01T08:00:00Z", 1500, 5000.0).await;
     let runs: Vec<serde_json::Value> = app.get("/runs").await.json().await.unwrap();
     let id = runs[0]["id"].as_i64().unwrap();
-    let res = app.patch(&format!("/runs/{id}"), serde_json::json!({"is_invalid": true})).await;
+    let res = app
+        .patch(
+            &format!("/runs/{id}"),
+            serde_json::json!({"is_invalid": true}),
+        )
+        .await;
     assert_eq!(res.status(), 204);
 }
 
@@ -277,7 +286,11 @@ async fn invalid_run_is_excluded_from_prs() {
     let runs: Vec<serde_json::Value> = app.get("/runs").await.json().await.unwrap();
     let id = runs[0]["id"].as_i64().unwrap();
     // Mark as invalid
-    app.patch(&format!("/runs/{id}"), serde_json::json!({"is_invalid": true})).await;
+    app.patch(
+        &format!("/runs/{id}"),
+        serde_json::json!({"is_invalid": true}),
+    )
+    .await;
     // Should not appear in PRs
     let prs: Vec<serde_json::Value> = app.get("/runs/prs").await.json().await.unwrap();
     assert!(prs.iter().find(|p| p["distance_label"] == "5 km").is_none());
@@ -289,7 +302,11 @@ async fn invalid_run_still_appears_in_list() {
     insert_run(&app, "2026-01-01T08:00:00Z", 1500, 5000.0).await;
     let runs: Vec<serde_json::Value> = app.get("/runs").await.json().await.unwrap();
     let id = runs[0]["id"].as_i64().unwrap();
-    app.patch(&format!("/runs/{id}"), serde_json::json!({"is_invalid": true})).await;
+    app.patch(
+        &format!("/runs/{id}"),
+        serde_json::json!({"is_invalid": true}),
+    )
+    .await;
     let runs: Vec<serde_json::Value> = app.get("/runs").await.json().await.unwrap();
     assert_eq!(runs.len(), 1);
     assert_eq!(runs[0]["is_invalid"], true);
@@ -301,8 +318,16 @@ async fn can_unmark_invalid_run() {
     insert_run(&app, "2026-01-01T08:00:00Z", 1500, 5000.0).await;
     let runs: Vec<serde_json::Value> = app.get("/runs").await.json().await.unwrap();
     let id = runs[0]["id"].as_i64().unwrap();
-    app.patch(&format!("/runs/{id}"), serde_json::json!({"is_invalid": true})).await;
-    app.patch(&format!("/runs/{id}"), serde_json::json!({"is_invalid": false})).await;
+    app.patch(
+        &format!("/runs/{id}"),
+        serde_json::json!({"is_invalid": true}),
+    )
+    .await;
+    app.patch(
+        &format!("/runs/{id}"),
+        serde_json::json!({"is_invalid": false}),
+    )
+    .await;
     let runs: Vec<serde_json::Value> = app.get("/runs").await.json().await.unwrap();
     assert_eq!(runs[0]["is_invalid"], false);
     // Should be back in PRs
@@ -313,7 +338,9 @@ async fn can_unmark_invalid_run() {
 #[tokio::test]
 async fn mark_nonexistent_run_invalid_returns_404() {
     let app = common::TestApp::spawn().await;
-    let res = app.patch("/runs/9999", serde_json::json!({"is_invalid": true})).await;
+    let res = app
+        .patch("/runs/9999", serde_json::json!({"is_invalid": true}))
+        .await;
     assert_eq!(res.status(), 404);
 }
 
@@ -376,7 +403,8 @@ async fn sync_from_zip_imports_running_activities() {
 }
 
 fn make_gpx_with_type(activity_type: &str) -> Vec<u8> {
-    format!(r#"<?xml version="1.0" encoding="UTF-8"?>
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
 <gpx version="1.1" creator="GadgetBridge"
      xmlns="http://www.topografix.com/GPX/1/1">
   <trk>
@@ -386,28 +414,41 @@ fn make_gpx_with_type(activity_type: &str) -> Vec<u8> {
       <trkpt lat="48.8576" lon="2.3532"><ele>37.5</ele><time>2026-02-01T09:00:30Z</time></trkpt>
     </trkseg>
   </trk>
-</gpx>"#).into_bytes()
+</gpx>"#
+    )
+    .into_bytes()
 }
 
 #[tokio::test]
 async fn cycling_gpx_is_rejected_on_import() {
     let app = common::TestApp::spawn().await;
-    let part = reqwest::multipart::Part::bytes(make_gpx_with_type("cycling"))
-        .file_name("cycling.gpx");
+    let part =
+        reqwest::multipart::Part::bytes(make_gpx_with_type("cycling")).file_name("cycling.gpx");
     let form = reqwest::multipart::Form::new().part("file", part);
-    let res = app.client.post(app.url("/runs/import"))
-        .bearer_auth(&app.token).multipart(form).send().await.unwrap();
+    let res = app
+        .client
+        .post(app.url("/runs/import"))
+        .bearer_auth(&app.token)
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
     assert_eq!(res.status(), 422);
 }
 
 #[tokio::test]
 async fn running_gpx_with_type_is_accepted() {
     let app = common::TestApp::spawn().await;
-    let part = reqwest::multipart::Part::bytes(make_gpx_with_type("running"))
-        .file_name("run.gpx");
+    let part = reqwest::multipart::Part::bytes(make_gpx_with_type("running")).file_name("run.gpx");
     let form = reqwest::multipart::Form::new().part("file", part);
-    let res = app.client.post(app.url("/runs/import"))
-        .bearer_auth(&app.token).multipart(form).send().await.unwrap();
+    let res = app
+        .client
+        .post(app.url("/runs/import"))
+        .bearer_auth(&app.token)
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
     assert_eq!(res.status(), 201);
 }
 
@@ -415,10 +456,15 @@ async fn running_gpx_with_type_is_accepted() {
 async fn gpx_without_type_field_is_accepted() {
     let app = common::TestApp::spawn().await;
     // SAMPLE_GPX has no <type> element — should still be accepted
-    let part = reqwest::multipart::Part::bytes(SAMPLE_GPX.as_bytes().to_vec())
-        .file_name("run.gpx");
+    let part = reqwest::multipart::Part::bytes(SAMPLE_GPX.as_bytes().to_vec()).file_name("run.gpx");
     let form = reqwest::multipart::Form::new().part("file", part);
-    let res = app.client.post(app.url("/runs/import"))
-        .bearer_auth(&app.token).multipart(form).send().await.unwrap();
+    let res = app
+        .client
+        .post(app.url("/runs/import"))
+        .bearer_auth(&app.token)
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
     assert_eq!(res.status(), 201);
 }

@@ -76,7 +76,11 @@ async fn login_with_correct_password_returns_token() {
     assert_eq!(res.status(), 200);
     let body: serde_json::Value = res.json().await.unwrap();
     assert!(body["token"].as_str().is_some_and(|t| !t.is_empty()));
-    assert!(body["refresh_token"].as_str().is_some_and(|t| !t.is_empty()));
+    assert!(
+        body["refresh_token"]
+            .as_str()
+            .is_some_and(|t| !t.is_empty())
+    );
 }
 
 #[tokio::test]
@@ -104,7 +108,10 @@ async fn refresh_with_valid_refresh_token_returns_new_access_token() {
 async fn refresh_with_invalid_token_returns_401() {
     let app = common::TestApp::spawn().await;
     let res = app
-        .post_json_public("/auth/refresh", &json!({ "refresh_token": "invalid.token.here" }))
+        .post_json_public(
+            "/auth/refresh",
+            &json!({ "refresh_token": "invalid.token.here" }),
+        )
         .await;
     assert_eq!(res.status(), 401);
 }

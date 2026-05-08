@@ -64,11 +64,17 @@ async fn list_exercises_sorted_by_recent_use() {
 async fn create_exercise_with_duplicate_name_and_equipment_fails() {
     let app = common::TestApp::spawn().await;
     let res1 = app
-        .post_json("/exercises", &serde_json::json!({ "name": "Curl", "equipment": "Barbell" }))
+        .post_json(
+            "/exercises",
+            &serde_json::json!({ "name": "Curl", "equipment": "Barbell" }),
+        )
         .await;
     assert_eq!(res1.status(), 201);
     let res2 = app
-        .post_json("/exercises", &serde_json::json!({ "name": "Curl", "equipment": "Barbell" }))
+        .post_json(
+            "/exercises",
+            &serde_json::json!({ "name": "Curl", "equipment": "Barbell" }),
+        )
         .await;
     assert!(res2.status().is_server_error() || res2.status().is_client_error());
 }
@@ -77,7 +83,10 @@ async fn create_exercise_with_duplicate_name_and_equipment_fails() {
 async fn create_exercise_with_same_name_different_equipment_succeeds() {
     let app = common::TestApp::spawn().await;
     let res1 = app
-        .post_json("/exercises", &serde_json::json!({ "name": "Chest Press", "equipment": "Barbell" }))
+        .post_json(
+            "/exercises",
+            &serde_json::json!({ "name": "Chest Press", "equipment": "Barbell" }),
+        )
         .await;
     assert_eq!(res1.status(), 201);
     let body1: serde_json::Value = res1.json().await.unwrap();
@@ -85,7 +94,10 @@ async fn create_exercise_with_same_name_different_equipment_succeeds() {
     assert_eq!(body1["equipment"], "Barbell");
 
     let res2 = app
-        .post_json("/exercises", &serde_json::json!({ "name": "Chest Press", "equipment": "Dumbbell" }))
+        .post_json(
+            "/exercises",
+            &serde_json::json!({ "name": "Chest Press", "equipment": "Dumbbell" }),
+        )
         .await;
     assert_eq!(res2.status(), 201);
     let body2: serde_json::Value = res2.json().await.unwrap();
@@ -244,36 +256,46 @@ async fn exercise_pr_returns_all_records() {
     let app = common::TestApp::spawn().await;
     let ex = app.create_exercise("Squat").await;
     let ex_id = ex["id"].as_i64().unwrap();
-    
+
     // Create multiple workouts with different PRs
     // Workout 1: max weight
     let w1 = app.create_workout().await;
-    app.add_set(w1["id"].as_i64().unwrap(), ex_id, 1, 5, 150.0).await;
-    
+    app.add_set(w1["id"].as_i64().unwrap(), ex_id, 1, 5, 150.0)
+        .await;
+
     // Workout 2: max reps (at lower weight)
     let w2 = app.create_workout().await;
-    app.add_set(w2["id"].as_i64().unwrap(), ex_id, 1, 20, 60.0).await;
-    
+    app.add_set(w2["id"].as_i64().unwrap(), ex_id, 1, 20, 60.0)
+        .await;
+
     // Workout 3: max volume (multiple sets)
     let w3 = app.create_workout().await;
-    app.add_set(w3["id"].as_i64().unwrap(), ex_id, 1, 10, 100.0).await;
-    app.add_set(w3["id"].as_i64().unwrap(), ex_id, 2, 10, 100.0).await;
-    app.add_set(w3["id"].as_i64().unwrap(), ex_id, 3, 10, 100.0).await;
-    
-    let pr: serde_json::Value = app.get(&format!("/exercises/{ex_id}/pr")).await.json().await.unwrap();
-    
+    app.add_set(w3["id"].as_i64().unwrap(), ex_id, 1, 10, 100.0)
+        .await;
+    app.add_set(w3["id"].as_i64().unwrap(), ex_id, 2, 10, 100.0)
+        .await;
+    app.add_set(w3["id"].as_i64().unwrap(), ex_id, 3, 10, 100.0)
+        .await;
+
+    let pr: serde_json::Value = app
+        .get(&format!("/exercises/{ex_id}/pr"))
+        .await
+        .json()
+        .await
+        .unwrap();
+
     // Check max weight
     assert_eq!(pr["max_weight_kg"], 150.0);
     assert_eq!(pr["max_weight_reps"], 5);
-    
+
     // Check max reps
     assert_eq!(pr["max_reps"], 20);
     assert_eq!(pr["max_reps_weight_kg"], 60.0);
-    
+
     // Check max volume (3 sets x 10 reps x 100kg = 3000)
     let max_vol = pr["max_volume_workout"].as_f64().unwrap();
     assert!((max_vol - 3000.0).abs() < 0.01);
-    
+
     // Check best set (weight * reps) - 60kg * 20 reps = 1200
     let best_score = pr["best_set_score"].as_f64().unwrap();
     assert!((best_score - 1200.0).abs() < 0.01);

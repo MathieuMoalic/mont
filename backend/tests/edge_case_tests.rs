@@ -25,7 +25,10 @@ async fn exercise_name_with_unicode() {
     let app = TestApp::spawn().await;
 
     let res = app
-        .post_json("/exercises", &serde_json::json!({ "name": "Übung mit Gewicht" }))
+        .post_json(
+            "/exercises",
+            &serde_json::json!({ "name": "Übung mit Gewicht" }),
+        )
         .await;
     assert_eq!(res.status(), 201);
 
@@ -89,7 +92,9 @@ async fn exercise_update_with_empty_body() {
     let id = exercise["id"].as_i64().unwrap();
 
     // Update with no fields should return the existing exercise
-    let res = app.patch(&format!("/exercises/{}", id), serde_json::json!({})).await;
+    let res = app
+        .patch(&format!("/exercises/{}", id), serde_json::json!({}))
+        .await;
     assert_eq!(res.status(), 200);
 
     let updated: serde_json::Value = res.json().await.unwrap();
@@ -442,7 +447,10 @@ async fn weight_entry_with_wrong_type() {
     let app = TestApp::spawn().await;
 
     let res = app
-        .post_json("/weight", &serde_json::json!({ "weight_kg": "not a number" }))
+        .post_json(
+            "/weight",
+            &serde_json::json!({ "weight_kg": "not a number" }),
+        )
         .await;
     assert_eq!(res.status(), 422);
 }

@@ -105,7 +105,10 @@ async fn delete_nonexistent_weight_entry_returns_404() {
 async fn create_weight_entry_missing_weight_returns_422() {
     let app = common::TestApp::spawn().await;
     let res = app
-        .post_json("/weight", &serde_json::json!({ "notes": "no weight field" }))
+        .post_json(
+            "/weight",
+            &serde_json::json!({ "notes": "no weight field" }),
+        )
         .await;
     assert_eq!(res.status(), 422);
 }

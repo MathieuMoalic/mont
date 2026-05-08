@@ -190,8 +190,11 @@ async fn list_weight_default_pagination() {
     let app = TestApp::spawn().await;
 
     for i in 0..5 {
-        app.post_json("/weight", &serde_json::json!({ "weight_kg": 70.0 + i as f64 }))
-            .await;
+        app.post_json(
+            "/weight",
+            &serde_json::json!({ "weight_kg": 70.0 + i as f64 }),
+        )
+        .await;
     }
 
     let res = app.get("/weight").await;
@@ -206,8 +209,11 @@ async fn list_weight_with_limit() {
     let app = TestApp::spawn().await;
 
     for i in 0..10 {
-        app.post_json("/weight", &serde_json::json!({ "weight_kg": 70.0 + i as f64 }))
-            .await;
+        app.post_json(
+            "/weight",
+            &serde_json::json!({ "weight_kg": 70.0 + i as f64 }),
+        )
+        .await;
     }
 
     let res = app.get("/weight?limit=3").await;
@@ -222,8 +228,11 @@ async fn list_weight_with_limit_and_offset() {
     let app = TestApp::spawn().await;
 
     for i in 0..10 {
-        app.post_json("/weight", &serde_json::json!({ "weight_kg": 70.0 + i as f64 }))
-            .await;
+        app.post_json(
+            "/weight",
+            &serde_json::json!({ "weight_kg": 70.0 + i as f64 }),
+        )
+        .await;
     }
 
     let res = app.get("/weight?limit=4&offset=3").await;

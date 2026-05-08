@@ -74,7 +74,12 @@ async fn finish_workout_sets_finished_at() {
 
     app.patch_empty(&format!("/workouts/{id}/finish")).await;
 
-    let body: serde_json::Value = app.get(&format!("/workouts/{id}")).await.json().await.unwrap();
+    let body: serde_json::Value = app
+        .get(&format!("/workouts/{id}"))
+        .await
+        .json()
+        .await
+        .unwrap();
     assert!(body["finished_at"].as_str().is_some());
 }
 
@@ -122,7 +127,15 @@ async fn add_set_includes_exercise_name() {
     let w = app.create_workout().await;
     let e = app.create_exercise("Deadlift").await;
 
-    let set = app.add_set(w["id"].as_i64().unwrap(), e["id"].as_i64().unwrap(), 1, 5, 140.0).await;
+    let set = app
+        .add_set(
+            w["id"].as_i64().unwrap(),
+            e["id"].as_i64().unwrap(),
+            1,
+            5,
+            140.0,
+        )
+        .await;
     assert_eq!(set["exercise_name"], "Deadlift");
 }
 
@@ -138,7 +151,12 @@ async fn get_workout_returns_sets() {
     app.add_set(wid, eid, 2, 8, 100.0).await;
     app.add_set(wid, eid, 3, 6, 105.0).await;
 
-    let body: serde_json::Value = app.get(&format!("/workouts/{wid}")).await.json().await.unwrap();
+    let body: serde_json::Value = app
+        .get(&format!("/workouts/{wid}"))
+        .await
+        .json()
+        .await
+        .unwrap();
     let sets = body["sets"].as_array().unwrap();
     assert_eq!(sets.len(), 3);
     assert_eq!(sets[2]["weight_kg"], 105.0);
@@ -183,9 +201,15 @@ async fn delete_set_removes_it_from_workout() {
     let eid = e["id"].as_i64().unwrap();
 
     let set = app.add_set(wid, eid, 1, 15, 30.0).await;
-    app.delete(&format!("/workouts/{wid}/sets/{}", set["id"])).await;
+    app.delete(&format!("/workouts/{wid}/sets/{}", set["id"]))
+        .await;
 
-    let body: serde_json::Value = app.get(&format!("/workouts/{wid}")).await.json().await.unwrap();
+    let body: serde_json::Value = app
+        .get(&format!("/workouts/{wid}"))
+        .await
+        .json()
+        .await
+        .unwrap();
     assert!(body["sets"].as_array().unwrap().is_empty());
 }
 
@@ -271,7 +295,12 @@ async fn restart_workout_clears_finished_at() {
     let wid = w["id"].as_i64().unwrap();
     app.patch_empty(&format!("/workouts/{wid}/finish")).await;
     app.patch_empty(&format!("/workouts/{wid}/restart")).await;
-    let detail: serde_json::Value = app.get(&format!("/workouts/{wid}")).await.json().await.unwrap();
+    let detail: serde_json::Value = app
+        .get(&format!("/workouts/{wid}"))
+        .await
+        .json()
+        .await
+        .unwrap();
     assert!(detail["finished_at"].is_null());
 }
 
@@ -293,7 +322,10 @@ async fn update_workout_notes() {
     let wid = w["id"].as_i64().unwrap();
 
     let res = app
-        .patch(&format!("/workouts/{wid}"), serde_json::json!({"notes": "Leg day"}))
+        .patch(
+            &format!("/workouts/{wid}"),
+            serde_json::json!({"notes": "Leg day"}),
+        )
         .await;
     assert_eq!(res.status(), 200);
 
@@ -349,7 +381,10 @@ async fn update_set_partial_update() {
 
     // Only update reps
     let res = app
-        .patch(&format!("/workouts/{wid}/sets/{sid}"), serde_json::json!({"reps": 6}))
+        .patch(
+            &format!("/workouts/{wid}/sets/{sid}"),
+            serde_json::json!({"reps": 6}),
+        )
         .await;
     assert_eq!(res.status(), 200);
 
@@ -370,7 +405,10 @@ async fn update_set_negative_reps_returns_400() {
     let sid = set["id"].as_i64().unwrap();
 
     let res = app
-        .patch(&format!("/workouts/{wid}/sets/{sid}"), serde_json::json!({"reps": -1}))
+        .patch(
+            &format!("/workouts/{wid}/sets/{sid}"),
+            serde_json::json!({"reps": -1}),
+        )
         .await;
     assert_eq!(res.status(), 400);
 }
@@ -382,7 +420,10 @@ async fn update_nonexistent_set_returns_404() {
     let wid = w["id"].as_i64().unwrap();
 
     let res = app
-        .patch(&format!("/workouts/{wid}/sets/999"), serde_json::json!({"reps": 10}))
+        .patch(
+            &format!("/workouts/{wid}/sets/999"),
+            serde_json::json!({"reps": 10}),
+        )
         .await;
     assert_eq!(res.status(), 404);
 }

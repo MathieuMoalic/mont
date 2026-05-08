@@ -101,7 +101,10 @@ async fn authenticated_post_requests_work() {
     // Create multiple exercises
     for i in 0..5 {
         let res = app
-            .post_json("/exercises", &serde_json::json!({ "name": format!("Exercise {}", i) }))
+            .post_json(
+                "/exercises",
+                &serde_json::json!({ "name": format!("Exercise {}", i) }),
+            )
             .await;
         assert_eq!(res.status(), 201);
     }

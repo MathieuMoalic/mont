@@ -166,7 +166,11 @@ impl TestApp {
         self.client.get(self.url(path)).send().await.unwrap()
     }
 
-    pub async fn post_json_public(&self, path: &str, body: &serde_json::Value) -> reqwest::Response {
+    pub async fn post_json_public(
+        &self,
+        path: &str,
+        body: &serde_json::Value,
+    ) -> reqwest::Response {
         self.client
             .post(self.url(path))
             .json(body)
@@ -214,8 +218,8 @@ impl TestApp {
 }
 
 pub fn hash_password(password: &str) -> String {
-    use argon2::password_hash::{PasswordHasher, SaltString};
     use argon2::Argon2;
+    use argon2::password_hash::{PasswordHasher, SaltString};
     use rand::rngs::OsRng;
     let salt = SaltString::generate(&mut OsRng);
     Argon2::default()
