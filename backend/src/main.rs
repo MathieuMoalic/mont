@@ -54,18 +54,29 @@ async fn main() -> anyhow::Result<()> {
     );
     tracing::info!(
         "JWT secret: {}",
-        if config.jwt_secret.is_some() { "<set>" } else { "<not set>" }
+        if config.jwt_secret.is_some() {
+            "<set>"
+        } else {
+            "<not set>"
+        }
     );
     tracing::info!(
         "Password hash: {}",
-        if config.password_hash.is_some() { "<set>" } else { "<not set>" }
+        if config.password_hash.is_some() {
+            "<set>"
+        } else {
+            "<not set>"
+        }
     );
     tracing::info!("====================");
 
     let pool = make_pool(config.database_path.clone()).await?;
 
     // Safe: we ensured jwt_secret is Some above
-    let jwt_secret = config.jwt_secret.as_ref().expect("jwt_secret was set above");
+    let jwt_secret = config
+        .jwt_secret
+        .as_ref()
+        .expect("jwt_secret was set above");
     let state = AppState {
         pool,
         jwt_encoding: jsonwebtoken::EncodingKey::from_secret(jwt_secret.as_bytes()),
@@ -88,7 +99,9 @@ async fn main() -> anyhow::Result<()> {
                 match perform_sync(&sync_state).await {
                     Ok(r) => tracing::info!(
                         "Auto-sync done: {} runs, {} health days, {} errors",
-                        r.imported, r.health_days, r.errors.len()
+                        r.imported,
+                        r.health_days,
+                        r.errors.len()
                     ),
                     Err(e) => tracing::error!("Auto-sync failed: {e}"),
                 }

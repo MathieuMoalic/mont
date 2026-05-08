@@ -1,7 +1,7 @@
 use axum::{
+    Json,
     extract::{Path, Query, State},
     http::StatusCode,
-    Json,
 };
 use serde::{Deserialize, Serialize};
 
@@ -43,7 +43,11 @@ pub async fn create_weight_entry(
     Json(body): Json<CreateWeightEntry>,
 ) -> AppResult<(StatusCode, Json<WeightEntry>)> {
     if body.weight_kg <= 0.0 {
-        return Err((StatusCode::BAD_REQUEST, "Weight must be positive".to_string()).into());
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Weight must be positive".to_string(),
+        )
+            .into());
     }
     let entry = if let Some(ts) = body.measured_at {
         sqlx::query_as::<_, WeightEntry>(
@@ -82,7 +86,11 @@ pub async fn update_weight_entry(
     if let Some(w) = body.weight_kg
         && w <= 0.0
     {
-        return Err((StatusCode::BAD_REQUEST, "Weight must be positive".to_string()).into());
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Weight must be positive".to_string(),
+        )
+            .into());
     }
     let entry = sqlx::query_as::<_, WeightEntry>(
         "UPDATE weight_entries SET \

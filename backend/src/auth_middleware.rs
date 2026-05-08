@@ -5,7 +5,7 @@ use axum::{
     middleware::Next,
     response::Response,
 };
-use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
+use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 
 use crate::models::AppState;
 use crate::routes::auth::{Claims, TokenType};

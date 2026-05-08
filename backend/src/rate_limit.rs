@@ -1,6 +1,6 @@
 use axum::{
     body::Body,
-    http::{header, Request, StatusCode},
+    http::{Request, StatusCode, header},
     response::{IntoResponse, Response},
 };
 use std::{
@@ -32,10 +32,7 @@ impl RateLimiter {
         let now = Instant::now();
         let cutoff = now.checked_sub(self.window).unwrap_or(now);
 
-        let mut requests = self
-            .requests
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
+        let mut requests = self.requests.lock().unwrap_or_else(PoisonError::into_inner);
 
         let entry = requests.entry(key.to_string()).or_default();
         entry.retain(|&t| t > cutoff);

@@ -1,8 +1,8 @@
 use crate::error::AppResult;
 use crate::models::AppState;
 use argon2::Argon2;
-use axum::{extract::State, http::StatusCode, Json};
-use jsonwebtoken::{decode, Algorithm, DecodingKey, Header, Validation, encode};
+use axum::{Json, extract::State, http::StatusCode};
+use jsonwebtoken::{Algorithm, DecodingKey, Header, Validation, decode, encode};
 use password_hash::{PasswordHash, PasswordVerifier};
 use serde::{Deserialize, Serialize};
 
@@ -121,9 +121,13 @@ pub async fn refresh(
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
     let decoding_key = DecodingKey::from_secret(jwt_secret.as_bytes());
 
-    let claims = decode::<Claims>(&req.refresh_token, &decoding_key, &Validation::new(Algorithm::HS256))
-        .map_err(|_| StatusCode::UNAUTHORIZED)?
-        .claims;
+    let claims = decode::<Claims>(
+        &req.refresh_token,
+        &decoding_key,
+        &Validation::new(Algorithm::HS256),
+    )
+    .map_err(|_| StatusCode::UNAUTHORIZED)?
+    .claims;
 
     // Verify this is a refresh token, not an access token
     if claims.token_type != TokenType::Refresh {

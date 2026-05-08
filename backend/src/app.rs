@@ -1,4 +1,4 @@
-use crate::rate_limit::{rate_limit_middleware, RateLimitState};
+use crate::rate_limit::{RateLimitState, rate_limit_middleware};
 use crate::routes::{auth, exercises, health, runs, weight, workouts};
 use crate::{
     auth_middleware::require_auth,
@@ -61,19 +61,42 @@ pub fn build_app(state: AppState) -> Router {
         .route("/auth/refresh", post(auth::refresh));
 
     let protected_routes = Router::new()
-        .route("/exercises", get(exercises::list_exercises).post(exercises::create_exercise))
+        .route(
+            "/exercises",
+            get(exercises::list_exercises).post(exercises::create_exercise),
+        )
         .route("/exercises/{id}", patch(exercises::update_exercise))
         .route("/exercises/{id}/history", get(exercises::exercise_history))
-        .route("/exercises/{id}/pr", get(exercises::exercise_personal_records))
+        .route(
+            "/exercises/{id}/pr",
+            get(exercises::exercise_personal_records),
+        )
         .route("/health/daily", get(health::list_daily_health))
-        .route("/workouts", get(workouts::list_workouts).post(workouts::create_workout))
-        .route("/workouts/{id}", get(workouts::get_workout).delete(workouts::delete_workout).patch(workouts::update_workout))
+        .route(
+            "/workouts",
+            get(workouts::list_workouts).post(workouts::create_workout),
+        )
+        .route(
+            "/workouts/{id}",
+            get(workouts::get_workout)
+                .delete(workouts::delete_workout)
+                .patch(workouts::update_workout),
+        )
         .route("/workouts/{id}/finish", patch(workouts::finish_workout))
         .route("/workouts/{id}/restart", patch(workouts::restart_workout))
         .route("/workouts/{id}/sets", post(workouts::add_set))
-        .route("/workouts/{id}/sets/{set_id}", delete(workouts::delete_set).patch(workouts::update_set))
-        .route("/weight", get(weight::list_weight).post(weight::create_weight_entry))
-        .route("/weight/{id}", delete(weight::delete_weight_entry).patch(weight::update_weight_entry))
+        .route(
+            "/workouts/{id}/sets/{set_id}",
+            delete(workouts::delete_set).patch(workouts::update_set),
+        )
+        .route(
+            "/weight",
+            get(weight::list_weight).post(weight::create_weight_entry),
+        )
+        .route(
+            "/weight/{id}",
+            delete(weight::delete_weight_entry).patch(weight::update_weight_entry),
+        )
         .route("/runs", get(runs::list_runs).delete(runs::delete_all_runs))
         .route("/runs/prs", get(runs::personal_records))
         .route("/runs/heatmap", get(runs::heatmap))
@@ -81,7 +104,12 @@ pub fn build_app(state: AppState) -> Router {
         .route("/runs/sync", post(runs::sync_gadgetbridge))
         .route("/runs/sync-debug", get(runs::sync_debug))
         .route("/runs/gb-debug", get(runs::gb_debug))
-        .route("/runs/{id}", get(runs::get_run).delete(runs::delete_run).patch(runs::set_invalid))
+        .route(
+            "/runs/{id}",
+            get(runs::get_run)
+                .delete(runs::delete_run)
+                .patch(runs::set_invalid),
+        )
         .route_layer(from_fn_with_state(state.clone(), require_auth));
 
     Router::new()

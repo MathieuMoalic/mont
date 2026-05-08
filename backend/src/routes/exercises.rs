@@ -1,7 +1,7 @@
 use axum::{
+    Json,
     extract::{Path, Query, State},
     http::StatusCode,
-    Json,
 };
 use serde::{Deserialize, Serialize};
 
@@ -26,7 +26,7 @@ pub struct PersonalRecord {
     pub max_reps_weight_kg: f64,
     pub max_volume_workout: f64,
     pub max_volume_date: String,
-    pub best_set_score: f64,  // weight * reps
+    pub best_set_score: f64, // weight * reps
     pub best_set_date: String,
     pub best_set_weight_kg: f64,
     pub best_set_reps: i64,
@@ -77,7 +77,11 @@ pub async fn create_exercise(
     Json(body): Json<CreateExercise>,
 ) -> AppResult<(StatusCode, Json<Exercise>)> {
     if body.name.trim().is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "Exercise name cannot be empty".to_string()).into());
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Exercise name cannot be empty".to_string(),
+        )
+            .into());
     }
 
     let exercise = sqlx::query_as::<_, Exercise>(
@@ -112,9 +116,11 @@ pub async fn update_exercise(
     if let Some(ref name) = body.name
         && name.trim().is_empty()
     {
-        return Err(
-            (StatusCode::BAD_REQUEST, "Exercise name cannot be empty".to_string()).into(),
-        );
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Exercise name cannot be empty".to_string(),
+        )
+            .into());
     }
 
     // Verify exercise exists
@@ -172,19 +178,22 @@ pub async fn update_exercise(
     }
     q = q.bind(id);
 
-    let exercise = q.fetch_one(&state.pool).await.map_err(|e| -> crate::error::AppError {
-        if matches!(e, sqlx::Error::Database(ref db_err) if db_err.is_unique_violation()) {
-            let name = body.name.as_deref().unwrap_or("exercise");
-            let equipment_info = body.equipment.as_deref().unwrap_or("no equipment");
-            (
-                StatusCode::CONFLICT,
-                format!("Exercise '{name}' with {equipment_info} already exists"),
-            )
-                .into()
-        } else {
-            e.into()
-        }
-    })?;
+    let exercise = q
+        .fetch_one(&state.pool)
+        .await
+        .map_err(|e| -> crate::error::AppError {
+            if matches!(e, sqlx::Error::Database(ref db_err) if db_err.is_unique_violation()) {
+                let name = body.name.as_deref().unwrap_or("exercise");
+                let equipment_info = body.equipment.as_deref().unwrap_or("no equipment");
+                (
+                    StatusCode::CONFLICT,
+                    format!("Exercise '{name}' with {equipment_info} already exists"),
+                )
+                    .into()
+            } else {
+                e.into()
+            }
+        })?;
 
     Ok(Json(exercise))
 }

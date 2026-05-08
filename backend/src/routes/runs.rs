@@ -1,7 +1,7 @@
 use axum::{
+    Json,
     extract::{Multipart, Path, Query, State},
     http::StatusCode,
-    Json,
 };
 use serde::{Deserialize, Serialize};
 
@@ -151,7 +151,12 @@ fn compute_run_stats(points: &[TrackPoint]) -> RunStats {
         }
     });
 
-    RunStats { avg_hr, max_hr, avg_cadence, avg_stride_m }
+    RunStats {
+        avg_hr,
+        max_hr,
+        avg_cadence,
+        avg_stride_m,
+    }
 }
 
 fn parse_trkpt(node: roxmltree::Node<'_, '_>) -> anyhow::Result<TrackPoint> {
@@ -163,14 +168,34 @@ fn parse_trkpt(node: roxmltree::Node<'_, '_>) -> anyhow::Result<TrackPoint> {
         .attribute("lon")
         .ok_or_else(|| anyhow::anyhow!("trkpt missing lon"))?
         .parse()?;
-    let child_text = |name: &str| node.children().find(|n| n.tag_name().name() == name).and_then(|n| n.text());
-    let ext_text = |name: &str| node.descendants().find(|n| n.tag_name().name() == name).and_then(|n| n.text());
+    let child_text = |name: &str| {
+        node.children()
+            .find(|n| n.tag_name().name() == name)
+            .and_then(|n| n.text())
+    };
+    let ext_text = |name: &str| {
+        node.descendants()
+            .find(|n| n.tag_name().name() == name)
+            .and_then(|n| n.text())
+    };
     let ele = child_text("ele").and_then(|t| t.parse::<f64>().ok());
     let time_secs = child_text("time").and_then(|t| parse_timestamp(t).ok());
     let hr = ext_text("hr").and_then(|t| t.parse::<i64>().ok());
-    let cad = ext_text("cad").and_then(|t| t.parse::<i64>().ok()).filter(|&c| c > 0);
-    let speed = ext_text("speed").and_then(|t| t.parse::<f64>().ok()).filter(|&s| s > 0.0);
-    Ok(TrackPoint { lat, lon, ele, time_secs, hr, cad, speed })
+    let cad = ext_text("cad")
+        .and_then(|t| t.parse::<i64>().ok())
+        .filter(|&c| c > 0);
+    let speed = ext_text("speed")
+        .and_then(|t| t.parse::<f64>().ok())
+        .filter(|&s| s > 0.0);
+    Ok(TrackPoint {
+        lat,
+        lon,
+        ele,
+        time_secs,
+        hr,
+        cad,
+        speed,
+    })
 }
 
 /// Maximum gap (seconds) between points before we consider it a pause.
@@ -197,7 +222,11 @@ fn compute_timing(points: &[TrackPoint]) -> (String, i64) {
                 (Some(t0), Some(t1)) => {
                     let gap = (t1 - t0).max(0);
                     // Only count segments shorter than the pause threshold
-                    if gap < PAUSE_THRESHOLD_SECS { Some(gap) } else { None }
+                    if gap < PAUSE_THRESHOLD_SECS {
+                        Some(gap)
+                    } else {
+                        None
+                    }
                 }
                 _ => None,
             }
@@ -209,9 +238,15 @@ fn compute_timing(points: &[TrackPoint]) -> (String, i64) {
 
 fn compute_elevation_gain(points: &[TrackPoint]) -> Option<f64> {
     let elevations: Vec<f64> = points.iter().filter_map(|p| p.ele).collect();
-    if elevations.len() < 2 { return None; }
-    let gain: f64 = elevations.windows(2)
-        .filter_map(|w| { let d = w[1] - w[0]; if d > 0.0 { Some(d) } else { None } })
+    if elevations.len() < 2 {
+        return None;
+    }
+    let gain: f64 = elevations
+        .windows(2)
+        .filter_map(|w| {
+            let d = w[1] - w[0];
+            if d > 0.0 { Some(d) } else { None }
+        })
         .sum();
     Some(gain)
 }
@@ -227,7 +262,8 @@ fn parse_gpx(data: &[u8]) -> anyhow::Result<ParsedRun> {
         .and_then(|n| n.text())
         .map(|t| t.trim().to_lowercase());
 
-    let points = doc.descendants()
+    let points = doc
+        .descendants()
         .filter(|n| n.tag_name().name() == "trkpt")
         .map(parse_trkpt)
         .collect::<anyhow::Result<Vec<_>>>()?;
@@ -235,7 +271,8 @@ fn parse_gpx(data: &[u8]) -> anyhow::Result<ParsedRun> {
     anyhow::ensure!(!points.is_empty(), "GPX contains no track points");
 
     let (started_at, duration_s) = compute_timing(&points);
-    let distance_m: f64 = points.windows(2)
+    let distance_m: f64 = points
+        .windows(2)
         .map(|w| haversine_m(w[0].lat, w[0].lon, w[1].lat, w[1].lon))
         .sum();
     let elevation_gain_m = compute_elevation_gain(&points);
@@ -243,16 +280,26 @@ fn parse_gpx(data: &[u8]) -> anyhow::Result<ParsedRun> {
 
     let route = {
         let t0 = points.first().and_then(|p| p.time_secs);
-        points.into_iter().map(|p| RoutePoint {
-            lat: p.lat, lon: p.lon, ele: p.ele, hr: p.hr,
-            t: p.time_secs.and_then(|ts| t0.map(|t0| ts - t0)),
-            cad: p.cad.filter(|&c| c > 0),
-        }).collect()
+        points
+            .into_iter()
+            .map(|p| RoutePoint {
+                lat: p.lat,
+                lon: p.lon,
+                ele: p.ele,
+                hr: p.hr,
+                t: p.time_secs.and_then(|ts| t0.map(|t0| ts - t0)),
+                cad: p.cad.filter(|&c| c > 0),
+            })
+            .collect()
     };
 
     // Estimate calories: ~60 kcal per km (calibrated to match Gadgetbridge)
     // If heart rate available, use HR-based formula scaled to match GB
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_precision_loss)]
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::cast_precision_loss
+    )]
     let calories = if distance_m > 0.0 {
         let dist_km = distance_m / 1000.0;
         let estimated = stats.avg_hr.map_or(dist_km * 60.0, |hr| {
@@ -260,7 +307,10 @@ fn parse_gpx(data: &[u8]) -> anyhow::Result<ParsedRun> {
             // Assumes 70kg, 35 years old
             let duration_min = duration_s as f64 / 60.0;
             let hr_f = hr as f64;
-            let base = 0.6309f64.mul_add(hr_f, 0.1988f64.mul_add(70.0, 0.2017f64.mul_add(35.0, -55.0969)));
+            let base = 0.6309f64.mul_add(
+                hr_f,
+                0.1988f64.mul_add(70.0, 0.2017f64.mul_add(35.0, -55.0969)),
+            );
             (duration_min * base / 4.184 * 0.8).max(0.0)
         });
         Some(estimated.round() as i64)
@@ -269,12 +319,20 @@ fn parse_gpx(data: &[u8]) -> anyhow::Result<ParsedRun> {
     };
 
     Ok(ParsedRun {
-        started_at, duration_s, distance_m, elevation_gain_m,
-        avg_hr: stats.avg_hr, max_hr: stats.max_hr,
-        avg_cadence: stats.avg_cadence, avg_stride_m: stats.avg_stride_m,
-        route, activity_type,
-        weather_temp_c: None, weather_wind_kph: None,
-        weather_precip_mm: None, weather_code: None,
+        started_at,
+        duration_s,
+        distance_m,
+        elevation_gain_m,
+        avg_hr: stats.avg_hr,
+        max_hr: stats.max_hr,
+        avg_cadence: stats.avg_cadence,
+        avg_stride_m: stats.avg_stride_m,
+        route,
+        activity_type,
+        weather_temp_c: None,
+        weather_wind_kph: None,
+        weather_precip_mm: None,
+        weather_code: None,
         calories,
     })
 }
@@ -306,11 +364,11 @@ pub async fn import_run(
         }
     }
 
-    let bytes = gpx_bytes
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, "Missing `file` field".to_string()))?;
+    let bytes =
+        gpx_bytes.ok_or_else(|| (StatusCode::BAD_REQUEST, "Missing `file` field".to_string()))?;
 
-    let mut parsed = parse_gpx(&bytes)
-        .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, e.to_string()))?;
+    let mut parsed =
+        parse_gpx(&bytes).map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, e.to_string()))?;
 
     if !is_running_activity(parsed.activity_type.as_deref()) {
         return Err((
@@ -319,24 +377,22 @@ pub async fn import_run(
                 "Activity type '{}' is not a running activity",
                 parsed.activity_type.as_deref().unwrap_or("unknown")
             ),
-        ).into());
+        )
+            .into());
     }
 
     // Fetch weather for the first route point
     if let Some(first) = parsed.route.first()
         && let Ok(ts) = parse_timestamp(&parsed.started_at)
-        && let Some(w) = crate::weather::fetch_weather(
-            &state.http, first.lat, first.lon, ts,
-        ).await
+        && let Some(w) = crate::weather::fetch_weather(&state.http, first.lat, first.lon, ts).await
     {
-        parsed.weather_temp_c    = Some(w.temp_c);
-        parsed.weather_wind_kph  = Some(w.wind_kph);
+        parsed.weather_temp_c = Some(w.temp_c);
+        parsed.weather_wind_kph = Some(w.wind_kph);
         parsed.weather_precip_mm = Some(w.precip_mm);
-        parsed.weather_code      = Some(w.code);
+        parsed.weather_code = Some(w.code);
     }
 
-    let route_json = serde_json::to_string(&parsed.route)
-        .map_err(anyhow::Error::from)?;
+    let route_json = serde_json::to_string(&parsed.route).map_err(anyhow::Error::from)?;
 
     let run = sqlx::query_as::<_, RunSummary>(
         "INSERT INTO runs \
@@ -451,11 +507,12 @@ pub async fn delete_run(
     Path(id): Path<i64>,
 ) -> AppResult<StatusCode> {
     // Get source_file before deleting so we can block it
-    let source_file: Option<String> = sqlx::query_scalar("SELECT source_file FROM runs WHERE id = ?")
-        .bind(id)
-        .fetch_optional(&state.pool)
-        .await?
-        .ok_or(StatusCode::NOT_FOUND)?;
+    let source_file: Option<String> =
+        sqlx::query_scalar("SELECT source_file FROM runs WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&state.pool)
+            .await?
+            .ok_or(StatusCode::NOT_FOUND)?;
 
     // Block this file from future imports
     if let Some(src) = source_file {
@@ -478,12 +535,8 @@ pub async fn delete_run(
 ///
 /// # Errors
 /// Returns a database error if the deletion fails.
-pub async fn delete_all_runs(
-    State(state): State<AppState>,
-) -> AppResult<StatusCode> {
-    sqlx::query("DELETE FROM runs")
-        .execute(&state.pool)
-        .await?;
+pub async fn delete_all_runs(State(state): State<AppState>) -> AppResult<StatusCode> {
+    sqlx::query("DELETE FROM runs").execute(&state.pool).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -526,7 +579,9 @@ struct GbHealthRow {
 /// Silently skips tables that don't exist.
 #[allow(clippy::similar_names)]
 fn extract_daily_health(db_path: &std::path::Path) -> Vec<GbHealthRow> {
-    let Ok(conn) = rusqlite::Connection::open(db_path) else { return vec![] };
+    let Ok(conn) = rusqlite::Connection::open(db_path) else {
+        return vec![];
+    };
 
     // ── HR: Amazfit Cheetah Pro uses HUAMI_EXTENDED_ACTIVITY_SAMPLE (seconds) ─
     // Fall back to MI_BAND / plain HUAMI if empty.
@@ -542,17 +597,23 @@ fn extract_daily_health(db_path: &std::path::Path) -> Vec<GbHealthRow> {
             "SELECT DATE(TIMESTAMP, 'unixepoch'), HEART_RATE, STEPS \
              FROM {table} WHERE HEART_RATE > 0 AND HEART_RATE < 255"
         );
-        let Ok(mut stmt) = conn.prepare(&sql) else { continue };
+        let Ok(mut stmt) = conn.prepare(&sql) else {
+            continue;
+        };
         let Ok(rows) = stmt.query_map([], |r| {
             Ok((
                 r.get::<_, Option<String>>(0)?,
                 r.get::<_, i64>(1)?,
                 r.get::<_, Option<i64>>(2).unwrap_or(None).unwrap_or(0),
             ))
-        }) else { continue };
+        }) else {
+            continue;
+        };
 
         for row in rows.flatten() {
-            let (Some(date), hr, steps) = row else { continue };
+            let (Some(date), hr, steps) = row else {
+                continue;
+            };
             let e = hr_accum.entry(date).or_insert((0, 0, hr, hr, 0));
             e.0 += hr;
             e.1 += 1;
@@ -560,7 +621,9 @@ fn extract_daily_health(db_path: &std::path::Path) -> Vec<GbHealthRow> {
             e.3 = e.3.max(hr);
             e.4 += steps;
         }
-        if !hr_accum.is_empty() { break; }
+        if !hr_accum.is_empty() {
+            break;
+        }
     }
 
     // ── HRV: Amazfit Cheetah Pro uses GENERIC_HRV_VALUE_SAMPLE (ms timestamps) ─
@@ -582,11 +645,8 @@ fn extract_daily_health(db_path: &std::path::Path) -> Vec<GbHealthRow> {
     }
 
     // ── Merge into output rows ────────────────────────────────────────────────
-    let all_dates: std::collections::HashSet<String> = hr_accum
-        .keys()
-        .chain(hrv_accum.keys())
-        .cloned()
-        .collect();
+    let all_dates: std::collections::HashSet<String> =
+        hr_accum.keys().chain(hrv_accum.keys()).cloned().collect();
 
     let mut rows: Vec<GbHealthRow> = all_dates
         .into_iter()
@@ -617,40 +677,36 @@ fn extract_daily_health(db_path: &std::path::Path) -> Vec<GbHealthRow> {
 ///
 /// # Errors
 /// Returns an error if the zip is not configured or cannot be read.
-pub async fn gb_debug(
-    State(state): State<AppState>,
-) -> AppResult<Json<serde_json::Value>> {
-    let zip_path = state
-        .config
-        .gadgetbridge_zip
-        .clone()
-        .ok_or_else(|| (StatusCode::SERVICE_UNAVAILABLE, "MONT_GADGETBRIDGE_ZIP not configured".to_string()))?;
+pub async fn gb_debug(State(state): State<AppState>) -> AppResult<Json<serde_json::Value>> {
+    let zip_path = state.config.gadgetbridge_zip.clone().ok_or_else(|| {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "MONT_GADGETBRIDGE_ZIP not configured".to_string(),
+        )
+    })?;
 
     let result = tokio::task::spawn_blocking(move || -> Result<serde_json::Value, String> {
-        let file = std::fs::File::open(&zip_path)
-            .map_err(|e| format!("Cannot open zip: {e}"))?;
-        let mut archive = zip::ZipArchive::new(file)
-            .map_err(|e| format!("Invalid zip: {e}"))?;
+        let file = std::fs::File::open(&zip_path).map_err(|e| format!("Cannot open zip: {e}"))?;
+        let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("Invalid zip: {e}"))?;
 
         let db_bytes = {
             use std::io::Read;
-            let mut entry = archive.by_name("database/Gadgetbridge")
+            let mut entry = archive
+                .by_name("database/Gadgetbridge")
                 .map_err(|e| format!("Cannot find database/Gadgetbridge: {e}"))?;
             let mut buf = Vec::new();
             entry.read_to_end(&mut buf).map_err(|e| e.to_string())?;
             buf
         };
 
-        let tmp = std::env::temp_dir()
-            .join(format!("gb_debug_{}.sqlite", uuid::Uuid::new_v4()));
+        let tmp = std::env::temp_dir().join(format!("gb_debug_{}.sqlite", uuid::Uuid::new_v4()));
         std::fs::write(&tmp, &db_bytes).map_err(|e| e.to_string())?;
-        let conn = rusqlite::Connection::open(&tmp)
-            .map_err(|e| format!("Cannot open DB: {e}"))?;
+        let conn = rusqlite::Connection::open(&tmp).map_err(|e| format!("Cannot open DB: {e}"))?;
 
         // List all tables
-        let mut stmt = conn.prepare(
-            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name",
-        ).map_err(|e| e.to_string())?;
+        let mut stmt = conn
+            .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+            .map_err(|e| e.to_string())?;
         let tables: Vec<String> = stmt
             .query_map([], |r| r.get(0))
             .map_err(|e| e.to_string())?
@@ -662,7 +718,9 @@ pub async fn gb_debug(
             let upper = table.to_uppercase();
             // For all tables, return column info; for interesting ones, also sample rows
             let cols_sql = format!("PRAGMA table_info({table})");
-            let Ok(mut cs) = conn.prepare(&cols_sql) else { continue };
+            let Ok(mut cs) = conn.prepare(&cols_sql) else {
+                continue;
+            };
             let cols: Vec<String> = cs
                 .query_map([], |r| r.get::<_, String>(1))
                 .map(|mapped| mapped.flatten().collect())
@@ -678,26 +736,34 @@ pub async fn gb_debug(
                 let row_sql = format!("SELECT * FROM {table} LIMIT 5");
                 let mut rows_json: Vec<serde_json::Value> = Vec::new();
                 if let Ok(mut rs) = conn.prepare(&row_sql) {
-                    let col_names: Vec<String> = rs
-                        .column_names()
-                        .iter()
-                        .map(|s| (*s).to_string())
-                        .collect();
+                    let col_names: Vec<String> =
+                        rs.column_names().iter().map(|s| (*s).to_string()).collect();
                     if let Ok(mapped) = rs.query_map([], |r| {
                         let mut map = serde_json::Map::new();
                         for (i, name) in col_names.iter().enumerate() {
-                            let v = r.get_ref(i).map(|rv| match rv {
-                                rusqlite::types::ValueRef::Null => serde_json::Value::Null,
-                                rusqlite::types::ValueRef::Integer(n) => serde_json::Value::Number(n.into()),
-                                rusqlite::types::ValueRef::Real(f) => {
-                                    serde_json::Number::from_f64(f)
-                                        .map_or(serde_json::Value::Null, serde_json::Value::Number)
-                                }
-                                rusqlite::types::ValueRef::Text(t) => {
-                                    serde_json::Value::String(String::from_utf8_lossy(t).into_owned())
-                                }
-                                rusqlite::types::ValueRef::Blob(_) => serde_json::Value::String("<blob>".into()),
-                            }).unwrap_or(serde_json::Value::Null);
+                            let v = r
+                                .get_ref(i)
+                                .map(|rv| match rv {
+                                    rusqlite::types::ValueRef::Null => serde_json::Value::Null,
+                                    rusqlite::types::ValueRef::Integer(n) => {
+                                        serde_json::Value::Number(n.into())
+                                    }
+                                    rusqlite::types::ValueRef::Real(f) => {
+                                        serde_json::Number::from_f64(f).map_or(
+                                            serde_json::Value::Null,
+                                            serde_json::Value::Number,
+                                        )
+                                    }
+                                    rusqlite::types::ValueRef::Text(t) => {
+                                        serde_json::Value::String(
+                                            String::from_utf8_lossy(t).into_owned(),
+                                        )
+                                    }
+                                    rusqlite::types::ValueRef::Blob(_) => {
+                                        serde_json::Value::String("<blob>".into())
+                                    }
+                                })
+                                .unwrap_or(serde_json::Value::Null);
                             map.insert(name.clone(), v);
                         }
                         Ok(serde_json::Value::Object(map))
@@ -710,10 +776,13 @@ pub async fn gb_debug(
                 serde_json::Value::Null
             };
 
-            output.insert(table.clone(), serde_json::json!({
-                "columns": cols,
-                "samples": samples,
-            }));
+            output.insert(
+                table.clone(),
+                serde_json::json!({
+                    "columns": cols,
+                    "samples": samples,
+                }),
+            );
         }
 
         let _ = std::fs::remove_file(&tmp);
@@ -725,7 +794,6 @@ pub async fn gb_debug(
 
     Ok(Json(result))
 }
-
 
 /// Activity metadata from the Gadgetbridge database.
 #[derive(Clone)]
@@ -750,10 +818,12 @@ impl GbActivityFiles {
 /// Extract active seconds and calories from Gadgetbridge `SUMMARY_DATA` JSON.
 fn parse_summary_data(json: &str) -> (Option<i64>, Option<i64>) {
     serde_json::from_str::<serde_json::Value>(json).map_or((None, None), |v| {
-        let active_secs = v.get("activeSeconds")
+        let active_secs = v
+            .get("activeSeconds")
             .and_then(|o| o.get("value"))
             .and_then(serde_json::Value::as_i64);
-        let calories = v.get("caloriesBurnt")
+        let calories = v
+            .get("caloriesBurnt")
             .and_then(|o| o.get("value"))
             .and_then(serde_json::Value::as_i64);
         (active_secs, calories)
@@ -768,13 +838,15 @@ fn load_activity_filenames(db_path: &std::path::Path) -> Result<GbActivityFiles,
     let mut stmt = conn.prepare(
         "SELECT GPX_TRACK, ACTIVITY_KIND, SUMMARY_DATA FROM BASE_ACTIVITY_SUMMARY WHERE GPX_TRACK IS NOT NULL",
     ).map_err(|e| e.to_string())?;
-    let rows = stmt.query_map([], |row| {
-        Ok((
-            row.get::<_, String>(0)?,
-            row.get::<_, i64>(1)?,
-            row.get::<_, Option<String>>(2)?,
-        ))
-    }).map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, Option<String>>(2)?,
+            ))
+        })
+        .map_err(|e| e.to_string())?;
     let mut activities = std::collections::HashMap::new();
     for r in rows {
         let (path, kind, summary_data) = r.map_err(|e| e.to_string())?;
@@ -782,11 +854,14 @@ fn load_activity_filenames(db_path: &std::path::Path) -> Result<GbActivityFiles,
         let (active_seconds, calories) = summary_data
             .as_ref()
             .map_or((None, None), |s| parse_summary_data(s));
-        activities.insert(fname, GbActivityMeta {
-            is_running: kind & 3 == 1,
-            active_seconds,
-            calories,
-        });
+        activities.insert(
+            fname,
+            GbActivityMeta {
+                is_running: kind & 3 == 1,
+                active_seconds,
+                calories,
+            },
+        );
     }
     Ok(GbActivityFiles { activities })
 }
@@ -816,13 +891,12 @@ async fn import_gpx_run(
         && let Ok(ts) = parse_timestamp(&parsed.started_at)
         && let Some(w) = crate::weather::fetch_weather(http, first.lat, first.lon, ts).await
     {
-        parsed.weather_temp_c    = Some(w.temp_c);
-        parsed.weather_wind_kph  = Some(w.wind_kph);
+        parsed.weather_temp_c = Some(w.temp_c);
+        parsed.weather_wind_kph = Some(w.wind_kph);
         parsed.weather_precip_mm = Some(w.precip_mm);
-        parsed.weather_code      = Some(w.code);
+        parsed.weather_code = Some(w.code);
     }
-    let route_json = serde_json::to_string(&parsed.route)
-        .map_err(|e| format!("{name}: {e}"))?;
+    let route_json = serde_json::to_string(&parsed.route).map_err(|e| format!("{name}: {e}"))?;
     sqlx::query(
         "INSERT INTO runs \
          (started_at, duration_s, distance_m, elevation_gain_m, avg_hr, max_hr, route_json, source_file, \
@@ -875,57 +949,64 @@ pub async fn perform_sync(state: &AppState) -> Result<SyncResult, String> {
         .clone()
         .ok_or_else(|| "MONT_GADGETBRIDGE_ZIP not configured".to_string())?;
 
-    let (activity_files, gpx_files, health_rows) = tokio::task::spawn_blocking(move || -> Result<_, String> {
-        let file = std::fs::File::open(&zip_path)
-            .map_err(|e| format!("Cannot open zip {}: {e}", zip_path.display()))?;
-        let mut archive = zip::ZipArchive::new(file)
-            .map_err(|e| format!("Invalid zip: {e}"))?;
+    let (activity_files, gpx_files, health_rows) =
+        tokio::task::spawn_blocking(move || -> Result<_, String> {
+            let file = std::fs::File::open(&zip_path)
+                .map_err(|e| format!("Cannot open zip {}: {e}", zip_path.display()))?;
+            let mut archive =
+                zip::ZipArchive::new(file).map_err(|e| format!("Invalid zip: {e}"))?;
 
-        // Extract the Gadgetbridge SQLite DB bytes from the zip.
-        let db_bytes = {
-            use std::io::Read;
-            let mut entry = archive.by_name("database/Gadgetbridge")
-                .map_err(|e| format!("Cannot find database/Gadgetbridge in zip: {e}"))?;
-            let mut buf = Vec::new();
-            entry.read_to_end(&mut buf).map_err(|e| e.to_string())?;
-            buf
-        };
+            // Extract the Gadgetbridge SQLite DB bytes from the zip.
+            let db_bytes = {
+                use std::io::Read;
+                let mut entry = archive
+                    .by_name("database/Gadgetbridge")
+                    .map_err(|e| format!("Cannot find database/Gadgetbridge in zip: {e}"))?;
+                let mut buf = Vec::new();
+                entry.read_to_end(&mut buf).map_err(|e| e.to_string())?;
+                buf
+            };
 
-        // Write to a temp file so rusqlite can open it.
-        let tmp_path = std::env::temp_dir()
-            .join(format!("gadgetbridge_{}.sqlite", uuid::Uuid::new_v4()));
-        std::fs::write(&tmp_path, &db_bytes).map_err(|e| e.to_string())?;
-        let activity_files = load_activity_filenames(&tmp_path);
-        let health_rows = extract_daily_health(&tmp_path);
-        let _ = std::fs::remove_file(&tmp_path);
-        let activity_files = activity_files?;
+            // Write to a temp file so rusqlite can open it.
+            let tmp_path =
+                std::env::temp_dir().join(format!("gadgetbridge_{}.sqlite", uuid::Uuid::new_v4()));
+            std::fs::write(&tmp_path, &db_bytes).map_err(|e| e.to_string())?;
+            let activity_files = load_activity_filenames(&tmp_path);
+            let health_rows = extract_daily_health(&tmp_path);
+            let _ = std::fs::remove_file(&tmp_path);
+            let activity_files = activity_files?;
 
-        // Extract GPX files from the files/ directory in the zip.
-        let mut gpx_files: Vec<(String, Vec<u8>)> = Vec::new();
-        for i in 0..archive.len() {
-            use std::io::Read;
-            let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
-            let name = entry.name().to_owned();
-            if !name.starts_with("files/") { continue; }
-            let basename = name.rsplit('/').next().unwrap_or(&name).to_owned();
-            if !basename.to_ascii_lowercase().ends_with(".gpx") { continue; }
-            let mut buf = Vec::new();
-            entry.read_to_end(&mut buf).map_err(|e| e.to_string())?;
-            gpx_files.push((basename, buf));
-        }
+            // Extract GPX files from the files/ directory in the zip.
+            let mut gpx_files: Vec<(String, Vec<u8>)> = Vec::new();
+            for i in 0..archive.len() {
+                use std::io::Read;
+                let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
+                let name = entry.name().to_owned();
+                if !name.starts_with("files/") {
+                    continue;
+                }
+                let basename = name.rsplit('/').next().unwrap_or(&name).to_owned();
+                if !basename.to_ascii_lowercase().ends_with(".gpx") {
+                    continue;
+                }
+                let mut buf = Vec::new();
+                entry.read_to_end(&mut buf).map_err(|e| e.to_string())?;
+                gpx_files.push((basename, buf));
+            }
 
-        Ok((activity_files, gpx_files, health_rows))
-    })
-    .await
-    .map_err(|e| e.to_string())??;
+            Ok((activity_files, gpx_files, health_rows))
+        })
+        .await
+        .map_err(|e| e.to_string())??;
 
     // Load blocked source files (runs marked as invalid that should never be re-imported)
-    let blocked_files: std::collections::HashSet<String> = sqlx::query_scalar("SELECT source_file FROM blocked_runs")
-        .fetch_all(&state.pool)
-        .await
-        .unwrap_or_default()
-        .into_iter()
-        .collect();
+    let blocked_files: std::collections::HashSet<String> =
+        sqlx::query_scalar("SELECT source_file FROM blocked_runs")
+            .fetch_all(&state.pool)
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .collect();
 
     let mut imported = 0usize;
     let mut errors: Vec<String> = Vec::new();
@@ -987,17 +1068,23 @@ pub async fn perform_sync(state: &AppState) -> Result<SyncResult, String> {
         .await;
     }
 
-    Ok(SyncResult { imported, health_days: health_rows.len(), errors })
+    Ok(SyncResult {
+        imported,
+        health_days: health_rows.len(),
+        errors,
+    })
 }
 
 /// # Errors
 /// Returns `SERVICE_UNAVAILABLE` if `MONT_GADGETBRIDGE_ZIP` is not configured,
 /// or a database error.
-pub async fn sync_gadgetbridge(
-    State(state): State<AppState>,
-) -> AppResult<Json<SyncResult>> {
+pub async fn sync_gadgetbridge(State(state): State<AppState>) -> AppResult<Json<SyncResult>> {
     if state.config.gadgetbridge_zip.is_none() {
-        return Err((StatusCode::SERVICE_UNAVAILABLE, "MONT_GADGETBRIDGE_ZIP not configured".to_string()).into());
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            "MONT_GADGETBRIDGE_ZIP not configured".to_string(),
+        )
+            .into());
     }
     perform_sync(&state)
         .await
@@ -1009,32 +1096,33 @@ pub async fn sync_gadgetbridge(
 ///
 /// # Errors
 /// Returns `SERVICE_UNAVAILABLE` if `MONT_GADGETBRIDGE_ZIP` is not configured.
-pub async fn sync_debug(
-    State(state): State<AppState>,
-) -> AppResult<Json<SyncDebugResult>> {
-    let zip_path = state
-        .config
-        .gadgetbridge_zip
-        .clone()
-        .ok_or_else(|| (StatusCode::SERVICE_UNAVAILABLE, "MONT_GADGETBRIDGE_ZIP not configured".to_string()))?;
+pub async fn sync_debug(State(state): State<AppState>) -> AppResult<Json<SyncDebugResult>> {
+    let zip_path = state.config.gadgetbridge_zip.clone().ok_or_else(|| {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "MONT_GADGETBRIDGE_ZIP not configured".to_string(),
+        )
+    })?;
 
     let (activity_files, gpx_files) = tokio::task::spawn_blocking(move || -> Result<_, String> {
         let file = std::fs::File::open(&zip_path)
             .map_err(|e| format!("Cannot open zip {}: {e}", zip_path.display()))?;
-        let mut archive = zip::ZipArchive::new(file)
-            .map_err(|e| format!("Invalid zip: {e}"))?;
+        let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("Invalid zip: {e}"))?;
 
         let db_bytes = {
             use std::io::Read;
-            let mut entry = archive.by_name("database/Gadgetbridge")
+            let mut entry = archive
+                .by_name("database/Gadgetbridge")
                 .map_err(|e| format!("Cannot find database/Gadgetbridge in zip: {e}"))?;
             let mut buf = Vec::new();
             entry.read_to_end(&mut buf).map_err(|e| e.to_string())?;
             buf
         };
 
-        let tmp_path = std::env::temp_dir()
-            .join(format!("gadgetbridge_debug_{}.sqlite", uuid::Uuid::new_v4()));
+        let tmp_path = std::env::temp_dir().join(format!(
+            "gadgetbridge_debug_{}.sqlite",
+            uuid::Uuid::new_v4()
+        ));
         std::fs::write(&tmp_path, &db_bytes).map_err(|e| e.to_string())?;
         let activity_files = load_activity_filenames(&tmp_path)?;
         let _ = std::fs::remove_file(&tmp_path);
@@ -1044,9 +1132,13 @@ pub async fn sync_debug(
             use std::io::Read;
             let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
             let name = entry.name().to_owned();
-            if !name.starts_with("files/") { continue; }
+            if !name.starts_with("files/") {
+                continue;
+            }
             let basename = name.rsplit('/').next().unwrap_or(&name).to_owned();
-            if !basename.to_ascii_lowercase().ends_with(".gpx") { continue; }
+            if !basename.to_ascii_lowercase().ends_with(".gpx") {
+                continue;
+            }
             let mut buf = Vec::new();
             entry.read_to_end(&mut buf).map_err(|e| e.to_string())?;
             gpx_files.push((basename, buf));
@@ -1081,7 +1173,8 @@ pub async fn sync_debug(
             Ok(parsed) => {
                 // Skip if in DB but not running (e.g., cycling)
                 // Import if: running in DB, OR not in DB and GPX type is running
-                let is_running = is_running_in_db || (!is_in_db && is_running_activity(parsed.activity_type.as_deref()));
+                let is_running = is_running_in_db
+                    || (!is_in_db && is_running_activity(parsed.activity_type.as_deref()));
                 files.push(SyncDebugFile {
                     filename: name.clone(),
                     in_db: is_in_db,
@@ -1110,20 +1203,22 @@ pub async fn sync_debug(
 ///
 /// # Errors
 /// Returns an error if the database query fails.
-pub async fn heatmap(
-    State(state): State<AppState>,
-) -> AppResult<Json<Vec<Vec<[f64; 2]>>>> {
+pub async fn heatmap(State(state): State<AppState>) -> AppResult<Json<Vec<Vec<[f64; 2]>>>> {
     #[derive(sqlx::FromRow)]
-    struct Row { route_json: String }
+    struct Row {
+        route_json: String,
+    }
 
     #[derive(serde::Deserialize)]
-    struct Pt { lat: f64, lon: f64 }
+    struct Pt {
+        lat: f64,
+        lon: f64,
+    }
 
-    let rows: Vec<Row> = sqlx::query_as(
-        "SELECT route_json FROM runs WHERE is_invalid = 0 AND route_json != '[]'",
-    )
-    .fetch_all(&state.pool)
-    .await?;
+    let rows: Vec<Row> =
+        sqlx::query_as("SELECT route_json FROM runs WHERE is_invalid = 0 AND route_json != '[]'")
+            .fetch_all(&state.pool)
+            .await?;
 
     let routes = rows
         .iter()
@@ -1184,16 +1279,22 @@ pub async fn personal_records(
             .iter()
             .filter(|r| r.distance_m >= target_m * 0.95)
             .min_by(|a, b| {
-                let pace_a = f64::from(i32::try_from(a.duration_s).unwrap_or(i32::MAX)) * target_m / a.distance_m;
-                let pace_b = f64::from(i32::try_from(b.duration_s).unwrap_or(i32::MAX)) * target_m / b.distance_m;
-                pace_a.partial_cmp(&pace_b).unwrap_or(std::cmp::Ordering::Equal)
+                let pace_a = f64::from(i32::try_from(a.duration_s).unwrap_or(i32::MAX)) * target_m
+                    / a.distance_m;
+                let pace_b = f64::from(i32::try_from(b.duration_s).unwrap_or(i32::MAX)) * target_m
+                    / b.distance_m;
+                pace_a
+                    .partial_cmp(&pace_b)
+                    .unwrap_or(std::cmp::Ordering::Equal)
             });
         if let Some(run) = best {
             prs.push(PersonalRecord {
                 distance_label: (*label).to_string(),
                 run_id: run.id,
                 run_date: run.started_at.clone(),
-                estimated_seconds: f64::from(i32::try_from(run.duration_s).unwrap_or(i32::MAX)) * target_m / run.distance_m,
+                estimated_seconds: f64::from(i32::try_from(run.duration_s).unwrap_or(i32::MAX))
+                    * target_m
+                    / run.distance_m,
             });
         }
     }
@@ -1218,11 +1319,12 @@ pub async fn set_invalid(
     Json(body): Json<SetInvalidBody>,
 ) -> AppResult<StatusCode> {
     // Get the source_file for this run
-    let source_file: Option<String> = sqlx::query_scalar("SELECT source_file FROM runs WHERE id = ?")
-        .bind(id)
-        .fetch_optional(&state.pool)
-        .await?
-        .ok_or(StatusCode::NOT_FOUND)?;
+    let source_file: Option<String> =
+        sqlx::query_scalar("SELECT source_file FROM runs WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&state.pool)
+            .await?
+            .ok_or(StatusCode::NOT_FOUND)?;
 
     // Update the is_invalid flag
     sqlx::query("UPDATE runs SET is_invalid = ? WHERE id = ?")
