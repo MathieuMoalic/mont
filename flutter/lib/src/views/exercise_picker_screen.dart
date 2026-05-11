@@ -72,7 +72,7 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
   List<String> _muscleOptions = List.of(_defaultMuscleGroups);
   List<String> _equipmentOptions = List.of(_defaultEquipment);
   Map<String, Color> _muscleColors = {};
-  bool _showFilters = true;
+  bool _showFilters = false;
 
   @override
   void initState() {
