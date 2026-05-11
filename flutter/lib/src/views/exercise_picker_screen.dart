@@ -720,13 +720,19 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
 
     if (_filtered.isEmpty) {
       final q = _searchCtrl.text.trim();
-      return Column(
-        children: [
-          if (hasFilters) ...[
-            _buildFilterHeader(),
-            if (_showFilters) _buildFilters(muscleGroups, equipmentList),
-          ],
-          Expanded(
+      return CustomScrollView(
+        controller: _listScrollCtrl,
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        slivers: [
+          if (hasFilters)
+            SliverToBoxAdapter(
+              child: _buildFilterHeader(),
+            ),
+          if (hasFilters && _showFilters)
+            SliverToBoxAdapter(
+              child: _buildFilters(muscleGroups, equipmentList),
+            ),
+          SliverFillRemaining(
             child: Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -744,43 +750,45 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
       );
     }
 
-    return Column(
-      children: [
-        if (hasFilters) ...[
-          _buildFilterHeader(),
-          if (_showFilters) _buildFilters(muscleGroups, equipmentList),
-        ],
-        Expanded(
-          child: ListView.builder(
-            controller: _listScrollCtrl,
-            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-            itemCount: _filtered.length,
-            itemBuilder: (ctx, i) {
-              final e = _filtered[i];
-              final sub = [
-                if (e.muscleGroup != null) e.muscleGroup!,
-                if (e.equipment != null) e.equipment!,
-              ].join(' • ');
-              return ListTile(
-                leading: Container(
-                  width: 4,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: MontColors.getMuscleAccent(e.muscleGroup),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                title: Text(e.displayName),
-                subtitle: sub.isNotEmpty ? Text(sub) : null,
-                onTap: () => Navigator.pop(context, e),
-                trailing: IconButton(
-                  icon: const Icon(Icons.edit),
-                  onPressed: () => _editExercise(e),
-                  tooltip: 'Edit exercise',
-                ),
-              );
-            },
+    return CustomScrollView(
+      controller: _listScrollCtrl,
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      slivers: [
+        if (hasFilters)
+          SliverToBoxAdapter(
+            child: _buildFilterHeader(),
           ),
+        if (hasFilters && _showFilters)
+          SliverToBoxAdapter(
+            child: _buildFilters(muscleGroups, equipmentList),
+          ),
+                SliverList.builder(
+          itemCount: _filtered.length,
+          itemBuilder: (ctx, i) {
+            final e = _filtered[i];
+            final sub = [
+              if (e.muscleGroup != null) e.muscleGroup!,
+              if (e.equipment != null) e.equipment!,
+            ].join(' • ');
+            return ListTile(
+              leading: Container(
+                width: 4,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: MontColors.getMuscleAccent(e.muscleGroup),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              title: Text(e.displayName),
+              subtitle: sub.isNotEmpty ? Text(sub) : null,
+              onTap: () => Navigator.pop(context, e),
+              trailing: IconButton(
+                icon: const Icon(Icons.edit),
+                onPressed: () => _editExercise(e),
+                tooltip: 'Edit exercise',
+              ),
+            );
+          },
         ),
       ],
     );
