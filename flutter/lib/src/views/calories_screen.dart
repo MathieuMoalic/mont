@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../api.dart' as api;
 import '../models.dart';
+import 'barcode_scan_screen.dart';
 
 class CaloriesScreen extends StatefulWidget {
   const CaloriesScreen({super.key});
@@ -299,9 +300,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                                           );
                                         });
                                       } catch (e) {
-                                        setLocalState(
-                                          () => error = e.toString(),
-                                        );
+                                        setLocalState(() => error = e.toString());
                                       }
                                     } finally {
                                       setLocalState(() => lookupBusy = false);
@@ -320,6 +319,22 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                         ),
                       ),
                       keyboardType: TextInputType.number,
+                    ),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        onPressed: () async {
+                          final scanned = await Navigator.of(context).push<String>(
+                            MaterialPageRoute(
+                              builder: (_) => const BarcodeScanScreen(),
+                            ),
+                          );
+                          if (scanned == null || scanned.trim().isEmpty) return;
+                          setLocalState(() => barcodeController.text = scanned.trim());
+                        },
+                        icon: const Icon(Icons.qr_code_scanner),
+                        label: const Text('Scan barcode'),
+                      ),
                     ),
                     TextField(
                       controller: nameController,
@@ -499,31 +514,46 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                 FilledButton(
                   onPressed: () async {
                     final name = nameController.text.trim();
-                    final proteinPer100 = double.tryParse(
-                      proteinPer100Controller.text.trim(),
-                    );
-                    final carbsPer100 = double.tryParse(
-                      carbsPer100Controller.text.trim(),
-                    );
-                    final fatsPer100 = double.tryParse(
-                      fatsPer100Controller.text.trim(),
-                    );
-                    final weight = double.tryParse(
-                      weightController.text.trim(),
-                    );
-                    if (name.isEmpty ||
-                        proteinPer100 == null ||
+                    if (name.isEmpty) {
+                      setLocalState(() => error = 'Enter a name.');
+                      return;
+                    }
+
+                    final proteinText = proteinPer100Controller.text.trim();
+                    final carbsText = carbsPer100Controller.text.trim();
+                    final fatsText = fatsPer100Controller.text.trim();
+                    final weightText = weightController.text.trim();
+
+                    if (proteinText.isEmpty ||
+                        carbsText.isEmpty ||
+                        fatsText.isEmpty) {
+                      setLocalState(
+                        () => error = 'Enter protein/carbs/fats per 100g.',
+                      );
+                      return;
+                    }
+                    if (weightText.isEmpty) {
+                      setLocalState(() => error = 'Enter total weight (g).');
+                      return;
+                    }
+
+                    final proteinPer100 = double.tryParse(proteinText);
+                    final carbsPer100 = double.tryParse(carbsText);
+                    final fatsPer100 = double.tryParse(fatsText);
+                    final weight = double.tryParse(weightText);
+                    if (proteinPer100 == null ||
                         carbsPer100 == null ||
                         fatsPer100 == null ||
-                        weight == null ||
-                        proteinPer100 < 0 ||
-                        carbsPer100 < 0 ||
-                        fatsPer100 < 0 ||
-                        weight <= 0) {
-                      setLocalState(() {
-                        error =
-                            'Provide valid per-100g values and a positive weight.';
-                      });
+                        weight == null) {
+                      setLocalState(() => error = 'Use numbers for macros/weight.');
+                      return;
+                    }
+                    if (proteinPer100 < 0 || carbsPer100 < 0 || fatsPer100 < 0) {
+                      setLocalState(() => error = 'Macros cannot be negative.');
+                      return;
+                    }
+                    if (weight <= 0) {
+                      setLocalState(() => error = 'Weight must be greater than 0g.');
                       return;
                     }
 

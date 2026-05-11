@@ -516,28 +516,30 @@ Future<List<Food>> listFoods({String? query}) async {
 }
 
 Future<Food> getFoodByBarcode(String barcode) async {
+  final b = barcode.trim();
   final res = await _handleUnauthorized(
     () => http.get(
-      _u('/calories/foods/by-barcode/${Uri.encodeComponent(barcode.trim())}'),
+      _u('/calories/foods/by-barcode/${Uri.encodeComponent(b)}'),
       headers: _headers(),
     ),
   );
-  if (res.statusCode != 200) {
-    throw Exception(res.body.isEmpty ? 'Barcode not found' : res.body);
-  }
+  if (res.statusCode == 404) throw Exception('No saved item for barcode $b.');
+  if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
   return Food.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
 }
 
 Future<FoodLookupResult> lookupFoodByBarcode(String barcode) async {
+  final b = barcode.trim();
   final res = await _handleUnauthorized(
     () => http.get(
-      _u('/calories/foods/lookup/${Uri.encodeComponent(barcode.trim())}'),
+      _u('/calories/foods/lookup/${Uri.encodeComponent(b)}'),
       headers: _headers(),
     ),
   );
-  if (res.statusCode != 200) {
-    throw Exception(res.body.isEmpty ? 'Barcode not found' : res.body);
+  if (res.statusCode == 404) {
+    throw Exception('No product found online for barcode $b.');
   }
+  if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
   return FoodLookupResult.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
 }
 
