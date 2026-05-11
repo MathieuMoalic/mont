@@ -358,47 +358,45 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                           ),
                         ),
                       ),
-                    if (scannedBarcode != null &&
-                        scannedBarcode!.isNotEmpty &&
-                        error != null)
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: Padding(
-                          padding: const EdgeInsets.only(bottom: 6),
-                          child: TextButton.icon(
-                            style: TextButton.styleFrom(
-                              visualDensity: VisualDensity.compact,
-                              padding: EdgeInsets.zero,
-                            ),
-                            onPressed: lookupBusy
-                                ? null
-                                : pickLabelPhotoAndFill,
-                            icon: const Icon(Icons.photo_camera_outlined),
-                            label: const Text('Photo label'),
-                          ),
-                        ),
-                      ),
+                    // Label photo action lives next to the scan button in the Name field.
                     TextField(
                       controller: nameController,
                       decoration: denseDecoration(
                         InputDecoration(
                           labelText: 'Name',
                           prefixIcon: Icon(Icons.search),
-                          suffixIcon: IconButton(
-                            tooltip: 'Scan barcode',
-                            icon: const Icon(Icons.qr_code_scanner),
-                            onPressed: () async {
-                              final scanned = await Navigator.of(context)
-                                  .push<String>(
-                                    MaterialPageRoute(
-                                      builder: (_) => const BarcodeScanScreen(),
-                                    ),
-                                  );
-                              if (scanned == null || scanned.trim().isEmpty) {
-                                return;
-                              }
-                              await lookupAndFill(scanned);
-                            },
+                          suffixIcon: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                tooltip: 'Scan barcode',
+                                icon: const Icon(Icons.qr_code_scanner),
+                                onPressed: () async {
+                                  final scanned = await Navigator.of(context)
+                                      .push<String>(
+                                        MaterialPageRoute(
+                                          builder: (_) =>
+                                              const BarcodeScanScreen(),
+                                        ),
+                                      );
+                                  if (scanned == null ||
+                                      scanned.trim().isEmpty) {
+                                    return;
+                                  }
+                                  await lookupAndFill(scanned);
+                                },
+                              ),
+                              IconButton(
+                                tooltip: 'Photo label (extract macros)',
+                                icon: const Icon(Icons.photo_camera_outlined),
+                                onPressed: lookupBusy
+                                    ? null
+                                    : pickLabelPhotoAndFill,
+                              ),
+                            ],
+                          ),
+                          suffixIconConstraints: const BoxConstraints(
+                            minWidth: 96,
                           ),
                         ),
                       ),
