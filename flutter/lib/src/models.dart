@@ -249,6 +249,124 @@ class ExerciseCategories {
   };
 }
 
+class CalorieEntry {
+  final int id;
+  final String day; // YYYY-MM-DD
+  final String mealPeriod; // morning|afternoon|evening
+  final String name;
+  final double proteinPer100G;
+  final double carbsPer100G;
+  final double fatsPer100G;
+  final double weightG;
+  final double proteinG;
+  final double carbsG;
+  final double fatsG;
+  final int kcal;
+
+  CalorieEntry({
+    required this.id,
+    required this.day,
+    required this.mealPeriod,
+    required this.name,
+    required this.proteinPer100G,
+    required this.carbsPer100G,
+    required this.fatsPer100G,
+    required this.weightG,
+    required this.proteinG,
+    required this.carbsG,
+    required this.fatsG,
+    required this.kcal,
+  });
+
+  factory CalorieEntry.fromJson(Map<String, dynamic> j) => CalorieEntry(
+    id: j['id'] as int,
+    day: j['day'] as String,
+    mealPeriod: j['meal_period'] as String,
+    name: j['name'] as String,
+    proteinPer100G: (j['protein_per_100g'] as num).toDouble(),
+    carbsPer100G: (j['carbs_per_100g'] as num).toDouble(),
+    fatsPer100G: (j['fats_per_100g'] as num).toDouble(),
+    weightG: (j['weight_g'] as num).toDouble(),
+    proteinG: (j['protein_g'] as num).toDouble(),
+    carbsG: (j['carbs_g'] as num).toDouble(),
+    fatsG: (j['fats_g'] as num).toDouble(),
+    kcal: j['kcal'] as int,
+  );
+}
+
+class CalorieExerciseEntry {
+  final int id;
+  final String day;
+  final String name;
+  final int kcal;
+
+  CalorieExerciseEntry({
+    required this.id,
+    required this.day,
+    required this.name,
+    required this.kcal,
+  });
+
+  factory CalorieExerciseEntry.fromJson(Map<String, dynamic> j) =>
+      CalorieExerciseEntry(
+        id: j['id'] as int,
+        day: j['day'] as String,
+        name: j['name'] as String,
+        kcal: j['kcal'] as int,
+      );
+}
+
+class NutritionTargets {
+  final double proteinG;
+  final double carbsG;
+  final double fatsG;
+
+  NutritionTargets({
+    required this.proteinG,
+    required this.carbsG,
+    required this.fatsG,
+  });
+
+  factory NutritionTargets.fromJson(Map<String, dynamic> j) => NutritionTargets(
+    proteinG: (j['protein_g'] as num).toDouble(),
+    carbsG: (j['carbs_g'] as num).toDouble(),
+    fatsG: (j['fats_g'] as num).toDouble(),
+  );
+
+  Map<String, dynamic> toJson() => {
+    'protein_g': proteinG,
+    'carbs_g': carbsG,
+    'fats_g': fatsG,
+  };
+}
+
+class SavedFood {
+  final int id;
+  final String name;
+  final double proteinPer100G;
+  final double carbsPer100G;
+  final double fatsPer100G;
+  final double lastWeightG;
+
+  SavedFood({
+    required this.id,
+    required this.name,
+    required this.proteinPer100G,
+    required this.carbsPer100G,
+    required this.fatsPer100G,
+    required this.lastWeightG,
+  });
+
+  factory SavedFood.fromJson(Map<String, dynamic> j) => SavedFood(
+    id: j['id'] as int,
+    name: j['name'] as String,
+    proteinPer100G: (j['protein_per_100g'] as num).toDouble(),
+    carbsPer100G: (j['carbs_per_100g'] as num).toDouble(),
+    fatsPer100G: (j['fats_per_100g'] as num).toDouble(),
+    lastWeightG: (j['last_weight_g'] as num).toDouble(),
+  );
+}
+
 class WorkoutSummary {
   final int id;
   final DateTime startedAt;

@@ -412,6 +412,202 @@ Future<WeightEntry> updateWeightEntry(
   return WeightEntry.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
 }
 
+// ── Calories ──────────────────────────────────────────────────────────────────
+
+Future<List<CalorieEntry>> listCalorieEntries({
+  required String startDay,
+  required String endDay,
+}) async {
+  final res = await _handleUnauthorized(
+    () => http.get(
+      _u('/calories?start=$startDay&end=$endDay'),
+      headers: _headers(),
+    ),
+  );
+  if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
+  return (jsonDecode(res.body) as List)
+      .map((e) => CalorieEntry.fromJson(e as Map<String, dynamic>))
+      .toList();
+}
+
+Future<CalorieEntry> createCalorieEntry({
+  required String day,
+  required String mealPeriod,
+  required String name,
+  required double proteinPer100G,
+  required double carbsPer100G,
+  required double fatsPer100G,
+  required double weightG,
+}) async {
+  final res = await _handleUnauthorized(
+    () => http.post(
+      _u('/calories'),
+      headers: _headers(),
+      body: jsonEncode({
+        'day': day,
+        'meal_period': mealPeriod,
+        'name': name,
+        'protein_per_100g': proteinPer100G,
+        'carbs_per_100g': carbsPer100G,
+        'fats_per_100g': fatsPer100G,
+        'weight_g': weightG,
+      }),
+    ),
+  );
+  if (res.statusCode != 201) {
+    throw Exception(
+      res.body.isEmpty ? 'Failed to create calorie entry' : res.body,
+    );
+  }
+  return CalorieEntry.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+}
+
+Future<CalorieEntry> updateCalorieEntry(
+  int id, {
+  String? day,
+  String? mealPeriod,
+  String? name,
+  double? proteinPer100G,
+  double? carbsPer100G,
+  double? fatsPer100G,
+  double? weightG,
+}) async {
+  final res = await _handleUnauthorized(
+    () => http.patch(
+      _u('/calories/$id'),
+      headers: _headers(),
+      body: jsonEncode({
+        if (day != null) 'day': day,
+        if (mealPeriod != null) 'meal_period': mealPeriod,
+        if (name != null) 'name': name,
+        if (proteinPer100G != null) 'protein_per_100g': proteinPer100G,
+        if (carbsPer100G != null) 'carbs_per_100g': carbsPer100G,
+        if (fatsPer100G != null) 'fats_per_100g': fatsPer100G,
+        if (weightG != null) 'weight_g': weightG,
+      }),
+    ),
+  );
+  if (res.statusCode != 200) {
+    throw Exception(
+      res.body.isEmpty ? 'Failed to update calorie entry' : res.body,
+    );
+  }
+  return CalorieEntry.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+}
+
+Future<void> deleteCalorieEntry(int id) async {
+  final res = await _handleUnauthorized(
+    () => http.delete(_u('/calories/$id'), headers: _headers()),
+  );
+  if (res.statusCode != 204) throw Exception('HTTP ${res.statusCode}');
+}
+
+Future<List<SavedFood>> listSavedFoods({String? query}) async {
+  final suffix = (query != null && query.trim().isNotEmpty)
+      ? '?q=${Uri.encodeQueryComponent(query.trim())}'
+      : '';
+  final res = await _handleUnauthorized(
+    () => http.get(_u('/calories/foods$suffix'), headers: _headers()),
+  );
+  if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
+  return (jsonDecode(res.body) as List)
+      .map((e) => SavedFood.fromJson(e as Map<String, dynamic>))
+      .toList();
+}
+
+Future<List<CalorieExerciseEntry>> listCalorieExercises({
+  required String startDay,
+  required String endDay,
+}) async {
+  final res = await _handleUnauthorized(
+    () => http.get(
+      _u('/calories/exercises?start=$startDay&end=$endDay'),
+      headers: _headers(),
+    ),
+  );
+  if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
+  return (jsonDecode(res.body) as List)
+      .map((e) => CalorieExerciseEntry.fromJson(e as Map<String, dynamic>))
+      .toList();
+}
+
+Future<CalorieExerciseEntry> createCalorieExercise({
+  required String day,
+  required String name,
+  required int kcal,
+}) async {
+  final res = await _handleUnauthorized(
+    () => http.post(
+      _u('/calories/exercises'),
+      headers: _headers(),
+      body: jsonEncode({'day': day, 'name': name, 'kcal': kcal}),
+    ),
+  );
+  if (res.statusCode != 201) {
+    throw Exception(
+      res.body.isEmpty ? 'Failed to create calorie exercise' : res.body,
+    );
+  }
+  return CalorieExerciseEntry.fromJson(
+    jsonDecode(res.body) as Map<String, dynamic>,
+  );
+}
+
+Future<CalorieExerciseEntry> updateCalorieExercise(
+  int id, {
+  String? day,
+  String? name,
+  int? kcal,
+}) async {
+  final res = await _handleUnauthorized(
+    () => http.patch(
+      _u('/calories/exercises/$id'),
+      headers: _headers(),
+      body: jsonEncode({
+        if (day != null) 'day': day,
+        if (name != null) 'name': name,
+        if (kcal != null) 'kcal': kcal,
+      }),
+    ),
+  );
+  if (res.statusCode != 200) {
+    throw Exception(
+      res.body.isEmpty ? 'Failed to update calorie exercise' : res.body,
+    );
+  }
+  return CalorieExerciseEntry.fromJson(
+    jsonDecode(res.body) as Map<String, dynamic>,
+  );
+}
+
+Future<void> deleteCalorieExercise(int id) async {
+  final res = await _handleUnauthorized(
+    () => http.delete(_u('/calories/exercises/$id'), headers: _headers()),
+  );
+  if (res.statusCode != 204) throw Exception('HTTP ${res.statusCode}');
+}
+
+Future<NutritionTargets> getNutritionTargets() async {
+  final res = await _handleUnauthorized(
+    () => http.get(_u('/calories/targets'), headers: _headers()),
+  );
+  if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
+  return NutritionTargets.fromJson(
+    jsonDecode(res.body) as Map<String, dynamic>,
+  );
+}
+
+Future<void> updateNutritionTargets(NutritionTargets targets) async {
+  final res = await _handleUnauthorized(
+    () => http.put(
+      _u('/calories/targets'),
+      headers: _headers(),
+      body: jsonEncode(targets.toJson()),
+    ),
+  );
+  if (res.statusCode != 204) throw Exception('HTTP ${res.statusCode}');
+}
+
 // ── Runs ──────────────────────────────────────────────────────────────────────
 
 Future<List<RunSummary>> listRuns() async {
