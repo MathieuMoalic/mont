@@ -296,50 +296,17 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                 horizontal: 12,
                 vertical: 12,
               ),
-              titlePadding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-              contentPadding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              titlePadding: EdgeInsets.zero,
+              contentPadding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
               actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
               scrollable: true,
-              title: Text(existing == null ? 'Add item' : 'Edit item'),
+              title: null,
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    DropdownButtonFormField<String>(
-                      initialValue: selectedMeal,
-                      decoration: denseDecoration(
-                        const InputDecoration(labelText: 'Section'),
-                      ),
-                      items: _mealOrder
-                          .map(
-                            (v) => DropdownMenuItem(
-                              value: v,
-                              child: Text(_mealLabel(v)),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (v) {
-                        if (v == null) return;
-                        setLocalState(() => selectedMeal = v);
-                      },
-                    ),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: TextButton.icon(
-                        onPressed: () async {
-                          final scanned = await Navigator.of(context)
-                              .push<String>(
-                                MaterialPageRoute(
-                                  builder: (_) => const BarcodeScanScreen(),
-                                ),
-                              );
-                          if (scanned == null || scanned.trim().isEmpty) return;
-                          await lookupAndFill(scanned);
-                        },
-                        icon: const Icon(Icons.qr_code_scanner),
-                        label: const Text('Scan barcode'),
-                      ),
-                    ),
+                    // Section dropdown removed for speed; defaults to the section
+                    // that the user tapped (or the existing entry's section).
                     if (scannedBarcode != null && scannedBarcode!.isNotEmpty)
                       Align(
                         alignment: Alignment.centerLeft,
@@ -354,9 +321,25 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                     TextField(
                       controller: nameController,
                       decoration: denseDecoration(
-                        const InputDecoration(
+                        InputDecoration(
                           labelText: 'Name',
                           prefixIcon: Icon(Icons.search),
+                          suffixIcon: IconButton(
+                            tooltip: 'Scan barcode',
+                            icon: const Icon(Icons.qr_code_scanner),
+                            onPressed: () async {
+                              final scanned = await Navigator.of(context)
+                                  .push<String>(
+                                    MaterialPageRoute(
+                                      builder: (_) => const BarcodeScanScreen(),
+                                    ),
+                                  );
+                              if (scanned == null || scanned.trim().isEmpty) {
+                                return;
+                              }
+                              await lookupAndFill(scanned);
+                            },
+                          ),
                         ),
                       ),
                       onChanged: (v) {
