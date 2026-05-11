@@ -918,8 +918,9 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
           child: Row(
             children: [
               Expanded(
-                child: _compactProgressBar(
-                  label: 'P',
+                child: _footerMetric(
+                  title: 'Protein',
+                  unit: 'g',
                   color: _proteinColor,
                   currentText: '${_fmt(totalProtein)}g',
                   targetText: '${_fmt(effectiveProteinTargetG)}g',
@@ -929,8 +930,9 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: _compactProgressBar(
-                  label: 'C',
+                child: _footerMetric(
+                  title: 'Carbs',
+                  unit: 'g',
                   color: _carbsColor,
                   currentText: '${_fmt(totalCarbs)}g',
                   targetText: '${_fmt(effectiveCarbsTargetG)}g',
@@ -940,8 +942,9 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: _compactProgressBar(
-                  label: 'F',
+                child: _footerMetric(
+                  title: 'Fats',
+                  unit: 'g',
                   color: _fatsColor,
                   currentText: '${_fmt(totalFats)}g',
                   targetText: '${_fmt(effectiveFatsTargetG)}g',
@@ -951,8 +954,9 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: _compactProgressBar(
-                  label: 'kcal',
+                child: _footerMetric(
+                  title: 'Energy',
+                  unit: 'kcal',
                   color: Theme.of(context).colorScheme.primary,
                   currentText: '$intakeKcal',
                   targetText: '$effectiveTargetKcal',
@@ -1425,8 +1429,40 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
     );
   }
 
-  Widget _compactProgressBar({
-    required String label,
+  Widget _footerMetric({
+    required String title,
+    required String unit,
+    required Color color,
+    required String currentText,
+    required String targetText,
+    required double current,
+    required double target,
+  }) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          '$title ($unit)',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(
+            context,
+          ).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 4),
+        _compactProgressPill(
+          color: color,
+          currentText: currentText,
+          targetText: targetText,
+          current: current,
+          target: target,
+        ),
+      ],
+    );
+  }
+
+  Widget _compactProgressPill({
     required Color color,
     required String currentText,
     required String targetText,
@@ -1450,20 +1486,12 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
               valueColor: AlwaysStoppedAnimation(color),
               minHeight: 22,
             ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              child: Row(
-                children: [
-                  Text(
-                    label,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                      color: Theme.of(context).colorScheme.onSurface,
-                    ),
-                  ),
-                  const Spacer(),
-                  Text(
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
                     '$currentText/$targetText',
                     style: TextStyle(
                       fontSize: 12,
@@ -1471,7 +1499,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                       color: Theme.of(context).colorScheme.onSurface,
                     ),
                   ),
-                ],
+                ),
               ),
             ),
           ],
