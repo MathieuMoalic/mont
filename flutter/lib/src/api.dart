@@ -547,6 +547,31 @@ Future<FoodLookupResult> lookupFoodByBarcode(String barcode) async {
   );
 }
 
+/// Search for foods by name. Returns local database results first (if available),
+/// then falls back to online lookup via Open Food Facts.
+Future<List<FoodLookupResult>> lookupFoodsByQuery(String query, {int? limit}) async {
+  final q = query.trim();
+  if (q.isEmpty) throw Exception('Query cannot be empty');
+  
+  final params = <String>['q=${Uri.encodeQueryComponent(q)}'];
+  if (limit != null && limit > 0) {
+    params.add('limit=${limit.clamp(1, 20)}');
+  }
+  final suffix = '?${params.join('&')}';
+  
+  final res = await _handleUnauthorized(
+    () => http.get(_u('/calories/foods/lookup$suffix'), headers: _headers()),
+  );
+  if (res.statusCode == 400) {
+    throw Exception('Invalid query parameters');
+  }
+  if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
+  
+  return (jsonDecode(res.body) as List)
+      .map((e) => FoodLookupResult.fromJson(e as Map<String, dynamic>))
+      .toList();
+}
+
 Future<Food> upsertFoodByBarcode({
   required String barcode,
   required String name,

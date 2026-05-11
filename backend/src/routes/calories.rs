@@ -73,6 +73,12 @@ pub struct FoodSearchQuery {
 }
 
 #[derive(Deserialize)]
+pub struct LookupFoodsQuery {
+    pub q: String,
+    pub limit: Option<usize>,
+}
+
+#[derive(Deserialize)]
 pub struct UpsertFoodBody {
     pub name: String,
     pub brand: Option<String>,
@@ -160,9 +166,10 @@ fn validate_day(day: &str) -> bool {
 
 fn validate_barcode(barcode: &str) -> bool {
     let b = barcode.trim();
-    (8..=14).contains(&b.len()) && b.as_bytes().iter().all(|c| c.is_ascii_digit())
+    (8..=14).contains(&b.len()) && b.as_bytes().iter().all(u8::is_ascii_digit)
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn upsert_food_by_name_brand(
     pool: &sqlx::SqlitePool,
     name: &str,
@@ -313,9 +320,12 @@ struct OpenFoodFactsProduct {
 
 #[derive(Deserialize)]
 struct OpenFoodFactsNutriments {
-    proteins_100g: Option<f64>,
-    carbohydrates_100g: Option<f64>,
-    fat_100g: Option<f64>,
+    #[serde(rename = "proteins_100g")]
+    proteins: Option<f64>,
+    #[serde(rename = "carbohydrates_100g")]
+    carbohydrates: Option<f64>,
+    #[serde(rename = "fat_100g")]
+    fat: Option<f64>,
 }
 
 async fn fetch_open_food_facts_pl(
@@ -346,9 +356,9 @@ async fn fetch_open_food_facts_pl(
     let product = body.product?;
     let nutr = product.nutriments?;
 
-    let protein = nutr.proteins_100g?;
-    let carbs = nutr.carbohydrates_100g?;
-    let fats = nutr.fat_100g?;
+    let protein = nutr.proteins?;
+    let carbs = nutr.carbohydrates?;
+    let fats = nutr.fat?;
 
     let name = product
         .product_name_pl
@@ -376,6 +386,11 @@ async fn fetch_open_food_facts_pl(
     })
 }
 
+#[derive(Deserialize)]
+struct OpenFoodFactsSearchResp {
+    products: Vec<OpenFoodFactsProduct>,
+}
+
 /// # Errors
 /// Returns an error if the barcode is invalid or the external lookup fails.
 pub async fn lookup_food_by_barcode(
@@ -394,6 +409,155 @@ pub async fn lookup_food_by_barcode(
         return Err((StatusCode::NOT_FOUND, "not found".to_string()).into());
     };
     Ok(Json(found))
+}
+
+/// Lookup foods by free-text query: searches local DB first, then falls back to Open Food Facts.
+///
+/// Returns local database results first (faster), then online results from Open Food Facts.
+/// Deduplicates based on name to avoid showing the same food twice.
+///
+/// # Errors
+/// Returns an error if the query is empty. Network errors are logged but don't fail the request
+/// if local results are found.
+#[allow(clippy::cast_possible_wrap, clippy::cast_possible_truncation, clippy::too_many_lines)]
+pub async fn lookup_foods_by_query(
+    State(state): State<AppState>,
+    Query(query): Query<LookupFoodsQuery>,
+) -> AppResult<Json<Vec<FoodLookupResult>>> {
+    let term = query.q.trim();
+    if term.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "q is required".to_string()).into());
+    }
+    let limit = query.limit.unwrap_or(10).clamp(1, 20);
+
+    // 1. Search local database first
+    let local_foods = sqlx::query_as::<_, Food>(
+        "SELECT id, name, brand, protein_per_100g, carbs_per_100g, fats_per_100g, last_weight_g, source
+         FROM foods
+         WHERE name LIKE '%' || ? || '%'
+            OR aliases LIKE '%' || ? || '%'
+         ORDER BY name ASC
+         LIMIT ?",
+    )
+    .bind(term)
+    .bind(term)
+    .bind(limit as i64)
+    .fetch_all(&state.pool)
+    .await?;
+
+    let mut out: Vec<FoodLookupResult> = local_foods
+        .into_iter()
+        .map(|f| FoodLookupResult {
+            name: f.name,
+            brand: f.brand,
+            protein_per_100g: f.protein_per_100g,
+            carbs_per_100g: f.carbs_per_100g,
+            fats_per_100g: f.fats_per_100g,
+            source: f.source,
+        })
+        .collect();
+
+    // 2. If we have enough local results, return early (avoid unnecessary network call)
+    if out.len() >= limit {
+        return Ok(Json(out));
+    }
+
+    // 3. Fallback to Open Food Facts for additional results
+    let remaining_limit = limit - out.len();
+    let mut url = reqwest::Url::parse("https://world.openfoodfacts.org/api/v2/search")
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Bad OFF url: {e}")))?;
+    url.query_pairs_mut()
+        .append_pair("search_terms", term)
+        .append_pair(
+            "fields",
+            "product_name,product_name_pl,brands,nutriments",
+        )
+        .append_pair("lc", "pl")
+        .append_pair("cc", "pl")
+        .append_pair("page_size", &remaining_limit.to_string());
+
+    let resp = match state
+        .http
+        .get(url)
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            // Log but don't fail - user can still manually enter macros
+            tracing::warn!("Open Food Facts request failed: {}", e);
+            return Ok(Json(out));
+        }
+    };
+
+    if !resp.status().is_success() {
+        // Same here - graceful degradation, user can manual entry
+        tracing::warn!("Open Food Facts returned HTTP {}", resp.status());
+        return Ok(Json(out));
+    }
+
+    let body: OpenFoodFactsSearchResp = match resp.json().await {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::warn!("Open Food Facts JSON parse failed: {}", e);
+            return Ok(Json(out));
+        }
+    };
+
+    // 4. Extract names of already-added items to avoid duplicates
+    let local_names: std::collections::HashSet<String> =
+        out.iter().map(|f| f.name.to_lowercase()).collect();
+
+    // 5. Add online results that don't duplicate local ones
+    for p in body.products {
+        if out.len() >= limit {
+            break;
+        }
+
+        let Some(nutr) = p.nutriments else { continue };
+        let (Some(protein), Some(carbs), Some(fats)) = (
+            nutr.proteins,
+            nutr.carbohydrates,
+            nutr.fat,
+        ) else {
+            continue;
+        };
+        let name = p
+            .product_name_pl
+            .or(p.product_name)
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        if name.is_empty() {
+            continue;
+        }
+
+        // Skip if already in local results
+        if local_names.contains(&name.to_lowercase()) {
+            continue;
+        }
+
+        let brand = p
+            .brands
+            .unwrap_or_default()
+            .split(',')
+            .next()
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+
+        out.push(FoodLookupResult {
+            name,
+            brand,
+            protein_per_100g: protein.max(0.0),
+            carbs_per_100g: carbs.max(0.0),
+            fats_per_100g: fats.max(0.0),
+            source: "open_food_facts".to_string(),
+        });
+    }
+
+    Ok(Json(out))
 }
 
 /// # Errors
@@ -557,6 +721,7 @@ pub async fn create_calorie_entry(
 
 /// # Errors
 /// Returns `NOT_FOUND` if the entry doesn't exist or validation fails.
+#[allow(clippy::too_many_lines)]
 pub async fn update_calorie_entry(
     State(state): State<AppState>,
     Path(id): Path<i64>,

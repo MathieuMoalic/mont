@@ -196,6 +196,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
   }) async {
     if (!mounted) return;
     final nameController = TextEditingController(text: existing?.name ?? '');
+    final nameFocus = FocusNode();
     String? scannedBarcode;
     final proteinPer100Controller = TextEditingController(
       text: existing != null ? _fmt(existing.proteinPer100G) : '',
@@ -277,6 +278,8 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                         'No product found for barcode $b. '
                         'Enter the item manually and press Save to cache it for next time.';
                   });
+                  // Fast path after a miss: put the cursor on Name.
+                  nameFocus.requestFocus();
                 }
               } finally {
                 setLocalState(() => lookupBusy = false);
@@ -319,8 +322,20 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                           ),
                         ),
                       ),
+                    if (scannedBarcode != null && error != null)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: Text(
+                            'Not found. Type name + macros, Save to cache this barcode.',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ),
+                      ),
                     TextField(
                       controller: nameController,
+                      focusNode: nameFocus,
                       decoration: denseDecoration(
                         InputDecoration(
                           labelText: 'Name',
@@ -441,6 +456,59 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                                 ),
                             ],
                           ],
+                        ),
+                      ),
+                    if (existing == null && foodQuery.isNotEmpty && (matches.isEmpty || matches.length < 4))
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6, bottom: 4),
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: FilledButton.tonal(
+                            onPressed: lookupBusy
+                                ? null
+                                : () async {
+                                    final q = foodQuery.trim();
+                                    if (q.length < 2) return;
+                                    setLocalState(() {
+                                      lookupBusy = true;
+                                      error = null;
+                                    });
+                                    try {
+                                      final results = await api.lookupFoodsByQuery(q);
+                                      if (!context.mounted) return;
+                                      setLocalState(() {
+                                        matches = results
+                                            .map((r) => Food(
+                                              id: 0,
+                                              name: r.name,
+                                              brand: r.brand,
+                                              proteinPer100G: r.proteinPer100G,
+                                              carbsPer100G: r.carbsPer100G,
+                                              fatsPer100G: r.fatsPer100G,
+                                              lastWeightG: 100.0,
+                                              source: r.source,
+                                            ))
+                                            .toList();
+                                      });
+                                    } catch (e) {
+                                      if (!context.mounted) return;
+                                      setLocalState(() {
+                                        error = 'Search failed: $e';
+                                      });
+                                    } finally {
+                                      setLocalState(() => lookupBusy = false);
+                                    }
+                                  },
+                            child: lookupBusy
+                                ? SizedBox(
+                                    height: 16,
+                                    width: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Text('Search online'),
+                          ),
                         ),
                       ),
                     TextField(
@@ -628,6 +696,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
       },
     );
 
+    nameFocus.dispose();
     weightFocus.dispose();
     if (saved == true) {
       await _loadMonth();

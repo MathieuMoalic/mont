@@ -46,7 +46,7 @@ fn cors_layer(config: &Config) -> CorsLayer {
     }
 }
 
-#[allow(clippy::needless_pass_by_value)]
+#[allow(clippy::needless_pass_by_value, clippy::too_many_lines)]
 pub fn build_app(state: AppState) -> Router {
     let request_id_layer = ServiceBuilder::new()
         .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
@@ -116,6 +116,7 @@ pub fn build_app(state: AppState) -> Router {
             "/calories/foods/lookup/{barcode}",
             get(calories::lookup_food_by_barcode),
         )
+        .route("/calories/foods/lookup", get(calories::lookup_foods_by_query))
         .route(
             "/calories/exercises",
             get(calories::list_calorie_exercises).post(calories::create_calorie_exercise),
