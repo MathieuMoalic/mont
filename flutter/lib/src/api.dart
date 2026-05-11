@@ -502,7 +502,7 @@ Future<void> deleteCalorieEntry(int id) async {
   if (res.statusCode != 204) throw Exception('HTTP ${res.statusCode}');
 }
 
-Future<List<SavedFood>> listSavedFoods({String? query}) async {
+Future<List<Food>> listFoods({String? query}) async {
   final suffix = (query != null && query.trim().isNotEmpty)
       ? '?q=${Uri.encodeQueryComponent(query.trim())}'
       : '';
@@ -511,8 +511,65 @@ Future<List<SavedFood>> listSavedFoods({String? query}) async {
   );
   if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
   return (jsonDecode(res.body) as List)
-      .map((e) => SavedFood.fromJson(e as Map<String, dynamic>))
+      .map((e) => Food.fromJson(e as Map<String, dynamic>))
       .toList();
+}
+
+Future<Food> getFoodByBarcode(String barcode) async {
+  final res = await _handleUnauthorized(
+    () => http.get(
+      _u('/calories/foods/by-barcode/${Uri.encodeComponent(barcode.trim())}'),
+      headers: _headers(),
+    ),
+  );
+  if (res.statusCode != 200) {
+    throw Exception(res.body.isEmpty ? 'Barcode not found' : res.body);
+  }
+  return Food.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+}
+
+Future<FoodLookupResult> lookupFoodByBarcode(String barcode) async {
+  final res = await _handleUnauthorized(
+    () => http.get(
+      _u('/calories/foods/lookup/${Uri.encodeComponent(barcode.trim())}'),
+      headers: _headers(),
+    ),
+  );
+  if (res.statusCode != 200) {
+    throw Exception(res.body.isEmpty ? 'Barcode not found' : res.body);
+  }
+  return FoodLookupResult.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+}
+
+Future<Food> upsertFoodByBarcode({
+  required String barcode,
+  required String name,
+  String? brand,
+  required double proteinPer100G,
+  required double carbsPer100G,
+  required double fatsPer100G,
+  required double lastWeightG,
+  String? source,
+}) async {
+  final res = await _handleUnauthorized(
+    () => http.put(
+      _u('/calories/foods/by-barcode/${Uri.encodeComponent(barcode.trim())}'),
+      headers: _headers(),
+      body: jsonEncode({
+        'name': name,
+        if (brand != null) 'brand': brand,
+        'protein_per_100g': proteinPer100G,
+        'carbs_per_100g': carbsPer100G,
+        'fats_per_100g': fatsPer100G,
+        'last_weight_g': lastWeightG,
+        if (source != null) 'source': source,
+      }),
+    ),
+  );
+  if (res.statusCode != 200) {
+    throw Exception(res.body.isEmpty ? 'Failed to save barcode food' : res.body);
+  }
+  return Food.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
 }
 
 Future<List<CalorieExerciseEntry>> listCalorieExercises({

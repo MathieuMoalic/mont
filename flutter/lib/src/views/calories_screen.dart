@@ -193,11 +193,10 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
     required String meal,
     CalorieEntry? existing,
   }) async {
-    final savedFoods = existing == null
-        ? await api.listSavedFoods()
-        : <SavedFood>[];
+    final savedFoods = existing == null ? await api.listFoods() : <Food>[];
     if (!mounted) return;
     final nameController = TextEditingController(text: existing?.name ?? '');
+    final barcodeController = TextEditingController();
     final proteinPer100Controller = TextEditingController(
       text: existing != null ? _fmt(existing.proteinPer100G) : '',
     );
@@ -213,6 +212,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
     var selectedMeal = existing?.mealPeriod ?? meal;
     var foodQuery = '';
     String? error;
+    bool lookupBusy = false;
 
     final saved = await showDialog<bool>(
       context: context,
@@ -240,6 +240,86 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                         if (v == null) return;
                         setLocalState(() => selectedMeal = v);
                       },
+                    ),
+                    TextField(
+                      controller: barcodeController,
+                      decoration: InputDecoration(
+                        labelText: 'Barcode (EAN)',
+                        hintText: 'e.g. 5901234123457',
+                        prefixIcon: const Icon(Icons.qr_code_2),
+                        suffixIcon: IconButton(
+                          tooltip: 'Lookup in Polish sources (Open Food Facts)',
+                          onPressed:
+                              lookupBusy
+                                  ? null
+                                  : () async {
+                                    final b = barcodeController.text.trim();
+                                    if (b.isEmpty) return;
+                                    setLocalState(() {
+                                      lookupBusy = true;
+                                      error = null;
+                                    });
+                                    try {
+                                      // 1) Try local cache first
+                                      final cached = await api.getFoodByBarcode(
+                                        b,
+                                      );
+                                      setLocalState(() {
+                                        nameController.text = cached.name;
+                                        foodQuery = cached.name;
+                                        proteinPer100Controller.text = _fmt(
+                                          cached.proteinPer100G,
+                                        );
+                                        carbsPer100Controller.text = _fmt(
+                                          cached.carbsPer100G,
+                                        );
+                                        fatsPer100Controller.text = _fmt(
+                                          cached.fatsPer100G,
+                                        );
+                                        weightController.text = _fmt(
+                                          cached.lastWeightG,
+                                        );
+                                      });
+                                    } catch (_) {
+                                      try {
+                                        // 2) Fallback to online lookup
+                                        final lookedUp =
+                                            await api.lookupFoodByBarcode(b);
+                                        setLocalState(() {
+                                          nameController.text = lookedUp.name;
+                                          foodQuery = lookedUp.name;
+                                          proteinPer100Controller.text = _fmt(
+                                            lookedUp.proteinPer100G,
+                                          );
+                                          carbsPer100Controller.text = _fmt(
+                                            lookedUp.carbsPer100G,
+                                          );
+                                          fatsPer100Controller.text = _fmt(
+                                            lookedUp.fatsPer100G,
+                                          );
+                                        });
+                                      } catch (e) {
+                                        setLocalState(
+                                          () => error = e.toString(),
+                                        );
+                                      }
+                                    } finally {
+                                      setLocalState(() => lookupBusy = false);
+                                    }
+                                  },
+                          icon:
+                              lookupBusy
+                                  ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                  : const Icon(Icons.search),
+                        ),
+                      ),
+                      keyboardType: TextInputType.number,
                     ),
                     TextField(
                       controller: nameController,
@@ -468,6 +548,20 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                           carbsPer100G: carbsPer100,
                           fatsPer100G: fatsPer100,
                           weightG: weight,
+                        );
+                      }
+
+                      final barcode = barcodeController.text.trim();
+                      if (barcode.isNotEmpty) {
+                        // Cache the lookup locally so future scans / manual entries are instant.
+                        await api.upsertFoodByBarcode(
+                          barcode: barcode,
+                          name: name,
+                          proteinPer100G: proteinPer100,
+                          carbsPer100G: carbsPer100,
+                          fatsPer100G: fatsPer100,
+                          lastWeightG: weight,
+                          source: 'user',
                         );
                       }
                       if (ctx.mounted) Navigator.of(ctx).pop(true);

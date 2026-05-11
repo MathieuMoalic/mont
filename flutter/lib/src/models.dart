@@ -340,30 +340,63 @@ class NutritionTargets {
   };
 }
 
-class SavedFood {
+class Food {
   final int id;
   final String name;
+  final String brand;
   final double proteinPer100G;
   final double carbsPer100G;
   final double fatsPer100G;
   final double lastWeightG;
+  final String source;
 
-  SavedFood({
+  Food({
     required this.id,
     required this.name,
+    required this.brand,
     required this.proteinPer100G,
     required this.carbsPer100G,
     required this.fatsPer100G,
     required this.lastWeightG,
+    required this.source,
   });
 
-  factory SavedFood.fromJson(Map<String, dynamic> j) => SavedFood(
+  factory Food.fromJson(Map<String, dynamic> j) => Food(
     id: j['id'] as int,
     name: j['name'] as String,
+    brand: (j['brand'] as String?) ?? '',
     proteinPer100G: (j['protein_per_100g'] as num).toDouble(),
     carbsPer100G: (j['carbs_per_100g'] as num).toDouble(),
     fatsPer100G: (j['fats_per_100g'] as num).toDouble(),
     lastWeightG: (j['last_weight_g'] as num).toDouble(),
+    source: (j['source'] as String?) ?? 'manual',
+  );
+}
+
+class FoodLookupResult {
+  final String name;
+  final String brand;
+  final double proteinPer100G;
+  final double carbsPer100G;
+  final double fatsPer100G;
+  final String source;
+
+  FoodLookupResult({
+    required this.name,
+    required this.brand,
+    required this.proteinPer100G,
+    required this.carbsPer100G,
+    required this.fatsPer100G,
+    required this.source,
+  });
+
+  factory FoodLookupResult.fromJson(Map<String, dynamic> j) => FoodLookupResult(
+    name: (j['name'] as String?) ?? '',
+    brand: (j['brand'] as String?) ?? '',
+    proteinPer100G: (j['protein_per_100g'] as num).toDouble(),
+    carbsPer100G: (j['carbs_per_100g'] as num).toDouble(),
+    fatsPer100G: (j['fats_per_100g'] as num).toDouble(),
+    source: (j['source'] as String?) ?? 'open_food_facts',
   );
 }
 
