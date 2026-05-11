@@ -400,6 +400,30 @@ class FoodLookupResult {
   );
 }
 
+class LabelParseResult {
+  final double proteinPer100G;
+  final double carbsPer100G;
+  final double fatsPer100G;
+  final double confidence;
+  final String ocrText;
+
+  LabelParseResult({
+    required this.proteinPer100G,
+    required this.carbsPer100G,
+    required this.fatsPer100G,
+    required this.confidence,
+    required this.ocrText,
+  });
+
+  factory LabelParseResult.fromJson(Map<String, dynamic> j) => LabelParseResult(
+    proteinPer100G: (j['protein_per_100g'] as num).toDouble(),
+    carbsPer100G: (j['carbs_per_100g'] as num).toDouble(),
+    fatsPer100G: (j['fats_per_100g'] as num).toDouble(),
+    confidence: (j['confidence'] as num).toDouble(),
+    ocrText: (j['ocr_text'] as String?) ?? '',
+  );
+}
+
 class WorkoutSummary {
   final int id;
   final DateTime startedAt;

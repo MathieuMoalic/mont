@@ -25,6 +25,7 @@ dependencies:
   latlong2: ^0.9.1
   file_picker: ^8.0.7
   mobile_scanner: ^6.0.2
+  image_picker: ^1.1.2
 
 dev_dependencies:
   flutter_test:
