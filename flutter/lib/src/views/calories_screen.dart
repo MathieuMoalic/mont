@@ -237,12 +237,14 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
               setLocalState(() {
                 lookupBusy = true;
                 error = null;
+                // Keep the scanned barcode even if no match is found, so the
+                // manual entry can be cached against it on Save.
+                scannedBarcode = b;
               });
               try {
                 // 1) Try local cache first.
                 final cached = await api.getFoodByBarcode(b);
                 setLocalState(() {
-                  scannedBarcode = b;
                   nameController.text = cached.name;
                   foodQuery = cached.name;
                   proteinPer100Controller.text = _fmt(cached.proteinPer100G);
@@ -256,7 +258,6 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                   // 2) Fallback to online lookup (Poland-focused).
                   final lookedUp = await api.lookupFoodByBarcode(b);
                   setLocalState(() {
-                    scannedBarcode = b;
                     nameController.text = lookedUp.name;
                     foodQuery = lookedUp.name;
                     proteinPer100Controller.text = _fmt(
