@@ -296,7 +296,7 @@ async fn updating_food_updates_saved_food_last_weight() {
             &serde_json::json!({
                 "day": "2026-01-11",
                 "meal_period": "morning",
-                "name": "Rice",
+                "name": "Brown Rice Raw",
                 "protein_per_100g": 3.0,
                 "carbs_per_100g": 28.0,
                 "fats_per_100g": 0.3,
@@ -317,7 +317,7 @@ async fn updating_food_updates_saved_food_last_weight() {
         .await;
 
     let foods: Vec<serde_json::Value> = app
-        .get("/calories/foods?q=Rice")
+        .get("/calories/foods?q=Brown+Rice+Raw")
         .await
         .json()
         .await
