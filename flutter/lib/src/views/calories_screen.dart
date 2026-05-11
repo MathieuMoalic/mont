@@ -349,7 +349,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                         }
                         final mySeq = ++searchSeq;
                         api
-                            .listFoods(query: q, veganOnly: true)
+                            .listFoods(query: q)
                             .then((results) {
                               if (!context.mounted) return;
                               if (mySeq != searchSeq) return;

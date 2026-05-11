@@ -502,13 +502,11 @@ Future<void> deleteCalorieEntry(int id) async {
   if (res.statusCode != 204) throw Exception('HTTP ${res.statusCode}');
 }
 
-Future<List<Food>> listFoods({String? query, bool veganOnly = false}) async {
+Future<List<Food>> listFoods({String? query}) async {
   final params = <String>[];
   if (query != null && query.trim().isNotEmpty) {
     params.add('q=${Uri.encodeQueryComponent(query.trim())}');
   }
-  // Axum parses bool query params as "true/false".
-  if (veganOnly) params.add('vegan=true');
   final suffix = params.isEmpty ? '' : '?${params.join('&')}';
   final res = await _handleUnauthorized(
     () => http.get(_u('/calories/foods$suffix'), headers: _headers()),
