@@ -27,7 +27,9 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> {
         body: const Center(
           child: Padding(
             padding: EdgeInsets.all(16),
-            child: Text('Scanner is not available on web. Enter digits manually.'),
+            child: Text(
+              'Scanner is not available on web. Enter digits manually.',
+            ),
           ),
         ),
       );

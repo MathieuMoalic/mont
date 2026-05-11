@@ -540,7 +540,9 @@ Future<FoodLookupResult> lookupFoodByBarcode(String barcode) async {
     throw Exception('No product found online for barcode $b.');
   }
   if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
-  return FoodLookupResult.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+  return FoodLookupResult.fromJson(
+    jsonDecode(res.body) as Map<String, dynamic>,
+  );
 }
 
 Future<Food> upsertFoodByBarcode({
@@ -569,7 +571,9 @@ Future<Food> upsertFoodByBarcode({
     ),
   );
   if (res.statusCode != 200) {
-    throw Exception(res.body.isEmpty ? 'Failed to save barcode food' : res.body);
+    throw Exception(
+      res.body.isEmpty ? 'Failed to save barcode food' : res.body,
+    );
   }
   return Food.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
 }

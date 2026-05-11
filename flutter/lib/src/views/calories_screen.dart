@@ -210,6 +210,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
     final weightController = TextEditingController(
       text: existing != null ? _fmt(existing.weightG) : '',
     );
+    final weightFocus = FocusNode();
     var selectedMeal = existing?.mealPeriod ?? meal;
     var foodQuery = '';
     String? error;
@@ -220,6 +221,58 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
       builder: (ctx) {
         return StatefulBuilder(
           builder: (context, setLocalState) {
+            Future<void> lookupAndFill(String rawBarcode) async {
+              final b = rawBarcode.trim();
+              if (b.isEmpty) return;
+              setLocalState(() {
+                lookupBusy = true;
+                error = null;
+              });
+              try {
+                // 1) Try local cache first.
+                final cached = await api.getFoodByBarcode(b);
+                setLocalState(() {
+                  barcodeController.text = b;
+                  nameController.text = cached.name;
+                  foodQuery = cached.name;
+                  proteinPer100Controller.text = _fmt(cached.proteinPer100G);
+                  carbsPer100Controller.text = _fmt(cached.carbsPer100G);
+                  fatsPer100Controller.text = _fmt(cached.fatsPer100G);
+                  weightController.text = _fmt(cached.lastWeightG);
+                });
+              } catch (_) {
+                try {
+                  // 2) Fallback to online lookup (Poland-focused).
+                  final lookedUp = await api.lookupFoodByBarcode(b);
+                  setLocalState(() {
+                    barcodeController.text = b;
+                    nameController.text = lookedUp.name;
+                    foodQuery = lookedUp.name;
+                    proteinPer100Controller.text = _fmt(
+                      lookedUp.proteinPer100G,
+                    );
+                    carbsPer100Controller.text = _fmt(lookedUp.carbsPer100G);
+                    fatsPer100Controller.text = _fmt(lookedUp.fatsPer100G);
+                    // Prefer keeping an existing weight if user already typed it.
+                    if (weightController.text.trim().isEmpty) {
+                      weightController.text = '100';
+                    }
+                  });
+                } catch (e) {
+                  setLocalState(() => error = e.toString());
+                }
+              } finally {
+                setLocalState(() => lookupBusy = false);
+                if (!context.mounted) return;
+                // Fastest flow: after fill, jump straight to weight.
+                weightFocus.requestFocus();
+                weightController.selection = TextSelection(
+                  baseOffset: 0,
+                  extentOffset: weightController.text.length,
+                );
+              }
+            }
+
             return AlertDialog(
               title: Text(existing == null ? 'Add item' : 'Edit item'),
               content: SingleChildScrollView(
@@ -250,72 +303,18 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                         prefixIcon: const Icon(Icons.qr_code_2),
                         suffixIcon: IconButton(
                           tooltip: 'Lookup in Polish sources (Open Food Facts)',
-                          onPressed:
-                              lookupBusy
-                                  ? null
-                                  : () async {
-                                    final b = barcodeController.text.trim();
-                                    if (b.isEmpty) return;
-                                    setLocalState(() {
-                                      lookupBusy = true;
-                                      error = null;
-                                    });
-                                    try {
-                                      // 1) Try local cache first
-                                      final cached = await api.getFoodByBarcode(
-                                        b,
-                                      );
-                                      setLocalState(() {
-                                        nameController.text = cached.name;
-                                        foodQuery = cached.name;
-                                        proteinPer100Controller.text = _fmt(
-                                          cached.proteinPer100G,
-                                        );
-                                        carbsPer100Controller.text = _fmt(
-                                          cached.carbsPer100G,
-                                        );
-                                        fatsPer100Controller.text = _fmt(
-                                          cached.fatsPer100G,
-                                        );
-                                        weightController.text = _fmt(
-                                          cached.lastWeightG,
-                                        );
-                                      });
-                                    } catch (_) {
-                                      try {
-                                        // 2) Fallback to online lookup
-                                        final lookedUp =
-                                            await api.lookupFoodByBarcode(b);
-                                        setLocalState(() {
-                                          nameController.text = lookedUp.name;
-                                          foodQuery = lookedUp.name;
-                                          proteinPer100Controller.text = _fmt(
-                                            lookedUp.proteinPer100G,
-                                          );
-                                          carbsPer100Controller.text = _fmt(
-                                            lookedUp.carbsPer100G,
-                                          );
-                                          fatsPer100Controller.text = _fmt(
-                                            lookedUp.fatsPer100G,
-                                          );
-                                        });
-                                      } catch (e) {
-                                        setLocalState(() => error = e.toString());
-                                      }
-                                    } finally {
-                                      setLocalState(() => lookupBusy = false);
-                                    }
-                                  },
-                          icon:
-                              lookupBusy
-                                  ? const SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                  : const Icon(Icons.search),
+                          onPressed: lookupBusy
+                              ? null
+                              : () => lookupAndFill(barcodeController.text),
+                          icon: lookupBusy
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.search),
                         ),
                       ),
                       keyboardType: TextInputType.number,
@@ -324,13 +323,14 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                       alignment: Alignment.centerLeft,
                       child: TextButton.icon(
                         onPressed: () async {
-                          final scanned = await Navigator.of(context).push<String>(
-                            MaterialPageRoute(
-                              builder: (_) => const BarcodeScanScreen(),
-                            ),
-                          );
+                          final scanned = await Navigator.of(context)
+                              .push<String>(
+                                MaterialPageRoute(
+                                  builder: (_) => const BarcodeScanScreen(),
+                                ),
+                              );
                           if (scanned == null || scanned.trim().isEmpty) return;
-                          setLocalState(() => barcodeController.text = scanned.trim());
+                          await lookupAndFill(scanned);
                         },
                         icon: const Icon(Icons.qr_code_scanner),
                         label: const Text('Scan barcode'),
@@ -489,6 +489,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                       decoration: const InputDecoration(
                         labelText: 'Total weight (g)',
                       ),
+                      focusNode: weightFocus,
                       keyboardType: const TextInputType.numberWithOptions(
                         decimal: true,
                       ),
@@ -545,15 +546,21 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                         carbsPer100 == null ||
                         fatsPer100 == null ||
                         weight == null) {
-                      setLocalState(() => error = 'Use numbers for macros/weight.');
+                      setLocalState(
+                        () => error = 'Use numbers for macros/weight.',
+                      );
                       return;
                     }
-                    if (proteinPer100 < 0 || carbsPer100 < 0 || fatsPer100 < 0) {
+                    if (proteinPer100 < 0 ||
+                        carbsPer100 < 0 ||
+                        fatsPer100 < 0) {
                       setLocalState(() => error = 'Macros cannot be negative.');
                       return;
                     }
                     if (weight <= 0) {
-                      setLocalState(() => error = 'Weight must be greater than 0g.');
+                      setLocalState(
+                        () => error = 'Weight must be greater than 0g.',
+                      );
                       return;
                     }
 
@@ -608,6 +615,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
       },
     );
 
+    weightFocus.dispose();
     if (saved == true) {
       await _loadMonth();
     }
