@@ -507,7 +507,8 @@ Future<List<Food>> listFoods({String? query, bool veganOnly = false}) async {
   if (query != null && query.trim().isNotEmpty) {
     params.add('q=${Uri.encodeQueryComponent(query.trim())}');
   }
-  if (veganOnly) params.add('vegan=1');
+  // Axum parses bool query params as "true/false".
+  if (veganOnly) params.add('vegan=true');
   final suffix = params.isEmpty ? '' : '?${params.join('&')}';
   final res = await _handleUnauthorized(
     () => http.get(_u('/calories/foods$suffix'), headers: _headers()),
