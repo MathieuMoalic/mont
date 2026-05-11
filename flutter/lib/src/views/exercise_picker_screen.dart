@@ -64,6 +64,8 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
   List<Exercise>? _all;
   List<Exercise> _filtered = [];
   final _searchCtrl = TextEditingController();
+  late ScrollController _listScrollCtrl;
+  double _lastScrollPosition = 0;
   String? _error;
   String? _muscleFilter;
   String? _equipmentFilter;
@@ -75,6 +77,8 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
   @override
   void initState() {
     super.initState();
+    _listScrollCtrl = ScrollController();
+    _listScrollCtrl.addListener(_onListScroll);
     _loadCategoryOptions();
     _load();
     _searchCtrl.addListener(_filter);
@@ -82,8 +86,20 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
 
   @override
   void dispose() {
+    _listScrollCtrl.removeListener(_onListScroll);
+    _listScrollCtrl.dispose();
     _searchCtrl.dispose();
     super.dispose();
+  }
+
+  void _onListScroll() {
+    final scrollPos = _listScrollCtrl.position.pixels;
+    final isScrollingDown = scrollPos > _lastScrollPosition;
+    _lastScrollPosition = scrollPos;
+
+    if (_showFilters && isScrollingDown) {
+      setState(() => _showFilters = false);
+    }
   }
 
   Future<void> _load() async {
@@ -736,6 +752,7 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
         ],
         Expanded(
           child: ListView.builder(
+            controller: _listScrollCtrl,
             keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
             itemCount: _filtered.length,
             itemBuilder: (ctx, i) {
