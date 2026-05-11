@@ -197,7 +197,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
     final savedFoods = existing == null ? await api.listFoods() : <Food>[];
     if (!mounted) return;
     final nameController = TextEditingController(text: existing?.name ?? '');
-    final barcodeController = TextEditingController();
+    String? scannedBarcode;
     final proteinPer100Controller = TextEditingController(
       text: existing != null ? _fmt(existing.proteinPer100G) : '',
     );
@@ -233,7 +233,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                 // 1) Try local cache first.
                 final cached = await api.getFoodByBarcode(b);
                 setLocalState(() {
-                  barcodeController.text = b;
+                  scannedBarcode = b;
                   nameController.text = cached.name;
                   foodQuery = cached.name;
                   proteinPer100Controller.text = _fmt(cached.proteinPer100G);
@@ -247,7 +247,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                   // 2) Fallback to online lookup (Poland-focused).
                   final lookedUp = await api.lookupFoodByBarcode(b);
                   setLocalState(() {
-                    barcodeController.text = b;
+                    scannedBarcode = b;
                     nameController.text = lookedUp.name;
                     foodQuery = lookedUp.name;
                     proteinPer100Controller.text = _fmt(
@@ -304,30 +304,6 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                         setLocalState(() => selectedMeal = v);
                       },
                     ),
-                    TextField(
-                      controller: barcodeController,
-                      decoration: InputDecoration(
-                        labelText: 'Barcode (EAN)',
-                        hintText: 'e.g. 5901234123457',
-                        prefixIcon: const Icon(Icons.qr_code_2),
-                        suffixIcon: IconButton(
-                          tooltip: 'Lookup in Polish sources (Open Food Facts)',
-                          onPressed: lookupBusy
-                              ? null
-                              : () => lookupAndFill(barcodeController.text),
-                          icon: lookupBusy
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Icon(Icons.search),
-                        ),
-                      ),
-                      keyboardType: TextInputType.number,
-                    ),
                     Align(
                       alignment: Alignment.centerLeft,
                       child: TextButton.icon(
@@ -345,6 +321,17 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                         label: const Text('Scan barcode'),
                       ),
                     ),
+                    if (scannedBarcode != null && scannedBarcode!.isNotEmpty)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: Text(
+                            'Barcode: $scannedBarcode',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ),
+                      ),
                     TextField(
                       controller: nameController,
                       decoration: const InputDecoration(
@@ -597,7 +584,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                         );
                       }
 
-                      final barcode = barcodeController.text.trim();
+                      final barcode = scannedBarcode?.trim() ?? '';
                       if (barcode.isNotEmpty) {
                         // Cache the lookup locally so future scans / manual entries are instant.
                         await api.upsertFoodByBarcode(
@@ -876,13 +863,19 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
       0,
       (sum, e) => sum + e.kcal,
     );
-    final netKcal = intakeKcal - exerciseKcal;
     final targets =
         _targets ?? NutritionTargets(proteinG: 0, carbsG: 0, fatsG: 0);
-    final targetKcal = _kcalFromMacros(
-      targets.proteinG,
-      targets.carbsG,
-      targets.fatsG,
+
+    // Exercise entries increase the day's targets by adding the equivalent kcal
+    // as carbs grams (kcal / 4). This keeps targets macro-based and day-scoped.
+    final extraCarbsFromExerciseG = exerciseKcal / 4.0;
+    final effectiveProteinTargetG = targets.proteinG;
+    final effectiveCarbsTargetG = targets.carbsG + extraCarbsFromExerciseG;
+    final effectiveFatsTargetG = targets.fatsG;
+    final effectiveTargetKcal = _kcalFromMacros(
+      effectiveProteinTargetG,
+      effectiveCarbsTargetG,
+      effectiveFatsTargetG,
     );
 
     return Scaffold(
@@ -900,7 +893,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
       bottomNavigationBar: SafeArea(
         top: false,
         child: Container(
-          padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
           decoration: BoxDecoration(
             color: Theme.of(context).colorScheme.surfaceContainerHighest,
             border: Border(
@@ -909,31 +902,51 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
               ),
             ),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+          child: Row(
             children: [
-              _macroProgressRow(
-                label: 'P',
-                color: _proteinColor,
-                current: totalProtein,
-                target: targets.proteinG,
+              Expanded(
+                child: _compactProgressBar(
+                  label: 'P',
+                  color: _proteinColor,
+                  currentText: '${_fmt(totalProtein)}g',
+                  targetText: '${_fmt(effectiveProteinTargetG)}g',
+                  current: totalProtein,
+                  target: effectiveProteinTargetG,
+                ),
               ),
-              const SizedBox(height: 6),
-              _macroProgressRow(
-                label: 'C',
-                color: _carbsColor,
-                current: totalCarbs,
-                target: targets.carbsG,
+              const SizedBox(width: 8),
+              Expanded(
+                child: _compactProgressBar(
+                  label: 'C',
+                  color: _carbsColor,
+                  currentText: '${_fmt(totalCarbs)}g',
+                  targetText: '${_fmt(effectiveCarbsTargetG)}g',
+                  current: totalCarbs,
+                  target: effectiveCarbsTargetG,
+                ),
               ),
-              const SizedBox(height: 6),
-              _macroProgressRow(
-                label: 'F',
-                color: _fatsColor,
-                current: totalFats,
-                target: targets.fatsG,
+              const SizedBox(width: 8),
+              Expanded(
+                child: _compactProgressBar(
+                  label: 'F',
+                  color: _fatsColor,
+                  currentText: '${_fmt(totalFats)}g',
+                  targetText: '${_fmt(effectiveFatsTargetG)}g',
+                  current: totalFats,
+                  target: effectiveFatsTargetG,
+                ),
               ),
-              const SizedBox(height: 8),
-              _kcalProgressRow(netKcal: netKcal, targetKcal: targetKcal),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _compactProgressBar(
+                  label: 'kcal',
+                  color: Theme.of(context).colorScheme.primary,
+                  currentText: '$intakeKcal',
+                  targetText: '$effectiveTargetKcal',
+                  current: intakeKcal.toDouble(),
+                  target: effectiveTargetKcal.toDouble(),
+                ),
+              ),
             ],
           ),
         ),
@@ -1305,7 +1318,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        '-${entry.kcal} kcal',
+                        '+${_fmt(entry.kcal / 4)}g carbs',
                         style: const TextStyle(fontWeight: FontWeight.w700),
                       ),
                       IconButton(
@@ -1396,6 +1409,61 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _compactProgressBar({
+    required String label,
+    required Color color,
+    required String currentText,
+    required String targetText,
+    required double current,
+    required double target,
+  }) {
+    final hasTarget = target > 0;
+    final ratio = hasTarget ? (current / target) : 0.0;
+    final progress = hasTarget ? ratio.clamp(0.0, 1.0) : 0.0;
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(999),
+      child: SizedBox(
+        height: 22,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            LinearProgressIndicator(
+              value: progress,
+              backgroundColor: color.withValues(alpha: 0.18),
+              valueColor: AlwaysStoppedAnimation(color),
+              minHeight: 22,
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: Row(
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    '$currentText/$targetText',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
