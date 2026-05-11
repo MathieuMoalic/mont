@@ -637,7 +637,10 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
               ),
               TextField(
                 controller: kcalController,
-                decoration: const InputDecoration(labelText: 'kcal burned'),
+                decoration: const InputDecoration(
+                  labelText: 'Extra kcal (adds to today\'s target)',
+                  helperText: 'Converted to carbs: kcal / 4 (g).',
+                ),
                 keyboardType: TextInputType.number,
               ),
               if (error != null)
