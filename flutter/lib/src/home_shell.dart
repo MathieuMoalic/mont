@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'views/calories_screen.dart';
 import 'views/health_screen.dart';
 import 'views/runs_screen.dart';
 import 'views/settings_screen.dart';
@@ -16,6 +17,7 @@ class _HomeShellState extends State<HomeShell> {
 
   static const _screens = [
     WorkoutsScreen(),
+    CaloriesScreen(),
     RunsScreen(),
     HealthScreen(),
     SettingsScreen(),
@@ -34,6 +36,10 @@ class _HomeShellState extends State<HomeShell> {
             label: 'Workouts',
           ),
           NavigationDestination(
+            icon: Icon(Icons.restaurant_outlined),
+            label: 'Calories',
+          ),
+          NavigationDestination(
             icon: Icon(Icons.directions_run),
             label: 'Runs',
           ),
@@ -50,4 +56,3 @@ class _HomeShellState extends State<HomeShell> {
     );
   }
 }
-
