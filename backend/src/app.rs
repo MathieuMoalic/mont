@@ -107,7 +107,15 @@ pub fn build_app(state: AppState) -> Router {
             "/calories/{id}",
             patch(calories::update_calorie_entry).delete(calories::delete_calorie_entry),
         )
-        .route("/calories/foods", get(calories::list_saved_foods))
+        .route("/calories/foods", get(calories::list_foods))
+        .route(
+            "/calories/foods/by-barcode/{barcode}",
+            get(calories::get_food_by_barcode).put(calories::upsert_food_by_barcode),
+        )
+        .route(
+            "/calories/foods/lookup/{barcode}",
+            get(calories::lookup_food_by_barcode),
+        )
         .route(
             "/calories/exercises",
             get(calories::list_calorie_exercises).post(calories::create_calorie_exercise),

@@ -39,13 +39,25 @@ pub struct NutritionTargets {
 }
 
 #[derive(Serialize, sqlx::FromRow)]
-pub struct SavedFood {
+pub struct Food {
     pub id: i64,
     pub name: String,
+    pub brand: String,
     pub protein_per_100g: f64,
     pub carbs_per_100g: f64,
     pub fats_per_100g: f64,
     pub last_weight_g: f64,
+    pub source: String,
+}
+
+#[derive(Serialize)]
+pub struct FoodLookupResult {
+    pub name: String,
+    pub brand: String,
+    pub protein_per_100g: f64,
+    pub carbs_per_100g: f64,
+    pub fats_per_100g: f64,
+    pub source: String,
 }
 
 #[derive(Deserialize)]
@@ -57,6 +69,17 @@ pub struct ListCaloriesQuery {
 #[derive(Deserialize)]
 pub struct FoodSearchQuery {
     pub q: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct UpsertFoodBody {
+    pub name: String,
+    pub brand: Option<String>,
+    pub protein_per_100g: f64,
+    pub carbs_per_100g: f64,
+    pub fats_per_100g: f64,
+    pub last_weight_g: f64,
+    pub source: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -134,28 +157,38 @@ fn validate_day(day: &str) -> bool {
             .all(|(i, b)| (i == 4 || i == 7) || b.is_ascii_digit())
 }
 
-async fn upsert_saved_food(
+fn validate_barcode(barcode: &str) -> bool {
+    let b = barcode.trim();
+    (8..=14).contains(&b.len()) && b.as_bytes().iter().all(|c| c.is_ascii_digit())
+}
+
+async fn upsert_food_by_name_brand(
     pool: &sqlx::SqlitePool,
     name: &str,
+    brand: &str,
     protein_per_100g: f64,
     carbs_per_100g: f64,
     fats_per_100g: f64,
     last_weight_g: f64,
+    source: &str,
 ) -> AppResult<()> {
     sqlx::query(
-        "INSERT INTO saved_foods (name, protein_per_100g, carbs_per_100g, fats_per_100g, last_weight_g)
-         VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT(name) DO UPDATE SET
+        "INSERT INTO foods (name, brand, protein_per_100g, carbs_per_100g, fats_per_100g, last_weight_g, source)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(name, brand) DO UPDATE SET
             protein_per_100g = excluded.protein_per_100g,
             carbs_per_100g = excluded.carbs_per_100g,
             fats_per_100g = excluded.fats_per_100g,
-            last_weight_g = excluded.last_weight_g",
+            last_weight_g = excluded.last_weight_g,
+            source = excluded.source",
     )
     .bind(name)
+    .bind(brand)
     .bind(protein_per_100g)
     .bind(carbs_per_100g)
     .bind(fats_per_100g)
     .bind(last_weight_g)
+    .bind(source)
     .execute(pool)
     .await?;
     Ok(())
@@ -198,14 +231,14 @@ pub async fn list_calories(
 
 /// # Errors
 /// Returns an error if the database query fails.
-pub async fn list_saved_foods(
+pub async fn list_foods(
     State(state): State<AppState>,
     Query(query): Query<FoodSearchQuery>,
-) -> AppResult<Json<Vec<SavedFood>>> {
+) -> AppResult<Json<Vec<Food>>> {
     let foods = if let Some(q) = query.q.as_deref() {
-        sqlx::query_as::<_, SavedFood>(
-            "SELECT id, name, protein_per_100g, carbs_per_100g, fats_per_100g, last_weight_g
-             FROM saved_foods
+        sqlx::query_as::<_, Food>(
+            "SELECT id, name, brand, protein_per_100g, carbs_per_100g, fats_per_100g, last_weight_g, source
+             FROM foods
              WHERE name LIKE '%' || ? || '%'
              ORDER BY name ASC
              LIMIT 100",
@@ -214,9 +247,9 @@ pub async fn list_saved_foods(
         .fetch_all(&state.pool)
         .await?
     } else {
-        sqlx::query_as::<_, SavedFood>(
-            "SELECT id, name, protein_per_100g, carbs_per_100g, fats_per_100g, last_weight_g
-             FROM saved_foods
+        sqlx::query_as::<_, Food>(
+            "SELECT id, name, brand, protein_per_100g, carbs_per_100g, fats_per_100g, last_weight_g, source
+             FROM foods
              ORDER BY name ASC
              LIMIT 100",
         )
@@ -224,6 +257,210 @@ pub async fn list_saved_foods(
         .await?
     };
     Ok(Json(foods))
+}
+
+/// # Errors
+/// Returns an error if the barcode is invalid or the query fails.
+pub async fn get_food_by_barcode(
+    State(state): State<AppState>,
+    Path(barcode): Path<String>,
+) -> AppResult<Json<Food>> {
+    if !validate_barcode(&barcode) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "barcode must be 8-14 digits".to_string(),
+        )
+            .into());
+    }
+
+    let food = sqlx::query_as::<_, Food>(
+        "SELECT f.id, f.name, f.brand, f.protein_per_100g, f.carbs_per_100g, f.fats_per_100g, f.last_weight_g, f.source
+         FROM food_barcodes b
+         JOIN foods f ON f.id = b.food_id
+         WHERE b.barcode = ?",
+    )
+    .bind(barcode.trim())
+    .fetch_optional(&state.pool)
+    .await?;
+
+    let Some(food) = food else {
+        return Err((StatusCode::NOT_FOUND, "barcode not found".to_string()).into());
+    };
+    Ok(Json(food))
+}
+
+#[derive(Deserialize)]
+struct OpenFoodFactsResp {
+    status: i64,
+    product: Option<OpenFoodFactsProduct>,
+}
+
+#[derive(Deserialize)]
+struct OpenFoodFactsProduct {
+    product_name: Option<String>,
+    product_name_pl: Option<String>,
+    brands: Option<String>,
+    nutriments: Option<OpenFoodFactsNutriments>,
+}
+
+#[derive(Deserialize)]
+struct OpenFoodFactsNutriments {
+    proteins_100g: Option<f64>,
+    carbohydrates_100g: Option<f64>,
+    fat_100g: Option<f64>,
+}
+
+async fn fetch_open_food_facts_pl(
+    http: &reqwest::Client,
+    barcode: &str,
+) -> Option<FoodLookupResult> {
+    let url = format!(
+        "https://world.openfoodfacts.org/api/v2/product/{barcode}\
+?fields=product_name,product_name_pl,brands,nutriments\
+&lc=pl&cc=pl"
+    );
+
+    let resp = http
+        .get(url)
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+        .ok()?;
+
+    if !resp.status().is_success() {
+        return None;
+    }
+
+    let body: OpenFoodFactsResp = resp.json().await.ok()?;
+    if body.status != 1 {
+        return None;
+    }
+    let product = body.product?;
+    let nutr = product.nutriments?;
+
+    let protein = nutr.proteins_100g?;
+    let carbs = nutr.carbohydrates_100g?;
+    let fats = nutr.fat_100g?;
+
+    let name = product
+        .product_name_pl
+        .or(product.product_name)
+        .unwrap_or_else(|| "Unknown product".to_string())
+        .trim()
+        .to_string();
+
+    let brand = product
+        .brands
+        .unwrap_or_default()
+        .split(',')
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+
+    Some(FoodLookupResult {
+        name,
+        brand,
+        protein_per_100g: protein.max(0.0),
+        carbs_per_100g: carbs.max(0.0),
+        fats_per_100g: fats.max(0.0),
+        source: "open_food_facts".to_string(),
+    })
+}
+
+/// # Errors
+/// Returns an error if the barcode is invalid or the external lookup fails.
+pub async fn lookup_food_by_barcode(
+    State(state): State<AppState>,
+    Path(barcode): Path<String>,
+) -> AppResult<Json<FoodLookupResult>> {
+    if !validate_barcode(&barcode) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "barcode must be 8-14 digits".to_string(),
+        )
+            .into());
+    }
+
+    let Some(found) = fetch_open_food_facts_pl(&state.http, barcode.trim()).await else {
+        return Err((StatusCode::NOT_FOUND, "not found".to_string()).into());
+    };
+    Ok(Json(found))
+}
+
+/// # Errors
+/// Returns an error if validation fails or the upsert fails.
+pub async fn upsert_food_by_barcode(
+    State(state): State<AppState>,
+    Path(barcode): Path<String>,
+    Json(body): Json<UpsertFoodBody>,
+) -> AppResult<Json<Food>> {
+    if !validate_barcode(&barcode) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "barcode must be 8-14 digits".to_string(),
+        )
+            .into());
+    }
+    if body.name.trim().is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Food name cannot be empty".to_string(),
+        )
+            .into());
+    }
+    if body.protein_per_100g < 0.0
+        || body.carbs_per_100g < 0.0
+        || body.fats_per_100g < 0.0
+        || body.last_weight_g <= 0.0
+    {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Per-100g macros must be non-negative and last_weight_g must be > 0".to_string(),
+        )
+            .into());
+    }
+
+    let brand = body.brand.unwrap_or_default().trim().to_string();
+    let source = body.source.unwrap_or_else(|| "manual".to_string());
+
+    // Create or update the food row, then map the barcode.
+    let food = sqlx::query_as::<_, Food>(
+        "INSERT INTO foods (name, brand, protein_per_100g, carbs_per_100g, fats_per_100g, last_weight_g, source)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(name, brand) DO UPDATE SET
+            protein_per_100g = excluded.protein_per_100g,
+            carbs_per_100g = excluded.carbs_per_100g,
+            fats_per_100g = excluded.fats_per_100g,
+            last_weight_g = excluded.last_weight_g,
+            source = excluded.source
+         RETURNING id, name, brand, protein_per_100g, carbs_per_100g, fats_per_100g, last_weight_g, source",
+    )
+    .bind(body.name.trim())
+    .bind(brand.as_str())
+    .bind(body.protein_per_100g)
+    .bind(body.carbs_per_100g)
+    .bind(body.fats_per_100g)
+    .bind(body.last_weight_g)
+    .bind(source.as_str())
+    .fetch_one(&state.pool)
+    .await?;
+
+    sqlx::query(
+        "INSERT INTO food_barcodes (barcode, food_id, source, last_seen)
+         VALUES (?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+         ON CONFLICT(barcode) DO UPDATE SET
+            food_id = excluded.food_id,
+            source = excluded.source,
+            last_seen = excluded.last_seen",
+    )
+    .bind(barcode.trim())
+    .bind(food.id)
+    .bind(source.as_str())
+    .execute(&state.pool)
+    .await?;
+
+    Ok(Json(food))
 }
 
 /// # Errors
@@ -295,13 +532,15 @@ pub async fn create_calorie_entry(
     .bind(kcal)
     .fetch_one(&state.pool)
     .await?;
-    upsert_saved_food(
+    upsert_food_by_name_brand(
         &state.pool,
         entry.name.as_str(),
+        "",
         entry.protein_per_100g,
         entry.carbs_per_100g,
         entry.fats_per_100g,
         entry.weight_g,
+        "from_entry",
     )
     .await?;
 
@@ -405,13 +644,15 @@ pub async fn update_calorie_entry(
     .fetch_optional(&state.pool)
     .await?
     .ok_or(StatusCode::NOT_FOUND)?;
-    upsert_saved_food(
+    upsert_food_by_name_brand(
         &state.pool,
         entry.name.as_str(),
+        "",
         entry.protein_per_100g,
         entry.carbs_per_100g,
         entry.fats_per_100g,
         entry.weight_g,
+        "from_entry",
     )
     .await?;
 
