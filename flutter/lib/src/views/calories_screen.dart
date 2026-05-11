@@ -194,7 +194,6 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
     required String meal,
     CalorieEntry? existing,
   }) async {
-    final savedFoods = existing == null ? await api.listFoods() : <Food>[];
     if (!mounted) return;
     final nameController = TextEditingController(text: existing?.name ?? '');
     String? scannedBarcode;
@@ -213,6 +212,8 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
     final weightFocus = FocusNode();
     var selectedMeal = existing?.mealPeriod ?? meal;
     var foodQuery = '';
+    var matches = <Food>[];
+    var searchSeq = 0;
     String? error;
     bool lookupBusy = false;
 
@@ -338,96 +339,105 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                         labelText: 'Name',
                         prefixIcon: Icon(Icons.search),
                       ),
-                      onChanged: (v) => setLocalState(() => foodQuery = v),
+                      onChanged: (v) {
+                        setLocalState(() => foodQuery = v);
+                        final q = v.trim();
+                        if (existing != null) return;
+                        if (q.length < 2) {
+                          setLocalState(() => matches = <Food>[]);
+                          return;
+                        }
+                        final mySeq = ++searchSeq;
+                        api
+                            .listFoods(query: q, veganOnly: true)
+                            .then((results) {
+                              if (!context.mounted) return;
+                              if (mySeq != searchSeq) return;
+                              setLocalState(
+                                () => matches = results.take(4).toList(),
+                              );
+                            })
+                            .catchError((_) {});
+                      },
                     ),
-                    if (existing == null && foodQuery.trim().isNotEmpty)
-                      Builder(
-                        builder: (context) {
-                          final q = foodQuery.trim().toLowerCase();
-                          final matches = savedFoods
-                              .where((f) => f.name.toLowerCase().contains(q))
-                              .take(4)
-                              .toList();
-                          if (matches.isEmpty) {
-                            return const Align(
-                              alignment: Alignment.centerLeft,
-                              child: Text('No saved foods'),
-                            );
-                          }
-                          return Container(
-                            margin: const EdgeInsets.only(top: 6, bottom: 4),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.surfaceContainerHighest,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Column(
-                              children: [
-                                for (
-                                  int index = 0;
-                                  index < matches.length;
-                                  index++
-                                ) ...[
-                                  InkWell(
-                                    borderRadius: BorderRadius.circular(6),
-                                    onTap: () {
-                                      final saved = matches[index];
-                                      setLocalState(() {
-                                        nameController.text = saved.name;
-                                        foodQuery = saved.name;
-                                        proteinPer100Controller.text = _fmt(
-                                          saved.proteinPer100G,
-                                        );
-                                        carbsPer100Controller.text = _fmt(
-                                          saved.carbsPer100G,
-                                        );
-                                        fatsPer100Controller.text = _fmt(
-                                          saved.fatsPer100G,
-                                        );
-                                        weightController.text = _fmt(
-                                          saved.lastWeightG,
-                                        );
-                                      });
-                                    },
-                                    child: Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 4,
-                                        vertical: 6,
-                                      ),
-                                      child: Row(
-                                        children: [
-                                          Expanded(
-                                            child: Text(
-                                              matches[index].name,
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 8),
-                                          Text(
-                                            '${_fmt(matches[index].lastWeightG)}g',
-                                          ),
-                                        ],
-                                      ),
-                                    ),
+                    if (existing == null && matches.isNotEmpty)
+                      Container(
+                        margin: const EdgeInsets.only(top: 6, bottom: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Column(
+                          children: [
+                            for (
+                              int index = 0;
+                              index < matches.length;
+                              index++
+                            ) ...[
+                              InkWell(
+                                borderRadius: BorderRadius.circular(6),
+                                onTap: () {
+                                  final saved = matches[index];
+                                  setLocalState(() {
+                                    nameController.text = saved.name;
+                                    foodQuery = saved.name;
+                                    proteinPer100Controller.text = _fmt(
+                                      saved.proteinPer100G,
+                                    );
+                                    carbsPer100Controller.text = _fmt(
+                                      saved.carbsPer100G,
+                                    );
+                                    fatsPer100Controller.text = _fmt(
+                                      saved.fatsPer100G,
+                                    );
+                                    weightController.text = _fmt(
+                                      saved.lastWeightG,
+                                    );
+                                  });
+                                  weightFocus.requestFocus();
+                                  weightController.selection = TextSelection(
+                                    baseOffset: 0,
+                                    extentOffset: weightController.text.length,
+                                  );
+                                },
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 4,
+                                    vertical: 6,
                                   ),
-                                  if (index != matches.length - 1)
-                                    Divider(
-                                      height: 1,
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.outlineVariant,
-                                    ),
-                                ],
-                              ],
-                            ),
-                          );
-                        },
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          matches[index].name,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        '${_fmt(matches[index].lastWeightG)}g',
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              if (index != matches.length - 1)
+                                Divider(
+                                  height: 1,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.outlineVariant,
+                                ),
+                            ],
+                          ],
+                        ),
                       ),
                     TextField(
                       controller: proteinPer100Controller,

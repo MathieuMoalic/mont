@@ -502,10 +502,13 @@ Future<void> deleteCalorieEntry(int id) async {
   if (res.statusCode != 204) throw Exception('HTTP ${res.statusCode}');
 }
 
-Future<List<Food>> listFoods({String? query}) async {
-  final suffix = (query != null && query.trim().isNotEmpty)
-      ? '?q=${Uri.encodeQueryComponent(query.trim())}'
-      : '';
+Future<List<Food>> listFoods({String? query, bool veganOnly = false}) async {
+  final params = <String>[];
+  if (query != null && query.trim().isNotEmpty) {
+    params.add('q=${Uri.encodeQueryComponent(query.trim())}');
+  }
+  if (veganOnly) params.add('vegan=1');
+  final suffix = params.isEmpty ? '' : '?${params.join('&')}';
   final res = await _handleUnauthorized(
     () => http.get(_u('/calories/foods$suffix'), headers: _headers()),
   );
