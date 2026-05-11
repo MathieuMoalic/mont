@@ -222,6 +222,14 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
       builder: (ctx) {
         return StatefulBuilder(
           builder: (context, setLocalState) {
+            final denseDecoration = (InputDecoration base) => base.copyWith(
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 10,
+              ),
+            );
+
             Future<void> lookupAndFill(String rawBarcode) async {
               final b = rawBarcode.trim();
               if (b.isEmpty) return;
@@ -284,6 +292,14 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
             }
 
             return AlertDialog(
+              insetPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 12,
+              ),
+              titlePadding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              contentPadding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+              scrollable: true,
               title: Text(existing == null ? 'Add item' : 'Edit item'),
               content: SingleChildScrollView(
                 child: Column(
@@ -291,7 +307,9 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                   children: [
                     DropdownButtonFormField<String>(
                       initialValue: selectedMeal,
-                      decoration: const InputDecoration(labelText: 'Section'),
+                      decoration: denseDecoration(
+                        const InputDecoration(labelText: 'Section'),
+                      ),
                       items: _mealOrder
                           .map(
                             (v) => DropdownMenuItem(
@@ -335,9 +353,11 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                       ),
                     TextField(
                       controller: nameController,
-                      decoration: const InputDecoration(
-                        labelText: 'Name',
-                        prefixIcon: Icon(Icons.search),
+                      decoration: denseDecoration(
+                        const InputDecoration(
+                          labelText: 'Name',
+                          prefixIcon: Icon(Icons.search),
+                        ),
                       ),
                       onChanged: (v) {
                         setLocalState(() => foodQuery = v);
@@ -409,7 +429,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                                 child: Padding(
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 4,
-                                    vertical: 6,
+                                    vertical: 4,
                                   ),
                                   child: Row(
                                     children: [
@@ -441,59 +461,62 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                       ),
                     TextField(
                       controller: proteinPer100Controller,
-                      decoration:
-                          const InputDecoration(
-                            labelText: 'Protein per 100g (g)',
-                          ).copyWith(
-                            prefixIcon: const Icon(
-                              Icons.circle,
-                              color: _proteinColor,
-                              size: 12,
-                            ),
-                            labelStyle: const TextStyle(color: _proteinColor),
+                      decoration: denseDecoration(
+                        const InputDecoration(
+                          labelText: 'Protein per 100g (g)',
+                        ).copyWith(
+                          prefixIcon: const Icon(
+                            Icons.circle,
+                            color: _proteinColor,
+                            size: 12,
                           ),
+                          labelStyle: const TextStyle(color: _proteinColor),
+                        ),
+                      ),
                       keyboardType: const TextInputType.numberWithOptions(
                         decimal: true,
                       ),
                     ),
                     TextField(
                       controller: carbsPer100Controller,
-                      decoration:
-                          const InputDecoration(
-                            labelText: 'Carbs per 100g (g)',
-                          ).copyWith(
-                            prefixIcon: const Icon(
-                              Icons.circle,
-                              color: _carbsColor,
-                              size: 12,
-                            ),
-                            labelStyle: const TextStyle(color: _carbsColor),
+                      decoration: denseDecoration(
+                        const InputDecoration(
+                          labelText: 'Carbs per 100g (g)',
+                        ).copyWith(
+                          prefixIcon: const Icon(
+                            Icons.circle,
+                            color: _carbsColor,
+                            size: 12,
                           ),
+                          labelStyle: const TextStyle(color: _carbsColor),
+                        ),
+                      ),
                       keyboardType: const TextInputType.numberWithOptions(
                         decimal: true,
                       ),
                     ),
                     TextField(
                       controller: fatsPer100Controller,
-                      decoration:
-                          const InputDecoration(
-                            labelText: 'Fats per 100g (g)',
-                          ).copyWith(
-                            prefixIcon: const Icon(
-                              Icons.circle,
-                              color: _fatsColor,
-                              size: 12,
-                            ),
-                            labelStyle: const TextStyle(color: _fatsColor),
+                      decoration: denseDecoration(
+                        const InputDecoration(
+                          labelText: 'Fats per 100g (g)',
+                        ).copyWith(
+                          prefixIcon: const Icon(
+                            Icons.circle,
+                            color: _fatsColor,
+                            size: 12,
                           ),
+                          labelStyle: const TextStyle(color: _fatsColor),
+                        ),
+                      ),
                       keyboardType: const TextInputType.numberWithOptions(
                         decimal: true,
                       ),
                     ),
                     TextField(
                       controller: weightController,
-                      decoration: const InputDecoration(
-                        labelText: 'Total weight (g)',
+                      decoration: denseDecoration(
+                        const InputDecoration(labelText: 'Total weight (g)'),
                       ),
                       focusNode: weightFocus,
                       keyboardType: const TextInputType.numberWithOptions(
@@ -502,7 +525,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                     ),
                     if (error != null)
                       Padding(
-                        padding: const EdgeInsets.only(top: 10),
+                        padding: const EdgeInsets.only(top: 8),
                         child: Text(
                           error!,
                           style: TextStyle(
