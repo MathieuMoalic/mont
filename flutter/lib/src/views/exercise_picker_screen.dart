@@ -70,6 +70,7 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
   List<String> _muscleOptions = List.of(_defaultMuscleGroups);
   List<String> _equipmentOptions = List.of(_defaultEquipment);
   Map<String, Color> _muscleColors = {};
+  bool _showFilters = true;
 
   @override
   void initState() {
@@ -705,7 +706,10 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
       final q = _searchCtrl.text.trim();
       return Column(
         children: [
-          if (hasFilters) _buildFilters(muscleGroups, equipmentList),
+          if (hasFilters) ...[
+            _buildFilterHeader(),
+            if (_showFilters) _buildFilters(muscleGroups, equipmentList),
+          ],
           Expanded(
             child: Center(
               child: Column(
@@ -726,9 +730,13 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
 
     return Column(
       children: [
-        if (hasFilters) _buildFilters(muscleGroups, equipmentList),
+        if (hasFilters) ...[
+          _buildFilterHeader(),
+          if (_showFilters) _buildFilters(muscleGroups, equipmentList),
+        ],
         Expanded(
           child: ListView.builder(
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
             itemCount: _filtered.length,
             itemBuilder: (ctx, i) {
               final e = _filtered[i];
@@ -758,6 +766,28 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildFilterHeader() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      child: Row(
+        children: [
+          Text(
+            'Filters',
+            style: Theme.of(context).textTheme.labelMedium,
+          ),
+          const Spacer(),
+          IconButton(
+            icon: Icon(
+              _showFilters ? Icons.expand_less : Icons.expand_more,
+            ),
+            onPressed: () => setState(() => _showFilters = !_showFilters),
+            tooltip: _showFilters ? 'Hide filters' : 'Show filters',
+          ),
+        ],
+      ),
     );
   }
 
