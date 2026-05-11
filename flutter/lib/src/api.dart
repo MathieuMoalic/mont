@@ -572,6 +572,33 @@ Future<List<FoodLookupResult>> lookupFoodsByQuery(String query, {int? limit}) as
       .toList();
 }
 
+/// Extract food macros using LLM based on food name
+Future<Map<String, dynamic>> extractMacrosWithLlm(String query) async {
+  final q = query.trim();
+  if (q.isEmpty) throw Exception('Food name cannot be empty');
+
+  final suffix = '?q=${Uri.encodeQueryComponent(q)}';
+
+  final res = await _handleUnauthorized(
+    () => http.get(_u('/calories/foods/extract-macros$suffix'), headers: _headers()),
+  );
+  if (res.statusCode == 400) {
+    throw Exception('Invalid food name');
+  }
+  if (res.statusCode == 503 || res.statusCode == 502) {
+    throw Exception('LLM service unavailable');
+  }
+  if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
+
+  final data = jsonDecode(res.body) as Map<String, dynamic>;
+  return {
+    'name': data['name'] as String,
+    'protein_per_100g': (data['protein_per_100g'] as num).toDouble(),
+    'carbs_per_100g': (data['carbs_per_100g'] as num).toDouble(),
+    'fats_per_100g': (data['fats_per_100g'] as num).toDouble(),
+  };
+}
+
 Future<Food> upsertFoodByBarcode({
   required String barcode,
   required String name,

@@ -118,6 +118,10 @@ pub fn build_app(state: AppState) -> Router {
         )
         .route("/calories/foods/lookup", get(calories::lookup_foods_by_query))
         .route(
+            "/calories/foods/extract-macros",
+            get(calories::extract_macros_with_llm),
+        )
+        .route(
             "/calories/exercises",
             get(calories::list_calorie_exercises).post(calories::create_calorie_exercise),
         )

@@ -295,6 +295,44 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
               }
             }
 
+            Future<void> _extractMacrosWithLlm(
+              BuildContext context,
+              String foodName,
+              StateSetter setLocalState,
+            ) async {
+              final name = foodName.trim();
+              if (name.isEmpty) return;
+              setLocalState(() {
+                lookupBusy = true;
+                error = null;
+              });
+              try {
+                final macros = await api.extractMacrosWithLlm(name);
+                setLocalState(() {
+                  nameController.text = (macros['name'] as String?) ?? name;
+                  foodQuery = (macros['name'] as String?) ?? name;
+                  proteinPer100Controller.text = _fmt(macros['protein_per_100g'] ?? 0);
+                  carbsPer100Controller.text = _fmt(macros['carbs_per_100g'] ?? 0);
+                  fatsPer100Controller.text = _fmt(macros['fats_per_100g'] ?? 0);
+                  if (weightController.text.trim().isEmpty) {
+                    weightController.text = '100';
+                  }
+                });
+                if (!context.mounted) return;
+                weightFocus.requestFocus();
+                weightController.selection = TextSelection(
+                  baseOffset: 0,
+                  extentOffset: weightController.text.length,
+                );
+              } catch (e) {
+                setLocalState(() {
+                  error = 'Failed to extract macros: ${e.toString()}';
+                });
+              } finally {
+                setLocalState(() => lookupBusy = false);
+              }
+            }
+
             return AlertDialog(
               insetPadding: const EdgeInsets.symmetric(
                 horizontal: 12,
@@ -339,22 +377,38 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                       decoration: denseDecoration(
                         InputDecoration(
                           labelText: 'Name',
-                          prefixIcon: Icon(Icons.search),
-                          suffixIcon: IconButton(
-                            tooltip: 'Scan barcode',
-                            icon: const Icon(Icons.qr_code_scanner),
-                            onPressed: () async {
-                              final scanned = await Navigator.of(context)
-                                  .push<String>(
-                                    MaterialPageRoute(
-                                      builder: (_) => const BarcodeScanScreen(),
-                                    ),
-                                  );
-                              if (scanned == null || scanned.trim().isEmpty) {
-                                return;
-                              }
-                              await lookupAndFill(scanned);
-                            },
+                          prefixIcon: const Icon(Icons.search),
+                          suffixIcon: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                tooltip: 'Get macros from AI',
+                                icon: const Icon(Icons.auto_awesome),
+                                onPressed: foodQuery.isEmpty
+                                    ? null
+                                    : () => _extractMacrosWithLlm(
+                                          context,
+                                          foodQuery,
+                                          setLocalState,
+                                        ),
+                              ),
+                              IconButton(
+                                tooltip: 'Scan barcode',
+                                icon: const Icon(Icons.qr_code_scanner),
+                                onPressed: () async {
+                                  final scanned = await Navigator.of(context)
+                                      .push<String>(
+                                        MaterialPageRoute(
+                                          builder: (_) => const BarcodeScanScreen(),
+                                        ),
+                                      );
+                                  if (scanned == null || scanned.trim().isEmpty) {
+                                    return;
+                                  }
+                                  await lookupAndFill(scanned);
+                                },
+                              ),
+                            ],
                           ),
                         ),
                       ),

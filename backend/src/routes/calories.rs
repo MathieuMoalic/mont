@@ -90,6 +90,19 @@ pub struct UpsertFoodBody {
 }
 
 #[derive(Deserialize)]
+pub struct ExtractMacrosQuery {
+    pub q: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ExtractMacrosResponse {
+    pub name: String,
+    pub protein_per_100g: f64,
+    pub carbs_per_100g: f64,
+    pub fats_per_100g: f64,
+}
+
+#[derive(Deserialize)]
 pub struct CreateCalorieEntry {
     pub day: String,
     pub meal_period: String,
@@ -1026,3 +1039,133 @@ pub async fn update_nutrition_targets(
     .await?;
     Ok(StatusCode::NO_CONTENT)
 }
+
+#[allow(clippy::too_many_lines)]
+/// Extract food macros using LLM based on food name.
+///
+/// # Errors
+/// Returns error if LLM API key is not configured, food name is empty, or LLM API request fails.
+pub async fn extract_macros_with_llm(
+    State(state): State<AppState>,
+    Query(query): Query<ExtractMacrosQuery>,
+) -> AppResult<Json<ExtractMacrosResponse>> {
+    let food_name = query.q.trim();
+    if food_name.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Food name cannot be empty".to_string(),
+        )
+            .into());
+    }
+
+    let api_key = state
+        .config
+        .llm_api_key
+        .as_ref()
+        .ok_or_else(|| {
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "LLM API key not configured".to_string(),
+            )
+        })?;
+
+    let prompt = format!(
+        "Extract nutritional macros for: {food_name}\n\nRespond with ONLY a JSON object with these fields (numbers only, per 100g):\n{{\n  \"name\": \"food name\",\n  \"protein_per_100g\": <number>,\n  \"carbs_per_100g\": <number>,\n  \"fats_per_100g\": <number>\n}}\n\nExample:\n{{\n  \"name\": \"white rice uncooked\",\n  \"protein_per_100g\": 6.6,\n  \"carbs_per_100g\": 79.3,\n  \"fats_per_100g\": 0.3\n}}"
+    );
+
+    let client = reqwest::Client::new();
+    let response = client
+        .post(format!("{}1/chat/completions", state.config.llm_api_url))
+        .header("Authorization", format!("Bearer {api_key}"))
+        .json(&serde_json::json!({
+            "model": state.config.llm_model,
+            "messages": [
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.1,
+        }))
+        .send()
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::BAD_GATEWAY,
+                format!("LLM API request failed: {e}"),
+            )
+        })?;
+
+    if !response.status().is_success() {
+        let error_text = response.text().await.unwrap_or_default();
+        return Err((
+            StatusCode::BAD_GATEWAY,
+            format!("LLM API error: {error_text}"),
+        )
+            .into());
+    }
+
+    let body: serde_json::Value = response.json().await.map_err(|e| {
+        (
+            StatusCode::BAD_GATEWAY,
+            format!("Failed to parse LLM response: {e}"),
+        )
+    })?;
+
+    let content = body
+        .get("choices")
+        .and_then(|c| c.get(0))
+        .and_then(|c| c.get("message"))
+        .and_then(|m| m.get("content"))
+        .and_then(|c| c.as_str())
+        .ok_or_else(|| {
+            (
+                StatusCode::BAD_GATEWAY,
+                "Invalid LLM response format".to_string(),
+            )
+        })?;
+
+    let json_str = content
+        .find('{')
+        .and_then(|start| {
+            content[start..]
+                .rfind('}')
+                .map(|end| &content[start..=(start + end)])
+        })
+        .ok_or_else(|| {
+            (
+                StatusCode::BAD_GATEWAY,
+                "Could not extract JSON from LLM response".to_string(),
+            )
+        })?;
+
+    let macros: ExtractMacrosResponse = serde_json::from_str(json_str).map_err(|e| {
+        (
+            StatusCode::BAD_GATEWAY,
+            format!("Failed to parse macros from LLM response: {e}"),
+        )
+    })?;
+
+    // Validate macros are non-negative and reasonable
+    if macros.protein_per_100g < 0.0
+        || macros.carbs_per_100g < 0.0
+        || macros.fats_per_100g < 0.0
+    {
+        return Err((
+            StatusCode::BAD_GATEWAY,
+            "LLM returned negative macro values".to_string(),
+        )
+            .into());
+    }
+
+    if macros.protein_per_100g > 100.0
+        || macros.carbs_per_100g > 100.0
+        || macros.fats_per_100g > 100.0
+    {
+        return Err((
+            StatusCode::BAD_GATEWAY,
+            "LLM returned unrealistic macro values (>100g per 100g)".to_string(),
+        )
+            .into());
+    }
+
+    Ok(Json(macros))
+}
+

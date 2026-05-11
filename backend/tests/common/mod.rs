@@ -57,6 +57,9 @@ impl TestApp {
             password_hash,
             gadgetbridge_zip,
             sync_time: "05:00".to_string(),
+            llm_api_url: "https://openrouter.ai/api/v".to_string(),
+            llm_api_key: None,
+            llm_model: "deepseek/deepseek-v4-flash".to_string(),
         };
 
         let pool2 = pool.clone();
