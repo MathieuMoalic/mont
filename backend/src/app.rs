@@ -117,10 +117,6 @@ pub fn build_app(state: AppState) -> Router {
             get(calories::lookup_food_by_barcode),
         )
         .route(
-            "/calories/foods/parse-label",
-            post(calories::parse_label_photo),
-        )
-        .route(
             "/calories/exercises",
             get(calories::list_calorie_exercises).post(calories::create_calorie_exercise),
         )
