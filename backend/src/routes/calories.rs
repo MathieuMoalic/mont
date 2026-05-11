@@ -69,6 +69,8 @@ pub struct ListCaloriesQuery {
 #[derive(Deserialize)]
 pub struct FoodSearchQuery {
     pub q: Option<String>,
+    pub vegan: Option<bool>,
+    pub limit: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -235,24 +237,36 @@ pub async fn list_foods(
     State(state): State<AppState>,
     Query(query): Query<FoodSearchQuery>,
 ) -> AppResult<Json<Vec<Food>>> {
+    let limit = query.limit.unwrap_or(100).clamp(1, 200);
+    let vegan_only = query.vegan.unwrap_or(false);
+
     let foods = if let Some(q) = query.q.as_deref() {
+        let term = q.trim();
         sqlx::query_as::<_, Food>(
             "SELECT id, name, brand, protein_per_100g, carbs_per_100g, fats_per_100g, last_weight_g, source
              FROM foods
-             WHERE name LIKE '%' || ? || '%'
+             WHERE (? = 0 OR is_vegan = 1)
+               AND (name LIKE '%' || ? || '%'
+                    OR aliases LIKE '%' || ? || '%')
              ORDER BY name ASC
-             LIMIT 100",
+             LIMIT ?",
         )
-        .bind(q.trim())
+        .bind(if vegan_only { 1 } else { 0 })
+        .bind(term)
+        .bind(term)
+        .bind(limit)
         .fetch_all(&state.pool)
         .await?
     } else {
         sqlx::query_as::<_, Food>(
             "SELECT id, name, brand, protein_per_100g, carbs_per_100g, fats_per_100g, last_weight_g, source
              FROM foods
+             WHERE (? = 0 OR is_vegan = 1)
              ORDER BY name ASC
-             LIMIT 100",
+             LIMIT ?",
         )
+        .bind(if vegan_only { 1 } else { 0 })
+        .bind(limit)
         .fetch_all(&state.pool)
         .await?
     };
