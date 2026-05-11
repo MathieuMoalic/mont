@@ -224,6 +224,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
             Future<void> lookupAndFill(String rawBarcode) async {
               final b = rawBarcode.trim();
               if (b.isEmpty) return;
+              var filled = false;
               setLocalState(() {
                 lookupBusy = true;
                 error = null;
@@ -240,6 +241,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                   fatsPer100Controller.text = _fmt(cached.fatsPer100G);
                   weightController.text = _fmt(cached.lastWeightG);
                 });
+                filled = true;
               } catch (_) {
                 try {
                   // 2) Fallback to online lookup (Poland-focused).
@@ -258,18 +260,25 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                       weightController.text = '100';
                     }
                   });
+                  filled = true;
                 } catch (e) {
-                  setLocalState(() => error = e.toString());
+                  setLocalState(() {
+                    error =
+                        'No product found for barcode $b. '
+                        'Enter the item manually and press Save to cache it for next time.';
+                  });
                 }
               } finally {
                 setLocalState(() => lookupBusy = false);
                 if (!context.mounted) return;
-                // Fastest flow: after fill, jump straight to weight.
-                weightFocus.requestFocus();
-                weightController.selection = TextSelection(
-                  baseOffset: 0,
-                  extentOffset: weightController.text.length,
-                );
+                if (filled) {
+                  // Fastest flow: after fill, jump straight to weight.
+                  weightFocus.requestFocus();
+                  weightController.selection = TextSelection(
+                    baseOffset: 0,
+                    extentOffset: weightController.text.length,
+                  );
+                }
               }
             }
 
