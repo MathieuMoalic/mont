@@ -1,6 +1,6 @@
 use axum::{
     Json,
-    extract::{Path, Query, State},
+    extract::{Multipart, Path, Query, State},
     http::StatusCode,
 };
 use serde::{Deserialize, Serialize};
@@ -58,6 +58,15 @@ pub struct FoodLookupResult {
     pub carbs_per_100g: f64,
     pub fats_per_100g: f64,
     pub source: String,
+}
+
+#[derive(Serialize)]
+pub struct LabelParseResult {
+    pub protein_per_100g: f64,
+    pub carbs_per_100g: f64,
+    pub fats_per_100g: f64,
+    pub confidence: f64,
+    pub ocr_text: String,
 }
 
 #[derive(Deserialize)]
@@ -469,6 +478,214 @@ pub async fn upsert_food_by_barcode(
     .await?;
 
     Ok(Json(food))
+}
+
+fn parse_number_fragment(s: &str) -> Option<f64> {
+    // Accept both "12.3" and "12,3".
+    let mut buf = String::new();
+    let mut seen_digit = false;
+    let mut seen_dot = false;
+    for ch in s.chars() {
+        if ch.is_ascii_digit() {
+            buf.push(ch);
+            seen_digit = true;
+            continue;
+        }
+        if (ch == '.' || ch == ',') && seen_digit && !seen_dot {
+            buf.push('.');
+            seen_dot = true;
+            continue;
+        }
+        if seen_digit {
+            break;
+        }
+    }
+    if buf.is_empty() {
+        return None;
+    }
+    buf.parse::<f64>().ok()
+}
+
+fn contains_per_100g_hint(s: &str) -> bool {
+    let s = s.to_lowercase();
+    s.contains("100g")
+        || s.contains("100 g")
+        || s.contains("na 100")
+        || s.contains("w 100")
+        || s.contains("per 100")
+}
+
+fn extract_macro_from_ocr(text: &str, keywords: &[&str]) -> Option<(f64, f64)> {
+    // Returns (value, confidence_boost)
+    let global_per_100g = contains_per_100g_hint(text);
+    for line in text.lines() {
+        let l = line.trim();
+        if l.is_empty() {
+            continue;
+        }
+        let lower = l.to_lowercase();
+        let mut hit_pos: Option<usize> = None;
+        for &kw in keywords {
+            if let Some(pos) = lower.find(kw) {
+                hit_pos = Some(pos + kw.len());
+                break;
+            }
+        }
+        let Some(pos) = hit_pos else { continue };
+        let after = &l[pos..];
+        let Some(v) = parse_number_fragment(after) else {
+            continue;
+        };
+        let line_per_100g = contains_per_100g_hint(l);
+        let boost = if line_per_100g {
+            0.35
+        } else if global_per_100g {
+            0.2
+        } else {
+            0.05
+        };
+        return Some((v.max(0.0), boost));
+    }
+    None
+}
+
+fn run_tesseract_pol_eng(image_path: &std::path::Path) -> Result<String, String> {
+    // Uses system `tesseract` binary if present.
+    let output = std::process::Command::new("tesseract")
+        .arg(image_path)
+        .arg("stdout")
+        .arg("-l")
+        .arg("pol+eng")
+        .arg("--dpi")
+        .arg("300")
+        .output()
+        .map_err(|e| format!("Failed to run tesseract: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(if stderr.is_empty() {
+            "tesseract failed".to_string()
+        } else {
+            format!("tesseract failed: {stderr}")
+        });
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+/// Parse a nutrition label photo and extract macros per 100g (protein/carbs/fats).
+///
+/// Expects multipart form-data with a single `image` part.
+///
+/// # Errors
+/// Returns an error if the upload is missing, OCR fails, or macros can't be extracted.
+pub async fn parse_label_photo(
+    State(_state): State<AppState>,
+    mut multipart: Multipart,
+) -> AppResult<Json<LabelParseResult>> {
+    let mut bytes: Option<Vec<u8>> = None;
+
+    while let Some(field) = multipart.next_field().await.map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            format!("Invalid multipart data: {e}"),
+        )
+    })? {
+        if field.name() == Some("image") {
+            let data = field.bytes().await.map_err(|e| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    format!("Failed to read upload: {e}"),
+                )
+            })?;
+            bytes = Some(data.to_vec());
+            break;
+        }
+    }
+
+    let Some(bytes) = bytes else {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Missing multipart field 'image'".to_string(),
+        )
+            .into());
+    };
+
+    // Write to a temp file for OCR.
+    let image_path = std::env::temp_dir().join(format!("mont_label_{}.jpg", uuid::Uuid::new_v4()));
+    std::fs::write(&image_path, bytes).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to write temp file: {e}"),
+        )
+    })?;
+
+    // Run OCR (system dependency).
+    let ocr_text = match run_tesseract_pol_eng(&image_path) {
+        Ok(t) => t,
+        Err(e) => {
+            // Try to give a more helpful message for missing binary.
+            if e.contains("No such file") || e.contains("not found") {
+                return Err((
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "OCR is not available on this server (tesseract missing)".to_string(),
+                )
+                    .into());
+            }
+            return Err((StatusCode::BAD_REQUEST, e).into());
+        }
+    };
+    // Best effort cleanup.
+    let _ = std::fs::remove_file(&image_path);
+
+    let (protein, p_boost) =
+        extract_macro_from_ocr(&ocr_text, &["bialko", "białko", "protein", "proteins"])
+            .ok_or_else(|| {
+                (
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "Could not find protein per 100g".to_string(),
+                )
+            })?;
+    let (carbs, c_boost) = extract_macro_from_ocr(
+        &ocr_text,
+        &[
+            "weglowodany",
+            "węglowodany",
+            "carbohydrate",
+            "carbohydrates",
+            "carbs",
+        ],
+    )
+    .ok_or_else(|| {
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "Could not find carbs per 100g".to_string(),
+        )
+    })?;
+    let (fats, f_boost) = extract_macro_from_ocr(&ocr_text, &["tluszcz", "tłuszcz", "fat", "fats"])
+        .ok_or_else(|| {
+            (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "Could not find fats per 100g".to_string(),
+            )
+        })?;
+
+    let mut confidence = 0.15 + p_boost + c_boost + f_boost;
+    confidence = confidence.clamp(0.0, 0.95);
+
+    // Keep response bounded for UI/debugging.
+    let ocr_text = if ocr_text.len() > 4000 {
+        ocr_text.chars().take(4000).collect()
+    } else {
+        ocr_text
+    };
+
+    Ok(Json(LabelParseResult {
+        protein_per_100g: protein,
+        carbs_per_100g: carbs,
+        fats_per_100g: fats,
+        confidence,
+        ocr_text,
+    }))
 }
 
 /// # Errors
