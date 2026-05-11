@@ -44,31 +44,7 @@ async fn main() -> anyhow::Result<()> {
         config.jwt_secret = Some(secret);
     }
 
-    tracing::info!("=== Configuration ===");
-    tracing::info!("Bind address: {}", config.bind);
-    tracing::info!("Database path: {}", config.database_path);
-    tracing::info!("Log file: {}", config.log_file.display());
-    tracing::info!(
-        "CORS origin: {}",
-        config.cors_origin.as_deref().unwrap_or("<allow all>")
-    );
-    tracing::info!(
-        "JWT secret: {}",
-        if config.jwt_secret.is_some() {
-            "<set>"
-        } else {
-            "<not set>"
-        }
-    );
-    tracing::info!(
-        "Password hash: {}",
-        if config.password_hash.is_some() {
-            "<set>"
-        } else {
-            "<not set>"
-        }
-    );
-    tracing::info!("====================");
+    log_config(&config);
 
     let pool = make_pool(config.database_path.clone()).await?;
 
@@ -162,4 +138,51 @@ fn hash_password_interactive() -> anyhow::Result<()> {
     println!("MONT_PASSWORD_HASH=\"{hash}\"");
 
     Ok(())
+}
+
+fn log_config(config: &mont::config::Config) {
+    tracing::info!("=== Configuration ===");
+    tracing::info!("Bind address: {}", config.bind);
+    tracing::info!("Database path: {}", config.database_path);
+    tracing::info!("Log file: {}", config.log_file.display());
+    tracing::info!(
+        "CORS origin: {}",
+        config.cors_origin.as_deref().unwrap_or("<allow all>")
+    );
+    tracing::info!(
+        "JWT secret: {}",
+        if config.jwt_secret.is_some() {
+            "<set>"
+        } else {
+            "<not set>"
+        }
+    );
+    tracing::info!(
+        "Password hash: {}",
+        if config.password_hash.is_some() {
+            "<set>"
+        } else {
+            "<not set>"
+        }
+    );
+    tracing::info!("USDA API URL: {}", config.usda_api_url);
+    tracing::info!(
+        "USDA API key: {}",
+        if config.usda_api_key.is_some() {
+            "<set>"
+        } else {
+            "<not set>"
+        }
+    );
+    tracing::info!("LLM API URL: {}", config.llm_api_url);
+    tracing::info!(
+        "LLM API key: {}",
+        if config.llm_api_key.is_some() {
+            "<set>"
+        } else {
+            "<not set>"
+        }
+    );
+    tracing::info!("LLM model: {}", config.llm_model);
+    tracing::info!("====================");
 }

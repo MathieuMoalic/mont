@@ -1041,10 +1041,10 @@ pub async fn update_nutrition_targets(
 }
 
 #[allow(clippy::too_many_lines)]
-/// Extract food macros using LLM based on food name.
+/// Extract food macros using USDA API first, then LLM as fallback.
 ///
 /// # Errors
-/// Returns error if LLM API key is not configured, food name is empty, or LLM API request fails.
+/// Returns error if food name is empty or both USDA and LLM lookups fail.
 pub async fn extract_macros_with_llm(
     State(state): State<AppState>,
     Query(query): Query<ExtractMacrosQuery>,
@@ -1058,27 +1058,168 @@ pub async fn extract_macros_with_llm(
             .into());
     }
 
-    let api_key = state
+    // Try USDA API first if configured
+    if let Some(usda_key) = &state.config.usda_api_key {
+        match lookup_usda_food(food_name, usda_key, &state.config.usda_api_url).await {
+            Ok(result) => {
+                tracing::info!("Successfully extracted macros from USDA for: {food_name}");
+                return Ok(Json(result));
+            }
+            Err(e) => {
+                tracing::debug!("USDA lookup failed, falling back to LLM: {e:?}");
+            }
+        }
+    } else {
+        tracing::debug!("USDA API key not configured, using LLM only");
+    }
+
+    // Fall back to LLM
+    let llm_key = state
         .config
         .llm_api_key
         .as_ref()
         .ok_or_else(|| {
             (
                 StatusCode::SERVICE_UNAVAILABLE,
-                "LLM API key not configured".to_string(),
+                "No nutrition data source available (USDA and LLM both unavailable)".to_string(),
             )
         })?;
 
+    tracing::info!("Using LLM to extract macros for: {food_name}");
+    lookup_llm_food(food_name, llm_key, &state.config.llm_api_url, &state.config.llm_model).await
+}
+
+async fn lookup_usda_food(
+    food_name: &str,
+    api_key: &str,
+    api_url: &str,
+) -> AppResult<ExtractMacrosResponse> {
+    tracing::debug!("Looking up food in USDA: {food_name}");
+    
+    let client = reqwest::Client::new();
+    let response = client
+        .get(api_url)
+        .query(&[
+            ("query", food_name),
+            ("api_key", api_key),
+            ("pageSize", "1"),
+        ])
+        .send()
+        .await
+        .map_err(|e| {
+            tracing::error!("USDA API request failed: {e}");
+            (
+                StatusCode::BAD_GATEWAY,
+                format!("USDA API request failed: {e}"),
+            )
+        })?;
+
+    let status = response.status();
+    tracing::debug!("USDA API response status: {status}");
+
+    if !status.is_success() {
+        let error_text = response.text().await.unwrap_or_default();
+        let truncated = if error_text.len() > 200 {
+            format!("{}...", &error_text[..200])
+        } else {
+            error_text
+        };
+        tracing::warn!("USDA API returned error: {truncated}");
+        return Err((
+            StatusCode::BAD_GATEWAY,
+            "USDA API returned an error".to_string(),
+        )
+            .into());
+    }
+
+    let body: serde_json::Value = response.json().await.map_err(|e| {
+        tracing::error!("Failed to parse USDA response as JSON: {e}");
+        (
+            StatusCode::BAD_GATEWAY,
+            format!("Failed to parse USDA response: {e}"),
+        )
+    })?;
+
+    tracing::debug!("USDA response parsed successfully");
+
+    let foods = body
+        .get("foods")
+        .and_then(|f| f.as_array())
+        .ok_or_else(|| {
+            tracing::warn!("Invalid USDA response format: missing or invalid 'foods' array");
+            (
+                StatusCode::BAD_GATEWAY,
+                "Invalid USDA response format".to_string(),
+            )
+        })?;
+
+    if foods.is_empty() {
+        tracing::info!("No foods found in USDA for query: {food_name}");
+        return Err((
+            StatusCode::NOT_FOUND,
+            "No foods found in USDA database".to_string(),
+        )
+            .into());
+    }
+
+    let food = &foods[0];
+    let food_name = food
+        .get("description")
+        .and_then(|d| d.as_str())
+        .unwrap_or("Food");
+
+    tracing::debug!("Found food in USDA: {food_name}");
+
+    let nutrients = food
+        .get("foodNutrients")
+        .and_then(|n| n.as_array())
+        .ok_or_else(|| {
+            (
+                StatusCode::BAD_GATEWAY,
+                "No nutrients found in USDA food data".to_string(),
+            )
+        })?;
+
+    let mut protein = 0.0;
+    let mut carbs = 0.0;
+    let mut fats = 0.0;
+
+    for nutrient in nutrients {
+        let nutrient_id = nutrient.get("nutrientId").and_then(serde_json::Value::as_i64);
+        let value = nutrient.get("value").and_then(serde_json::Value::as_f64).unwrap_or(0.0);
+
+        match nutrient_id {
+            Some(1003) => protein = value, // Protein
+            Some(1005) => carbs = value,   // Carbohydrate
+            Some(1004) => fats = value,    // Fat
+            _ => {}
+        }
+    }
+
+    Ok(ExtractMacrosResponse {
+        name: food_name.to_string(),
+        protein_per_100g: protein,
+        carbs_per_100g: carbs,
+        fats_per_100g: fats,
+    })
+}
+
+async fn lookup_llm_food(
+    food_name: &str,
+    api_key: &str,
+    api_url: &str,
+    model: &str,
+) -> AppResult<Json<ExtractMacrosResponse>> {
     let prompt = format!(
         "Extract nutritional macros for: {food_name}\n\nRespond with ONLY a JSON object with these fields (numbers only, per 100g):\n{{\n  \"name\": \"food name\",\n  \"protein_per_100g\": <number>,\n  \"carbs_per_100g\": <number>,\n  \"fats_per_100g\": <number>\n}}\n\nExample:\n{{\n  \"name\": \"white rice uncooked\",\n  \"protein_per_100g\": 6.6,\n  \"carbs_per_100g\": 79.3,\n  \"fats_per_100g\": 0.3\n}}"
     );
 
     let client = reqwest::Client::new();
     let response = client
-        .post(format!("{}1/chat/completions", state.config.llm_api_url))
+        .post(format!("{api_url}1/chat/completions"))
         .header("Authorization", format!("Bearer {api_key}"))
         .json(&serde_json::json!({
-            "model": state.config.llm_model,
+            "model": model,
             "messages": [
                 {"role": "user", "content": prompt}
             ],
@@ -1094,10 +1235,17 @@ pub async fn extract_macros_with_llm(
         })?;
 
     if !response.status().is_success() {
+        let status = response.status();
         let error_text = response.text().await.unwrap_or_default();
+        let truncated = if error_text.len() > 200 {
+            format!("{}...", &error_text[..200])
+        } else {
+            error_text
+        };
+        tracing::warn!("LLM API returned error status {status}: {truncated}");
         return Err((
             StatusCode::BAD_GATEWAY,
-            format!("LLM API error: {error_text}"),
+            "LLM API returned an error".to_string(),
         )
             .into());
     }

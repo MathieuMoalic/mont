@@ -50,6 +50,12 @@ pub struct Config {
     #[arg(long, env = "MONT_SYNC_TIME", default_value = "05:00")]
     pub sync_time: String,
 
+    #[arg(long, env = "MONT_USDA_API_KEY")]
+    pub usda_api_key: Option<String>,
+
+    #[arg(long, env = "MONT_USDA_API_URL", default_value = "https://fdc.nal.usda.gov/api/foods/search")]
+    pub usda_api_url: String,
+
     #[arg(long, env = "MONT_LLM_API_URL", default_value = "https://openrouter.ai/api/v")]
     pub llm_api_url: String,
 

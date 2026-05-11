@@ -12,7 +12,7 @@ build: build-web
     cargo build --release
 
 hot-reload:
-        cargo watch -q -c -w src -w Cargo.toml -x 'run -- -vv'
+        cargo watch -q -c -w src -w Cargo.toml -x 'run -- -v'
 
 clippy-watch:
         cargo watch -q -c -w src -w Cargo.toml -x clippy
