@@ -1,5 +1,5 @@
 use crate::rate_limit::{RateLimitState, rate_limit_middleware};
-use crate::routes::{auth, exercises, health, runs, weight, workouts};
+use crate::routes::{auth, calories, exercises, health, runs, weight, workouts};
 use crate::{
     auth_middleware::require_auth,
     config::Config,
@@ -98,6 +98,27 @@ pub fn build_app(state: AppState) -> Router {
         .route(
             "/weight/{id}",
             delete(weight::delete_weight_entry).patch(weight::update_weight_entry),
+        )
+        .route(
+            "/calories",
+            get(calories::list_calories).post(calories::create_calorie_entry),
+        )
+        .route(
+            "/calories/{id}",
+            patch(calories::update_calorie_entry).delete(calories::delete_calorie_entry),
+        )
+        .route("/calories/foods", get(calories::list_saved_foods))
+        .route(
+            "/calories/exercises",
+            get(calories::list_calorie_exercises).post(calories::create_calorie_exercise),
+        )
+        .route(
+            "/calories/exercises/{id}",
+            patch(calories::update_calorie_exercise).delete(calories::delete_calorie_exercise),
+        )
+        .route(
+            "/calories/targets",
+            get(calories::get_nutrition_targets).put(calories::update_nutrition_targets),
         )
         .route("/runs", get(runs::list_runs).delete(runs::delete_all_runs))
         .route("/runs/prs", get(runs::personal_records))
