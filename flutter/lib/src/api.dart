@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 
@@ -44,10 +43,6 @@ Uri _u(String path) => Uri.parse('$_baseUrl$path');
 
 Map<String, String> _headers() => {
   'Content-Type': 'application/json',
-  if (_authToken != null) 'Authorization': 'Bearer $_authToken',
-};
-
-Map<String, String> _authHeadersOnly() => {
   if (_authToken != null) 'Authorization': 'Bearer $_authToken',
 };
 
@@ -583,32 +578,6 @@ Future<Food> upsertFoodByBarcode({
     );
   }
   return Food.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
-}
-
-Future<LabelParseResult> parseFoodLabel({
-  required Uint8List imageBytes,
-  String filename = 'label.jpg',
-}) async {
-  Future<http.Response> sendOnce() async {
-    final req = http.MultipartRequest(
-      'POST',
-      _u('/calories/foods/parse-label'),
-    );
-    req.headers.addAll(_authHeadersOnly());
-    req.files.add(
-      http.MultipartFile.fromBytes('image', imageBytes, filename: filename),
-    );
-    final streamed = await req.send();
-    return http.Response.fromStream(streamed);
-  }
-
-  final res = await _handleUnauthorized(sendOnce);
-  if (res.statusCode != 200) {
-    throw Exception(res.body.isEmpty ? 'Failed to parse label' : res.body);
-  }
-  return LabelParseResult.fromJson(
-    jsonDecode(res.body) as Map<String, dynamic>,
-  );
 }
 
 Future<List<CalorieExerciseEntry>> listCalorieExercises({

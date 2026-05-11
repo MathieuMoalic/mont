@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:image_picker/image_picker.dart';
 
 import '../api.dart' as api;
 import '../models.dart';
@@ -276,7 +274,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                   setLocalState(() {
                     error =
                         'No product found for barcode $b. '
-                        'Enter the item manually, or extract macros from a label photo.';
+                        'Enter the item manually and press Save to cache it for next time.';
                   });
                 }
               } finally {
@@ -290,44 +288,6 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                     extentOffset: weightController.text.length,
                   );
                 }
-              }
-            }
-
-            Future<void> pickLabelPhotoAndFill() async {
-              try {
-                final picker = ImagePicker();
-                final XFile? image = await picker.pickImage(
-                  source: kIsWeb ? ImageSource.gallery : ImageSource.camera,
-                  maxWidth: 2000,
-                  imageQuality: 85,
-                );
-                if (image == null) return;
-                setLocalState(() {
-                  lookupBusy = true;
-                  error = null;
-                });
-                final bytes = await image.readAsBytes();
-                final parsed = await api.parseFoodLabel(
-                  imageBytes: bytes,
-                  filename: image.name.isNotEmpty ? image.name : 'label.jpg',
-                );
-                setLocalState(() {
-                  proteinPer100Controller.text = _fmt(parsed.proteinPer100G);
-                  carbsPer100Controller.text = _fmt(parsed.carbsPer100G);
-                  fatsPer100Controller.text = _fmt(parsed.fatsPer100G);
-                  if (weightController.text.trim().isEmpty) {
-                    weightController.text = '100';
-                  }
-                });
-                weightFocus.requestFocus();
-                weightController.selection = TextSelection(
-                  baseOffset: 0,
-                  extentOffset: weightController.text.length,
-                );
-              } catch (e) {
-                setLocalState(() => error = e.toString());
-              } finally {
-                setLocalState(() => lookupBusy = false);
               }
             }
 
@@ -355,26 +315,6 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                           child: Text(
                             'Barcode: $scannedBarcode',
                             style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                        ),
-                      ),
-                    if (scannedBarcode != null &&
-                        scannedBarcode!.isNotEmpty &&
-                        error != null)
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: Padding(
-                          padding: const EdgeInsets.only(bottom: 6),
-                          child: TextButton.icon(
-                            style: TextButton.styleFrom(
-                              visualDensity: VisualDensity.compact,
-                              padding: EdgeInsets.zero,
-                            ),
-                            onPressed: lookupBusy
-                                ? null
-                                : pickLabelPhotoAndFill,
-                            icon: const Icon(Icons.photo_camera_outlined),
-                            label: const Text('Photo label'),
                           ),
                         ),
                       ),
