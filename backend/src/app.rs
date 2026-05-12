@@ -77,6 +77,14 @@ pub fn build_app(state: AppState) -> Router {
         )
         .route("/health/daily", get(health::list_daily_health))
         .route(
+            "/health/pictures",
+            post(health::upload_picture).get(health::list_pictures),
+        )
+        .route(
+            "/health/pictures/{picture_date}",
+            get(health::get_picture).delete(health::delete_picture),
+        )
+        .route(
             "/workouts",
             get(workouts::list_workouts).post(workouts::create_workout),
         )
