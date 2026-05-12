@@ -218,6 +218,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
     String? error;
     String? macroSource;
     bool lookupBusy = false;
+    String? usda_search_state; // 'none', 'foundation', 'legacy'
 
     final saved = await showDialog<bool>(
       context: context,
@@ -307,6 +308,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                 lookupBusy = true;
                 error = null;
                 macroSource = null;
+                usda_search_state = 'none';
               });
               try {
                 final macros = await api.extractMacrosWithLlm(name);
@@ -331,6 +333,65 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                 setLocalState(() {
                   error = 'Failed to extract macros: ${e.toString()}';
                 });
+              } finally {
+                setLocalState(() => lookupBusy = false);
+              }
+            }
+
+            Future<void> _searchUSDAAndFallback(
+              BuildContext context,
+              String foodName,
+              String dataType,
+              StateSetter setLocalState,
+            ) async {
+              final name = foodName.trim();
+              if (name.isEmpty) return;
+              
+              setLocalState(() {
+                lookupBusy = true;
+                error = null;
+                macroSource = null;
+              });
+              
+              try {
+                final macros = await api.extractMacrosWithLlm(name, dataType);
+                setLocalState(() {
+                  nameController.text = (macros['name'] as String?) ?? name;
+                  foodQuery = (macros['name'] as String?) ?? name;
+                  proteinPer100Controller.text = _fmt(macros['protein_per_100g'] ?? 0);
+                  carbsPer100Controller.text = _fmt(macros['carbs_per_100g'] ?? 0);
+                  fatsPer100Controller.text = _fmt(macros['fats_per_100g'] ?? 0);
+                  macroSource = (macros['source'] as String?) ?? 'unknown';
+                  usda_search_state = 'found';
+                  if (weightController.text.trim().isEmpty) {
+                    weightController.text = '100';
+                  }
+                });
+                if (!context.mounted) return;
+                weightFocus.requestFocus();
+                weightController.selection = TextSelection(
+                  baseOffset: 0,
+                  extentOffset: weightController.text.length,
+                );
+              } catch (e) {
+                // USDA dataset had no results
+                if (dataType == 'Foundation') {
+                  // Try legacy next
+                  setLocalState(() {
+                    error = null;
+                    usda_search_state = 'foundation_empty';
+                  });
+                } else if (dataType == 'SR Legacy') {
+                  // Both USDA datasets exhausted, offer LLM
+                  setLocalState(() {
+                    error = null;
+                    usda_search_state = 'legacy_empty';
+                  });
+                } else {
+                  setLocalState(() {
+                    error = 'Failed to extract macros: ${e.toString()}';
+                  });
+                }
               } finally {
                 setLocalState(() => lookupBusy = false);
               }
@@ -384,17 +445,6 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                           suffixIcon: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              IconButton(
-                                tooltip: 'Get macros from AI',
-                                icon: const Icon(Icons.auto_awesome),
-                                onPressed: foodQuery.isEmpty
-                                    ? null
-                                    : () => _extractMacrosWithLlm(
-                                          context,
-                                          foodQuery,
-                                          setLocalState,
-                                        ),
-                              ),
                               IconButton(
                                 tooltip: 'Scan barcode',
                                 icon: const Icon(Icons.qr_code_scanner),
@@ -516,57 +566,86 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                         ),
                       ),
                     if (existing == null && foodQuery.isNotEmpty && (matches.isEmpty || matches.length < 4))
-                      Padding(
-                        padding: const EdgeInsets.only(top: 6, bottom: 4),
-                        child: SizedBox(
-                          width: double.infinity,
-                          child: FilledButton.tonal(
-                            onPressed: lookupBusy
-                                ? null
-                                : () async {
-                                    final q = foodQuery.trim();
-                                    if (q.length < 2) return;
-                                    setLocalState(() {
-                                      lookupBusy = true;
-                                      error = null;
-                                    });
-                                    try {
-                                      final results = await api.lookupFoodsByQuery(q);
-                                      if (!context.mounted) return;
-                                      setLocalState(() {
-                                        matches = results
-                                            .map((r) => Food(
-                                              id: 0,
-                                              name: r.name,
-                                              brand: r.brand,
-                                              proteinPer100G: r.proteinPer100G,
-                                              carbsPer100G: r.carbsPer100G,
-                                              fatsPer100G: r.fatsPer100G,
-                                              lastWeightG: 100.0,
-                                              source: r.source,
-                                            ))
-                                            .toList();
-                                      });
-                                    } catch (e) {
-                                      if (!context.mounted) return;
-                                      setLocalState(() {
-                                        error = 'Search failed: $e';
-                                      });
-                                    } finally {
-                                      setLocalState(() => lookupBusy = false);
-                                    }
-                                  },
-                            child: lookupBusy
-                                ? SizedBox(
-                                    height: 16,
-                                    width: 16,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Text('Search online'),
-                          ),
-                        ),
+                      Column(
+                        children: [
+                          if (usda_search_state == null || usda_search_state == 'none')
+                            Padding(
+                              padding: const EdgeInsets.only(top: 6, bottom: 4),
+                              child: SizedBox(
+                                width: double.infinity,
+                                child: FilledButton.tonal(
+                                  onPressed: lookupBusy
+                                      ? null
+                                      : () => _searchUSDAAndFallback(
+                                            context,
+                                            foodQuery,
+                                            'Foundation',
+                                            setLocalState,
+                                          ),
+                                  child: lookupBusy && usda_search_state != 'found'
+                                      ? const SizedBox(
+                                          height: 16,
+                                          width: 16,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
+                                        )
+                                      : const Text('Search USDA Foundation'),
+                                ),
+                              ),
+                            ),
+                          if (usda_search_state == 'foundation_empty')
+                            Padding(
+                              padding: const EdgeInsets.only(top: 6, bottom: 4),
+                              child: SizedBox(
+                                width: double.infinity,
+                                child: FilledButton.tonal(
+                                  onPressed: lookupBusy
+                                      ? null
+                                      : () => _searchUSDAAndFallback(
+                                            context,
+                                            foodQuery,
+                                            'SR Legacy',
+                                            setLocalState,
+                                          ),
+                                  child: lookupBusy
+                                      ? const SizedBox(
+                                          height: 16,
+                                          width: 16,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
+                                        )
+                                      : const Text('Extend search to SR Legacy'),
+                                ),
+                              ),
+                            ),
+                          if (usda_search_state == 'legacy_empty')
+                            Padding(
+                              padding: const EdgeInsets.only(top: 6, bottom: 4),
+                              child: SizedBox(
+                                width: double.infinity,
+                                child: FilledButton.tonal(
+                                  onPressed: lookupBusy
+                                      ? null
+                                      : () => _extractMacrosWithLlm(
+                                            context,
+                                            foodQuery,
+                                            setLocalState,
+                                          ),
+                                  child: lookupBusy
+                                      ? const SizedBox(
+                                          height: 16,
+                                          width: 16,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
+                                        )
+                                      : const Text('Estimate with AI'),
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                     TextField(
                       controller: proteinPer100Controller,

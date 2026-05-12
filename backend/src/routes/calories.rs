@@ -92,6 +92,8 @@ pub struct UpsertFoodBody {
 #[derive(Deserialize)]
 pub struct ExtractMacrosQuery {
     pub q: String,
+    #[serde(default)]
+    pub data_type: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1061,13 +1063,14 @@ pub async fn extract_macros_with_llm(
 
     // Try USDA API first if configured
     if let Some(usda_key) = &state.config.usda_api_key {
-        match lookup_usda_food(food_name, usda_key, &state.config.usda_api_url).await {
+        let data_type = query.data_type.as_deref().unwrap_or("Foundation");
+        match lookup_usda_food(food_name, usda_key, &state.config.usda_api_url, data_type).await {
             Ok(result) => {
-                tracing::info!("Successfully extracted macros from USDA for: {food_name}");
+                tracing::info!("Successfully extracted macros from USDA ({data_type}) for: {food_name}");
                 return Ok(Json(result));
             }
             Err(e) => {
-                tracing::debug!("USDA lookup failed, falling back to LLM: {e:?}");
+                tracing::debug!("USDA ({data_type}) lookup failed, falling back to LLM: {e:?}");
             }
         }
     } else {
@@ -1094,15 +1097,19 @@ async fn lookup_usda_food(
     food_name: &str,
     api_key: &str,
     api_url: &str,
+    data_type: &str,
 ) -> AppResult<ExtractMacrosResponse> {
-    tracing::debug!("Looking up food in USDA: {food_name}");
+    tracing::debug!("Looking up food in USDA ({data_type}): {food_name}");
     
     let client = reqwest::Client::new();
+    let url = format!("{}/foods/search", api_url.trim_end_matches('/'));
+    
     let response = client
-        .get(api_url)
+        .get(&url)
         .query(&[
             ("query", food_name),
             ("api_key", api_key),
+            ("dataType", data_type),
             ("pageSize", "1"),
         ])
         .send()
@@ -1125,7 +1132,7 @@ async fn lookup_usda_food(
         } else {
             error_text
         };
-        tracing::warn!("USDA API returned error: {truncated}");
+        tracing::warn!("USDA API returned error ({data_type}): {truncated}");
         return Err((
             StatusCode::BAD_GATEWAY,
             "USDA API returned an error".to_string(),
@@ -1155,10 +1162,10 @@ async fn lookup_usda_food(
         })?;
 
     if foods.is_empty() {
-        tracing::info!("No foods found in USDA for query: {food_name}");
+        tracing::info!("No foods found in USDA ({data_type}) for query: {food_name}");
         return Err((
             StatusCode::NOT_FOUND,
-            "No foods found in USDA database".to_string(),
+            format!("No foods found in USDA {data_type} database"),
         )
             .into());
     }
@@ -1169,7 +1176,7 @@ async fn lookup_usda_food(
         .and_then(|d| d.as_str())
         .unwrap_or("Food");
 
-    tracing::debug!("Found food in USDA: {food_name}");
+    tracing::debug!("Found food in USDA ({data_type}): {food_name}");
 
     let nutrients = food
         .get("foodNutrients")
@@ -1202,7 +1209,7 @@ async fn lookup_usda_food(
         protein_per_100g: protein,
         carbs_per_100g: carbs,
         fats_per_100g: fats,
-        source: "usda".to_string(),
+        source: format!("usda_{}", data_type.to_lowercase()),
     })
 }
 

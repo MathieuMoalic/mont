@@ -53,7 +53,7 @@ pub struct Config {
     #[arg(long, env = "MONT_USDA_API_KEY")]
     pub usda_api_key: Option<String>,
 
-    #[arg(long, env = "MONT_USDA_API_URL", default_value = "https://fdc.nal.usda.gov/api/foods/search")]
+    #[arg(long, env = "MONT_USDA_API_URL", default_value = "https://api.nal.usda.gov/fdc/v1")]
     pub usda_api_url: String,
 
     #[arg(long, env = "MONT_LLM_API_URL", default_value = "https://openrouter.ai/api/v")]

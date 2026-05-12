@@ -573,11 +573,15 @@ Future<List<FoodLookupResult>> lookupFoodsByQuery(String query, {int? limit}) as
 }
 
 /// Extract food macros using LLM based on food name
-Future<Map<String, dynamic>> extractMacrosWithLlm(String query) async {
+Future<Map<String, dynamic>> extractMacrosWithLlm(String query, [String? dataType]) async {
   final q = query.trim();
   if (q.isEmpty) throw Exception('Food name cannot be empty');
 
-  final suffix = '?q=${Uri.encodeQueryComponent(q)}';
+  final params = {'q': q};
+  if (dataType != null) {
+    params['data_type'] = dataType;
+  }
+  final suffix = '?${Uri(queryParameters: params).query}';
 
   final res = await _handleUnauthorized(
     () => http.get(_u('/calories/foods/extract-macros$suffix'), headers: _headers()),
