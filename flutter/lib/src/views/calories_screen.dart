@@ -375,84 +375,12 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                   return;
                 }
 
-                // Show dialog with results
-                setLocalState(() => lookupBusy = false);
-                
-                final selected = await showDialog<Map<String, String>>(
-                  context: context,
-                  builder: (ctx) => AlertDialog(
-                    title: Text('Select food from $dataType database'),
-                    content: SizedBox(
-                      width: double.maxFinite,
-                      child: ListView.separated(
-                        shrinkWrap: true,
-                        itemCount: results.length,
-                        separatorBuilder: (_, __) => const Divider(),
-                        itemBuilder: (_, idx) => ListTile(
-                          title: Text(
-                            results[idx]['description'] ?? 'Unknown',
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          onTap: () => Navigator.pop(ctx, results[idx]),
-                        ),
-                      ),
-                    ),
-                    actions: [
-                      // Show "Extend search" button if we're in Foundation or SR Legacy
-                      if (dataType == 'Foundation')
-                        TextButton(
-                          onPressed: () => Navigator.pop(ctx, {'_skip': 'true'}),
-                          child: const Text('Extend search'),
-                        ),
-                      if (dataType == 'SR Legacy')
-                        TextButton(
-                          onPressed: () => Navigator.pop(ctx, {'_skip': 'true'}),
-                          child: const Text('Estimate with AI'),
-                        ),
-                    ],
-                  ),
-                );
-
-                if (selected == null || !context.mounted) return;
-                
-                // Check if user clicked "Extend search" instead of selecting a food
-                if (selected.containsKey('_skip')) {
-                  setLocalState(() {
-                    if (dataType == 'Foundation') {
-                      usda_search_state = 'foundation_empty';
-                    } else if (dataType == 'SR Legacy') {
-                      usda_search_state = 'legacy_empty';
-                    }
-                  });
-                  return;
-                }
-
-                // Now get macros for selected food using fdc_id
+                // Add results to list and display inline
                 setLocalState(() {
-                  lookupBusy = true;
-                  error = null;
+                  lookupBusy = false;
+                  usda_results = results;
+                  usda_search_state = 'showing_results';
                 });
-
-                final macros = await api.extractMacrosWithLlm(name, dataType);
-                setLocalState(() {
-                  nameController.text = (macros['name'] as String?) ?? name;
-                  foodQuery = (macros['name'] as String?) ?? name;
-                  proteinPer100Controller.text = _fmt(macros['protein_per_100g'] ?? 0);
-                  carbsPer100Controller.text = _fmt(macros['carbs_per_100g'] ?? 0);
-                  fatsPer100Controller.text = _fmt(macros['fats_per_100g'] ?? 0);
-                  macroSource = (macros['source'] as String?) ?? 'unknown';
-                  usda_search_state = 'found';
-                  if (weightController.text.trim().isEmpty) {
-                    weightController.text = '100';
-                  }
-                });
-                if (!context.mounted) return;
-                weightFocus.requestFocus();
-                weightController.selection = TextSelection(
-                  baseOffset: 0,
-                  extentOffset: weightController.text.length,
-                );
               } catch (e) {
                 setLocalState(() {
                   lookupBusy = false;
