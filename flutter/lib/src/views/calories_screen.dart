@@ -397,10 +397,35 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                         ),
                       ),
                     ),
+                    actions: [
+                      // Show "Extend search" button if we're in Foundation or SR Legacy
+                      if (dataType == 'Foundation')
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, {'_skip': 'true'}),
+                          child: const Text('Extend search'),
+                        ),
+                      if (dataType == 'SR Legacy')
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, {'_skip': 'true'}),
+                          child: const Text('Estimate with AI'),
+                        ),
+                    ],
                   ),
                 );
 
                 if (selected == null || !context.mounted) return;
+                
+                // Check if user clicked "Extend search" instead of selecting a food
+                if (selected.containsKey('_skip')) {
+                  setLocalState(() {
+                    if (dataType == 'Foundation') {
+                      usda_search_state = 'foundation_empty';
+                    } else if (dataType == 'SR Legacy') {
+                      usda_search_state = 'legacy_empty';
+                    }
+                  });
+                  return;
+                }
 
                 // Now get macros for selected food using fdc_id
                 setLocalState(() {
