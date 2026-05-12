@@ -1,12 +1,12 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:permission_handler/permission_handler.dart';
 import '../api.dart' as api;
 import '../models.dart';
 
 class BodyPicturesSection extends StatefulWidget {
-  const BodyPicturesSection({super.key});
+  final Function? onRefresh;
+
+  const BodyPicturesSection({super.key, this.onRefresh});
 
   @override
   State<BodyPicturesSection> createState() => _BodyPicturesSectionState();
@@ -40,76 +40,6 @@ class _BodyPicturesSectionState extends State<BodyPicturesSection> {
           _error = e.toString();
           _loading = false;
         });
-      }
-    }
-  }
-
-  Future<void> _capturePhoto() async {
-    // Request camera permission
-    final status = await Permission.camera.request();
-    if (!status.isGranted) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Camera permission denied')),
-        );
-      }
-      return;
-    }
-
-    final picker = ImagePicker();
-    try {
-      final pickedFile = await picker.pickImage(
-        source: ImageSource.camera,
-        imageQuality: 90,
-      );
-
-      if (pickedFile == null) return;
-
-      // Show uploading dialog
-      if (mounted) {
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (ctx) => const AlertDialog(
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircularProgressIndicator(),
-                SizedBox(height: 16),
-                Text('Uploading photo...'),
-              ],
-            ),
-          ),
-        );
-      }
-
-      // Read and convert to base64
-      final bytes = await pickedFile.readAsBytes();
-      final base64Data = base64.encode(bytes);
-
-      // Get today's date in YYYY-MM-DD format
-      final now = DateTime.now();
-      final today = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
-
-      // Upload to backend
-      await api.uploadBodyPicture(
-        pictureDate: today,
-        base64Data: base64Data,
-      );
-
-      if (mounted) {
-        Navigator.pop(context); // Close upload dialog
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Photo saved successfully')),
-        );
-        _loadPictures(); // Refresh list
-      }
-    } catch (e) {
-      if (mounted) {
-        Navigator.pop(context); // Close upload dialog
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Upload failed: $e')),
-        );
       }
     }
   }
@@ -154,19 +84,9 @@ class _BodyPicturesSectionState extends State<BodyPicturesSection> {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Progress Pictures',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              IconButton(
-                icon: const Icon(Icons.camera_alt),
-                onPressed: _capturePhoto,
-                tooltip: 'Capture photo',
-              ),
-            ],
+          child: Text(
+            'Progress Pictures',
+            style: Theme.of(context).textTheme.titleLarge,
           ),
         ),
         if (pictures.isEmpty)
@@ -174,8 +94,7 @@ class _BodyPicturesSectionState extends State<BodyPicturesSection> {
             padding: const EdgeInsets.all(16),
             child: Center(
               child: Text(
-                'No progress pictures yet\nTap the camera icon to add one',
-                textAlign: TextAlign.center,
+                'No progress pictures yet',
                 style: TextStyle(color: Colors.grey.shade600),
               ),
             ),

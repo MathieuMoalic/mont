@@ -78,9 +78,11 @@ pub async fn upload_picture(
         .decode(&req.picture_data)
         .map_err(|_| AppError::from((StatusCode::BAD_REQUEST, "Invalid base64 encoding".to_string())))?;
 
-    // Verify it looks like a PNG (magic bytes)
-    if picture_bytes.len() < 8 || &picture_bytes[..8] != b"\x89PNG\r\n\x1a\n" {
-        return Err(AppError::from((StatusCode::BAD_REQUEST, "Invalid PNG format".to_string())));
+    // Verify it's a valid image format (PNG or JPEG)
+    let is_png = picture_bytes.len() >= 8 && &picture_bytes[..8] == b"\x89PNG\r\n\x1a\n";
+    let is_jpeg = picture_bytes.len() >= 2 && &picture_bytes[..2] == b"\xff\xd8";
+    if !is_png && !is_jpeg {
+        return Err(AppError::from((StatusCode::BAD_REQUEST, "Invalid image format. Must be PNG or JPEG".to_string())));
     }
 
     // Insert or replace picture

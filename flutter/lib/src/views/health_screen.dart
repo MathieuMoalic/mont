@@ -1,5 +1,8 @@
+import 'dart:convert';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../api.dart' as api;
 import '../models.dart';
@@ -124,6 +127,76 @@ class _HealthScreenState extends State<HealthScreen> {
     }
   }
 
+  Future<void> _captureBodyPicture() async {
+    // Request camera permission
+    final status = await Permission.camera.request();
+    if (!status.isGranted) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Camera permission denied')),
+        );
+      }
+      return;
+    }
+
+    final picker = ImagePicker();
+    try {
+      final pickedFile = await picker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 90,
+      );
+
+      if (pickedFile == null) return;
+
+      // Show uploading dialog
+      if (mounted) {
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => const AlertDialog(
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Uploading photo...'),
+              ],
+            ),
+          ),
+        );
+      }
+
+      // Read and convert to base64
+      final bytes = await pickedFile.readAsBytes();
+      final base64Data = base64.encode(bytes);
+
+      // Get today's date in YYYY-MM-DD format
+      final now = DateTime.now();
+      final today = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+
+      // Upload to backend
+      await api.uploadBodyPicture(
+        pictureDate: today,
+        base64Data: base64Data,
+      );
+
+      if (mounted) {
+        Navigator.pop(context); // Close upload dialog
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Photo saved successfully')),
+        );
+        _load(); // Refresh health data
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context); // Close upload dialog
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Upload failed: $e')),
+        );
+      }
+    }
+  }
+
   Future<void> _deleteWeight(WeightEntry entry) async {
     try {
       await api.deleteWeightEntry(entry.id);
@@ -226,10 +299,21 @@ class _HealthScreenState extends State<HealthScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      floatingActionButton: FloatingActionButton(
-        onPressed: _addWeight,
-        tooltip: 'Log body mass',
-        child: const Icon(Icons.monitor_weight_outlined),
+      floatingActionButton: Column(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          FloatingActionButton.small(
+            onPressed: _captureBodyPicture,
+            tooltip: 'Capture body picture',
+            child: const Icon(Icons.camera_alt),
+          ),
+          const SizedBox(height: 16),
+          FloatingActionButton(
+            onPressed: _addWeight,
+            tooltip: 'Log body mass',
+            child: const Icon(Icons.monitor_weight_outlined),
+          ),
+        ],
       ),
       body: RefreshIndicator(
         onRefresh: _load,
