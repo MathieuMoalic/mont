@@ -885,3 +885,58 @@ Future<List<DailyHealth>> listDailyHealth() async {
       .map((e) => DailyHealth.fromJson(e as Map<String, dynamic>))
       .toList();
 }
+
+Future<List<BodyPicture>> listBodyPictures({
+  String? from,
+  String? to,
+}) async {
+  String query = '/health/pictures';
+  final params = <String>[];
+  if (from != null) params.add('from=$from');
+  if (to != null) params.add('to=$to');
+  if (params.isNotEmpty) query += '?${params.join('&')}';
+
+  final res = await _handleUnauthorized(
+    () => http.get(_u(query), headers: _headers()),
+  );
+  if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
+  return (jsonDecode(res.body) as List)
+      .map((e) => BodyPicture.fromJson(e as Map<String, dynamic>))
+      .toList();
+}
+
+Future<String> getBodyPictureData(String pictureDate) async {
+  final res = await _handleUnauthorized(
+    () => http.get(_u('/health/pictures/$pictureDate'), headers: _headers()),
+  );
+  if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
+  final data = jsonDecode(res.body) as Map<String, dynamic>;
+  return data['picture_data'] as String;
+}
+
+Future<void> uploadBodyPicture({
+  required String pictureDate,
+  required String base64Data,
+}) async {
+  final res = await _handleUnauthorized(
+    () => http.post(
+      _u('/health/pictures'),
+      headers: _headers(),
+      body: jsonEncode({
+        'picture_date': pictureDate,
+        'picture_data': base64Data,
+      }),
+    ),
+  );
+  if (res.statusCode != 201) throw Exception('HTTP ${res.statusCode}');
+}
+
+Future<void> deleteBodyPicture(String pictureDate) async {
+  final res = await _handleUnauthorized(
+    () => http.delete(
+      _u('/health/pictures/$pictureDate'),
+      headers: _headers(),
+    ),
+  );
+  if (res.statusCode != 204) throw Exception('HTTP ${res.statusCode}');
+}

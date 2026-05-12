@@ -616,3 +616,21 @@ class ExercisePersonalRecord {
         bestSetReps: j['best_set_reps'] as int,
       );
 }
+
+class BodyPicture {
+  final int id;
+  final String pictureDate;
+  final String createdAt;
+
+  BodyPicture({
+    required this.id,
+    required this.pictureDate,
+    required this.createdAt,
+  });
+
+  factory BodyPicture.fromJson(Map<String, dynamic> j) => BodyPicture(
+    id: j['id'] as int,
+    pictureDate: j['picture_date'] as String,
+    createdAt: j['created_at'] as String,
+  );
+}

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../api.dart' as api;
 import '../models.dart';
+import 'body_pictures_widget.dart';
 
 enum _Range {
   twoWeeks('2W', 14),
@@ -272,6 +273,7 @@ class _HealthScreenState extends State<HealthScreen> {
         SliverToBoxAdapter(child: _buildHrvChart(days)),
         SliverToBoxAdapter(child: _buildStepsChart(days)),
         SliverToBoxAdapter(child: _buildWeightChart(weights)),
+        const SliverToBoxAdapter(child: BodyPicturesSection()),
         const SliverToBoxAdapter(child: SizedBox(height: 80)),
       ],
     );
