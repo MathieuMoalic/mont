@@ -604,7 +604,7 @@ Future<Map<String, dynamic>> extractMacrosWithLlm(String query, [String? dataTyp
   };
 }
 
-Future<List<Map<String, String>>> searchUSDAFoods(String query, [String? dataType]) async {
+Future<List<Map<String, dynamic>>> searchUSDAFoods(String query, [String? dataType]) async {
   final q = query.trim();
   if (q.isEmpty) throw Exception('Food name cannot be empty');
 
@@ -634,6 +634,9 @@ Future<List<Map<String, String>>> searchUSDAFoods(String query, [String? dataTyp
             'fdc_id': r['fdc_id'] as String,
             'description': r['description'] as String,
             'data_type': r['data_type'] as String,
+            'protein_per_100g': r['protein_per_100g'] as num?,
+            'carbs_per_100g': r['carbs_per_100g'] as num?,
+            'fats_per_100g': r['fats_per_100g'] as num?,
           })
       .toList();
 }

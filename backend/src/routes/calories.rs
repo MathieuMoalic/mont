@@ -110,6 +110,9 @@ pub struct USDAFoodResult {
     pub fdc_id: String,
     pub description: String,
     pub data_type: String,
+    pub protein_per_100g: f64,
+    pub carbs_per_100g: f64,
+    pub fats_per_100g: f64,
 }
 
 #[derive(Serialize)]
@@ -1142,6 +1145,34 @@ pub async fn search_usda_foods(
     search_usda_food_list(food_name, usda_key, data_type, USDA_API_URL).await
 }
 
+fn extract_macros_from_nutrients(nutrients: &[serde_json::Value]) -> (f64, f64, f64) {
+    let mut protein = 0.0;
+    let mut carbs = 0.0;
+    let mut fats = 0.0;
+
+    for nutrient in nutrients {
+        if let Some(value) = nutrient.get("value").and_then(serde_json::Value::as_f64)
+            && let Some(name) = nutrient.get("nutrientName").and_then(serde_json::Value::as_str) {
+            match name {
+                "Protein" => {
+                    protein = value;
+                    tracing::debug!("Extracted protein: {}", value);
+                }
+                "Carbohydrate, by difference" => {
+                    carbs = value;
+                    tracing::debug!("Extracted carbs: {}", value);
+                }
+                "Total lipid (fat)" => {
+                    fats = value;
+                    tracing::debug!("Extracted fats: {}", value);
+                }
+                _ => {}
+            }
+        }
+    }
+    (protein, carbs, fats)
+}
+
 async fn search_usda_food_list(
     food_name: &str,
     api_key: &str,
@@ -1216,13 +1247,23 @@ async fn search_usda_food_list(
     let results: Vec<USDAFoodResult> = foods
         .iter()
         .filter_map(|food| {
-            // fdcId is an integer in the API response
             let fdc_id = food.get("fdcId")?.as_i64()?.to_string();
             let description = food.get("description")?.as_str()?.to_string();
+            
+            let (protein_per_100g, carbs_per_100g, fats_per_100g) = food
+                .get("foodNutrients")?
+                .as_array()
+                .map_or((0.0, 0.0, 0.0), |nutrients| extract_macros_from_nutrients(nutrients));
+            
+            tracing::debug!("Final macros for {}: protein={}, carbs={}, fats={}", description, protein_per_100g, carbs_per_100g, fats_per_100g);
+            
             Some(USDAFoodResult {
                 fdc_id,
                 description,
                 data_type: data_type.to_string(),
+                protein_per_100g,
+                carbs_per_100g,
+                fats_per_100g,
             })
         })
         .collect();

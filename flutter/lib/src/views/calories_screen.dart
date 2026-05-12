@@ -214,7 +214,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
     var selectedMeal = existing?.mealPeriod ?? meal;
     var foodQuery = '';
     var matches = <Food>[];
-    var usda_results = <Map<String, String>>[]; // USDA search results
+    var usda_results = <Map<String, dynamic>>[]; // USDA search results
     var searchSeq = 0;
     String? error;
     String? macroSource;
@@ -394,23 +394,22 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
               BuildContext context,
               String foodName,
               String dataType,
-              Map<String, String> result,
+              Map<String, dynamic> result,
               StateSetter setLocalState,
             ) async {
-              setLocalState(() {
-                lookupBusy = true;
-                error = null;
-              });
-
               try {
-                final macros = await api.extractMacrosWithLlm(foodName, dataType);
+                // Extract macros directly from search result (already available from USDA API)
+                final protein = (result['protein_per_100g'] as num?)?.toDouble() ?? 0.0;
+                final carbs = (result['carbs_per_100g'] as num?)?.toDouble() ?? 0.0;
+                final fats = (result['fats_per_100g'] as num?)?.toDouble() ?? 0.0;
+                
                 setLocalState(() {
-                  nameController.text = (macros['name'] as String?) ?? foodName;
-                  foodQuery = (macros['name'] as String?) ?? foodName;
-                  proteinPer100Controller.text = _fmt(macros['protein_per_100g'] ?? 0);
-                  carbsPer100Controller.text = _fmt(macros['carbs_per_100g'] ?? 0);
-                  fatsPer100Controller.text = _fmt(macros['fats_per_100g'] ?? 0);
-                  macroSource = (macros['source'] as String?) ?? 'unknown';
+                  nameController.text = (result['description'] as String?) ?? foodName;
+                  foodQuery = (result['description'] as String?) ?? foodName;
+                  proteinPer100Controller.text = _fmt(protein);
+                  carbsPer100Controller.text = _fmt(carbs);
+                  fatsPer100Controller.text = _fmt(fats);
+                  macroSource = 'usda_${dataType.toLowerCase().replaceAll(' ', '_')}';
                   usda_search_state = 'found';
                   usda_results = [];
                   if (weightController.text.trim().isEmpty) {
@@ -425,8 +424,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                 );
               } catch (e) {
                 setLocalState(() {
-                  lookupBusy = false;
-                  error = 'Failed to get macros: $e';
+                  error = 'Failed to select food: $e';
                 });
               }
             }
@@ -572,14 +570,14 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                                       ),
                                   child: Padding(
                                     padding: const EdgeInsets.symmetric(
-                                      horizontal: 4,
-                                      vertical: 4,
+                                      horizontal: 12,
+                                      vertical: 12,
                                     ),
                                     child: Text(
                                       usda_results[idx]['description'] ?? 'Unknown',
-                                      maxLines: 2,
+                                      maxLines: 3,
                                       overflow: TextOverflow.ellipsis,
-                                      style: Theme.of(context).textTheme.bodySmall,
+                                      style: Theme.of(context).textTheme.bodyMedium,
                                     ),
                                   ),
                                 ),
