@@ -1216,7 +1216,8 @@ async fn search_usda_food_list(
     let results: Vec<USDAFoodResult> = foods
         .iter()
         .filter_map(|food| {
-            let fdc_id = food.get("fdcId")?.as_str()?.to_string();
+            // fdcId is an integer in the API response
+            let fdc_id = food.get("fdcId")?.as_i64()?.to_string();
             let description = food.get("description")?.as_str()?.to_string();
             Some(USDAFoodResult {
                 fdc_id,
