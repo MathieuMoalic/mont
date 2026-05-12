@@ -596,6 +596,7 @@ Future<Map<String, dynamic>> extractMacrosWithLlm(String query) async {
     'protein_per_100g': (data['protein_per_100g'] as num).toDouble(),
     'carbs_per_100g': (data['carbs_per_100g'] as num).toDouble(),
     'fats_per_100g': (data['fats_per_100g'] as num).toDouble(),
+    'source': data['source'] as String,
   };
 }
 

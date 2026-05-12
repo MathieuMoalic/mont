@@ -216,6 +216,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
     var matches = <Food>[];
     var searchSeq = 0;
     String? error;
+    String? macroSource;
     bool lookupBusy = false;
 
     final saved = await showDialog<bool>(
@@ -305,6 +306,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
               setLocalState(() {
                 lookupBusy = true;
                 error = null;
+                macroSource = null;
               });
               try {
                 final macros = await api.extractMacrosWithLlm(name);
@@ -314,6 +316,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                   proteinPer100Controller.text = _fmt(macros['protein_per_100g'] ?? 0);
                   carbsPer100Controller.text = _fmt(macros['carbs_per_100g'] ?? 0);
                   fatsPer100Controller.text = _fmt(macros['fats_per_100g'] ?? 0);
+                  macroSource = (macros['source'] as String?) ?? 'unknown';
                   if (weightController.text.trim().isEmpty) {
                     weightController.text = '100';
                   }
@@ -636,6 +639,17 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                           error!,
                           style: TextStyle(
                             color: Theme.of(context).colorScheme.error,
+                          ),
+                        ),
+                      ),
+                    if (macroSource != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          'Source: ${macroSource!.toUpperCase()}',
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.secondary,
+                            fontSize: 12,
                           ),
                         ),
                       ),

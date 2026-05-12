@@ -100,6 +100,7 @@ pub struct ExtractMacrosResponse {
     pub protein_per_100g: f64,
     pub carbs_per_100g: f64,
     pub fats_per_100g: f64,
+    pub source: String,
 }
 
 #[derive(Deserialize)]
@@ -1201,6 +1202,7 @@ async fn lookup_usda_food(
         protein_per_100g: protein,
         carbs_per_100g: carbs,
         fats_per_100g: fats,
+        source: "usda".to_string(),
     })
 }
 
@@ -1314,6 +1316,8 @@ async fn lookup_llm_food(
             .into());
     }
 
-    Ok(Json(macros))
+    let mut response = macros;
+    response.source = "llm".to_string();
+    Ok(Json(response))
 }
 
