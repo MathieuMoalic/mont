@@ -1206,6 +1206,7 @@ async fn lookup_usda_food(
     })
 }
 
+#[allow(clippy::too_many_lines)]
 async fn lookup_llm_food(
     food_name: &str,
     api_key: &str,
@@ -1217,19 +1218,24 @@ async fn lookup_llm_food(
     );
 
     let client = reqwest::Client::new();
+    let url = format!("{}/chat/completions", api_url.trim_end_matches('/'));
+    tracing::debug!("Calling LLM API at: {url}");
+    
     let response = client
-        .post(format!("{api_url}1/chat/completions"))
-        .header("Authorization", format!("Bearer {api_key}"))
+        .post(&url)
+        .bearer_auth(api_key)
         .json(&serde_json::json!({
             "model": model,
             "messages": [
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.1,
+            "response_format": { "type": "json_object" }
         }))
         .send()
         .await
         .map_err(|e| {
+            tracing::error!("LLM API request failed: {e}");
             (
                 StatusCode::BAD_GATEWAY,
                 format!("LLM API request failed: {e}"),
@@ -1253,6 +1259,7 @@ async fn lookup_llm_food(
     }
 
     let body: serde_json::Value = response.json().await.map_err(|e| {
+        tracing::error!("Failed to parse LLM response as JSON: {e}");
         (
             StatusCode::BAD_GATEWAY,
             format!("Failed to parse LLM response: {e}"),
@@ -1266,6 +1273,7 @@ async fn lookup_llm_food(
         .and_then(|m| m.get("content"))
         .and_then(|c| c.as_str())
         .ok_or_else(|| {
+            tracing::error!("LLM response missing content field, structure: {:?}", body);
             (
                 StatusCode::BAD_GATEWAY,
                 "Invalid LLM response format".to_string(),
@@ -1287,6 +1295,7 @@ async fn lookup_llm_food(
         })?;
 
     let macros: ExtractMacrosResponse = serde_json::from_str(json_str).map_err(|e| {
+        tracing::error!("Failed to parse macros JSON: {e}. Raw JSON: {json_str}");
         (
             StatusCode::BAD_GATEWAY,
             format!("Failed to parse macros from LLM response: {e}"),
