@@ -143,7 +143,7 @@ class _HealthScreenState extends State<HealthScreen> {
     try {
       final pickedFile = await picker.pickImage(
         source: ImageSource.camera,
-        imageQuality: 90,
+        imageQuality: 70,
       );
 
       if (pickedFile == null) return;
@@ -302,7 +302,7 @@ class _HealthScreenState extends State<HealthScreen> {
       floatingActionButton: Column(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          FloatingActionButton.small(
+          FloatingActionButton(
             onPressed: _captureBodyPicture,
             tooltip: 'Capture body picture',
             child: const Icon(Icons.camera_alt),

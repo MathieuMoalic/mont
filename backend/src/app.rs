@@ -11,6 +11,7 @@ use crate::{
 use axum::middleware::{from_fn, from_fn_with_state};
 use axum::routing::{delete, get, patch, post};
 use axum::{Json, Router};
+use axum::extract::DefaultBodyLimit;
 use serde::Serialize;
 
 use tower::ServiceBuilder;
@@ -165,6 +166,7 @@ pub fn build_app(state: AppState) -> Router {
         .merge(protected_routes)
         .fallback(serve_embedded_web)
         .with_state(state.clone())
+        .layer(DefaultBodyLimit::max(10 * 1024 * 1024)) // 10 MB limit
         .layer(from_fn_with_state(rate_limit_state, rate_limit_middleware))
         .layer(request_id_layer)
         .layer(from_fn(access_log))
