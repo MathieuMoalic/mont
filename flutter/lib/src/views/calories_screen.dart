@@ -354,6 +354,60 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
               });
               
               try {
+                // First, search for results
+                final results = await api.searchUSDAFoods(name, dataType);
+                
+                if (!context.mounted) return;
+                
+                if (results.isEmpty) {
+                  // No results, move to next dataset or LLM
+                  setLocalState(() {
+                    lookupBusy = false;
+                    if (dataType == 'Foundation') {
+                      error = null;
+                      usda_search_state = 'foundation_empty';
+                    } else if (dataType == 'SR Legacy') {
+                      error = null;
+                      usda_search_state = 'legacy_empty';
+                    }
+                  });
+                  return;
+                }
+
+                // Show dialog with results
+                setLocalState(() => lookupBusy = false);
+                
+                final selected = await showDialog<Map<String, String>>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: Text('Select food from $dataType database'),
+                    content: SizedBox(
+                      width: double.maxFinite,
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: results.length,
+                        separatorBuilder: (_, __) => const Divider(),
+                        itemBuilder: (_, idx) => ListTile(
+                          title: Text(
+                            results[idx]['description'] ?? 'Unknown',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          onTap: () => Navigator.pop(ctx, results[idx]),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+
+                if (selected == null || !context.mounted) return;
+
+                // Now get macros for selected food using fdc_id
+                setLocalState(() {
+                  lookupBusy = true;
+                  error = null;
+                });
+
                 final macros = await api.extractMacrosWithLlm(name, dataType);
                 setLocalState(() {
                   nameController.text = (macros['name'] as String?) ?? name;
@@ -374,24 +428,10 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                   extentOffset: weightController.text.length,
                 );
               } catch (e) {
-                // USDA dataset had no results
-                if (dataType == 'Foundation') {
-                  // Try legacy next
-                  setLocalState(() {
-                    error = null;
-                    usda_search_state = 'foundation_empty';
-                  });
-                } else if (dataType == 'SR Legacy') {
-                  // Both USDA datasets exhausted, offer LLM
-                  setLocalState(() {
-                    error = null;
-                    usda_search_state = 'legacy_empty';
-                  });
-                } else {
-                  setLocalState(() {
-                    error = 'Failed to extract macros: ${e.toString()}';
-                  });
-                }
+                setLocalState(() {
+                  lookupBusy = false;
+                  error = 'Failed: ${e.toString()}';
+                });
               } finally {
                 setLocalState(() => lookupBusy = false);
               }

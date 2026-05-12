@@ -105,6 +105,18 @@ pub struct ExtractMacrosResponse {
     pub source: String,
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct USDAFoodResult {
+    pub fdc_id: String,
+    pub description: String,
+    pub data_type: String,
+}
+
+#[derive(Serialize)]
+pub struct USDASearchResponse {
+    pub results: Vec<USDAFoodResult>,
+}
+
 #[derive(Deserialize)]
 pub struct CreateCalorieEntry {
     pub day: String,
@@ -1093,6 +1105,129 @@ pub async fn extract_macros_with_llm(
 
     tracing::info!("Using LLM to extract macros for: {food_name}");
     lookup_llm_food(food_name, llm_key, &state.config.llm_api_url, &state.config.llm_model).await
+}
+
+/// Search USDA database and return top 5 results with descriptions.
+/// User can then select which one they want macros for.
+///
+/// # Errors
+/// Returns error if food name is empty, USDA key not configured, or API request fails.
+pub async fn search_usda_foods(
+    State(state): State<AppState>,
+    Query(query): Query<ExtractMacrosQuery>,
+) -> AppResult<Json<USDASearchResponse>> {
+    const USDA_API_URL: &str = "https://api.nal.usda.gov/fdc/v1";
+    
+    let food_name = query.q.trim();
+    if food_name.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Food name cannot be empty".to_string(),
+        )
+            .into());
+    }
+
+    let usda_key = state
+        .config
+        .usda_api_key
+        .as_ref()
+        .ok_or_else(|| {
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "USDA API key not configured".to_string(),
+            )
+        })?;
+
+    let data_type = query.data_type.as_deref().unwrap_or("Foundation");
+    search_usda_food_list(food_name, usda_key, data_type, USDA_API_URL).await
+}
+
+async fn search_usda_food_list(
+    food_name: &str,
+    api_key: &str,
+    data_type: &str,
+    api_url: &str,
+) -> AppResult<Json<USDASearchResponse>> {
+    tracing::debug!("Searching USDA ({data_type}): {food_name}");
+    
+    let client = reqwest::Client::new();
+    let url = format!("{api_url}/foods/search");
+    
+    let response = client
+        .get(&url)
+        .query(&[
+            ("query", food_name),
+            ("api_key", api_key),
+            ("dataType", data_type),
+            ("pageSize", "5"),
+        ])
+        .send()
+        .await
+        .map_err(|e| {
+            tracing::error!("USDA API request failed: {e}");
+            (
+                StatusCode::BAD_GATEWAY,
+                format!("USDA API request failed: {e}"),
+            )
+        })?;
+
+    let status = response.status();
+    tracing::debug!("USDA API response status: {status}");
+
+    if !status.is_success() {
+        let error_text = response.text().await.unwrap_or_default();
+        let truncated = if error_text.len() > 200 {
+            format!("{}...", &error_text[..200])
+        } else {
+            error_text
+        };
+        tracing::warn!("USDA API returned error ({data_type}): {truncated}");
+        return Err((
+            StatusCode::BAD_GATEWAY,
+            "USDA API returned an error".to_string(),
+        )
+            .into());
+    }
+
+    let body: serde_json::Value = response.json().await.map_err(|e| {
+        tracing::error!("Failed to parse USDA response as JSON: {e}");
+        (
+            StatusCode::BAD_GATEWAY,
+            format!("Failed to parse USDA response: {e}"),
+        )
+    })?;
+
+    let foods = body
+        .get("foods")
+        .and_then(|f| f.as_array())
+        .ok_or_else(|| {
+            tracing::warn!("Invalid USDA response format: missing or invalid 'foods' array");
+            (
+                StatusCode::BAD_GATEWAY,
+                "Invalid USDA response format".to_string(),
+            )
+        })?;
+
+    if foods.is_empty() {
+        tracing::info!("No foods found in USDA ({data_type}) for query: {food_name}");
+        return Ok(Json(USDASearchResponse { results: vec![] }));
+    }
+
+    let results: Vec<USDAFoodResult> = foods
+        .iter()
+        .filter_map(|food| {
+            let fdc_id = food.get("fdcId")?.as_str()?.to_string();
+            let description = food.get("description")?.as_str()?.to_string();
+            Some(USDAFoodResult {
+                fdc_id,
+                description,
+                data_type: data_type.to_string(),
+            })
+        })
+        .collect();
+
+    tracing::debug!("Found {} foods in USDA ({data_type}) for query: {food_name}", results.len());
+    Ok(Json(USDASearchResponse { results }))
 }
 
 async fn lookup_usda_food(

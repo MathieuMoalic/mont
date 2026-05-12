@@ -604,6 +604,40 @@ Future<Map<String, dynamic>> extractMacrosWithLlm(String query, [String? dataTyp
   };
 }
 
+Future<List<Map<String, String>>> searchUSDAFoods(String query, [String? dataType]) async {
+  final q = query.trim();
+  if (q.isEmpty) throw Exception('Food name cannot be empty');
+
+  final params = {'q': q};
+  if (dataType != null) {
+    params['data_type'] = dataType;
+  }
+  final suffix = '?${Uri(queryParameters: params).query}';
+
+  final res = await _handleUnauthorized(
+    () => http.get(_u('/calories/foods/search-usda$suffix'), headers: _headers()),
+  );
+  if (res.statusCode == 400) {
+    throw Exception('Invalid food name');
+  }
+  if (res.statusCode == 503 || res.statusCode == 502) {
+    throw Exception('USDA service unavailable');
+  }
+  if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
+
+  final data = jsonDecode(res.body) as Map<String, dynamic>;
+  final results = data['results'] as List<dynamic>?;
+  if (results == null) throw Exception('Invalid response format');
+
+  return results
+      .map((r) => {
+            'fdc_id': r['fdc_id'] as String,
+            'description': r['description'] as String,
+            'data_type': r['data_type'] as String,
+          })
+      .toList();
+}
+
 Future<Food> upsertFoodByBarcode({
   required String barcode,
   required String name,

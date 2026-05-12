@@ -122,6 +122,10 @@ pub fn build_app(state: AppState) -> Router {
             get(calories::extract_macros_with_llm),
         )
         .route(
+            "/calories/foods/search-usda",
+            get(calories::search_usda_foods),
+        )
+        .route(
             "/calories/exercises",
             get(calories::list_calorie_exercises).post(calories::create_calorie_exercise),
         )
