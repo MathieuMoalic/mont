@@ -196,6 +196,48 @@
           default = null;
           description = "Path to GadgetBridge zip export file on the filesystem";
         };
+
+        syncTime = lib.mkOption {
+          type = lib.types.str;
+          default = "05:00";
+          description = "Daily auto-sync time in HH:MM format (local time)";
+        };
+
+        usdaApiKey = lib.mkOption {
+          type = lib.types.nullOr lib.types.str;
+          default = null;
+          description = "USDA Food Data Central API key";
+        };
+
+        usdaApiKeyFile = lib.mkOption {
+          type = lib.types.nullOr lib.types.path;
+          default = null;
+          description = "Path to file containing USDA API key (for sops-nix)";
+        };
+
+        llmApiUrl = lib.mkOption {
+          type = lib.types.str;
+          default = "https://openrouter.ai/api/v";
+          description = "LLM API endpoint URL";
+        };
+
+        llmApiKey = lib.mkOption {
+          type = lib.types.nullOr lib.types.str;
+          default = null;
+          description = "LLM API key";
+        };
+
+        llmApiKeyFile = lib.mkOption {
+          type = lib.types.nullOr lib.types.path;
+          default = null;
+          description = "Path to file containing LLM API key (for sops-nix)";
+        };
+
+        llmModel = lib.mkOption {
+          type = lib.types.str;
+          default = "deepseek/deepseek-v4-flash";
+          description = "LLM model name to use";
+        };
       };
 
       config = lib.mkIf cfg.enable {
@@ -211,6 +253,14 @@
           {
             assertion = !(cfg.jwtSecret != null && cfg.jwtSecretFile != null);
             message = "services.mont.jwtSecret and services.mont.jwtSecretFile are mutually exclusive";
+          }
+          {
+            assertion = !(cfg.usdaApiKey != null && cfg.usdaApiKeyFile != null);
+            message = "services.mont.usdaApiKey and services.mont.usdaApiKeyFile are mutually exclusive";
+          }
+          {
+            assertion = !(cfg.llmApiKey != null && cfg.llmApiKeyFile != null);
+            message = "services.mont.llmApiKey and services.mont.llmApiKeyFile are mutually exclusive";
           }
         ];
 
@@ -238,11 +288,16 @@
               MONT_BIND_ADDR = cfg.bindAddr;
               MONT_DATABASE_PATH = cfg.databasePath;
               MONT_LOG_FILE = cfg.logFile;
+              MONT_SYNC_TIME = cfg.syncTime;
+              MONT_LLM_API_URL = cfg.llmApiUrl;
+              MONT_LLM_MODEL = cfg.llmModel;
             }
             // lib.optionalAttrs (cfg.corsOrigin != null) {MONT_CORS_ORIGIN = cfg.corsOrigin;}
             // lib.optionalAttrs (cfg.passwordHash != null) {MONT_PASSWORD_HASH = cfg.passwordHash;}
             // lib.optionalAttrs (cfg.jwtSecret != null) {MONT_JWT_SECRET = cfg.jwtSecret;}
-            // lib.optionalAttrs (cfg.gadgetbridgeZip != null) {MONT_GADGETBRIDGE_ZIP = cfg.gadgetbridgeZip;};
+            // lib.optionalAttrs (cfg.gadgetbridgeZip != null) {MONT_GADGETBRIDGE_ZIP = cfg.gadgetbridgeZip;}
+            // lib.optionalAttrs (cfg.usdaApiKey != null) {MONT_USDA_API_KEY = cfg.usdaApiKey;}
+            // lib.optionalAttrs (cfg.llmApiKey != null) {MONT_LLM_API_KEY = cfg.llmApiKey;};
 
           script = let
             passwordHashLoader =
@@ -253,9 +308,19 @@
               if cfg.jwtSecretFile != null
               then ''export MONT_JWT_SECRET="$(cat ${cfg.jwtSecretFile})"''
               else "";
+            usdaApiKeyLoader =
+              if cfg.usdaApiKeyFile != null
+              then ''export MONT_USDA_API_KEY="$(cat ${cfg.usdaApiKeyFile})"''
+              else "";
+            llmApiKeyLoader =
+              if cfg.llmApiKeyFile != null
+              then ''export MONT_LLM_API_KEY="$(cat ${cfg.llmApiKeyFile})"''
+              else "";
           in ''
             ${passwordHashLoader}
             ${jwtSecretLoader}
+            ${usdaApiKeyLoader}
+            ${llmApiKeyLoader}
             exec ${cfg.package}/bin/mont \
               ${lib.concatStringsSep " " (
               lib.optionals (cfg.verbosity > 0) (lib.genList (_: "-v") cfg.verbosity)
