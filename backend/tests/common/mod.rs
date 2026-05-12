@@ -58,7 +58,6 @@ impl TestApp {
             gadgetbridge_zip,
             sync_time: "05:00".to_string(),
             usda_api_key: None,
-            usda_api_url: "https://fdc.nal.usda.gov/api/foods/search".to_string(),
             llm_api_url: "https://openrouter.ai/api/v".to_string(),
             llm_api_key: None,
             llm_model: "deepseek/deepseek-v4-flash".to_string(),

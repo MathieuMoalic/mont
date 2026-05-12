@@ -1052,6 +1052,8 @@ pub async fn extract_macros_with_llm(
     State(state): State<AppState>,
     Query(query): Query<ExtractMacrosQuery>,
 ) -> AppResult<Json<ExtractMacrosResponse>> {
+    const USDA_API_URL: &str = "https://api.nal.usda.gov/fdc/v1";
+    
     let food_name = query.q.trim();
     if food_name.is_empty() {
         return Err((
@@ -1064,7 +1066,7 @@ pub async fn extract_macros_with_llm(
     // Try USDA API first if configured
     if let Some(usda_key) = &state.config.usda_api_key {
         let data_type = query.data_type.as_deref().unwrap_or("Foundation");
-        match lookup_usda_food(food_name, usda_key, &state.config.usda_api_url, data_type).await {
+        match lookup_usda_food(food_name, usda_key, USDA_API_URL, data_type).await {
             Ok(result) => {
                 tracing::info!("Successfully extracted macros from USDA ({data_type}) for: {food_name}");
                 return Ok(Json(result));

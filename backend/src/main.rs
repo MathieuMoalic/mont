@@ -165,7 +165,6 @@ fn log_config(config: &mont::config::Config) {
             "<not set>"
         }
     );
-    tracing::info!("USDA API URL: {}", config.usda_api_url);
     tracing::info!(
         "USDA API key: {}",
         if config.usda_api_key.is_some() {
