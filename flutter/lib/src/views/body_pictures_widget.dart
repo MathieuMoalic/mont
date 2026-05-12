@@ -149,18 +149,6 @@ class _BodyPicturesSectionState extends State<BodyPicturesSection> {
 
     final pictures = _pictures ?? [];
 
-    if (pictures.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.all(16),
-        child: Center(
-          child: Text(
-            'No progress pictures yet',
-            style: TextStyle(color: Colors.grey.shade600),
-          ),
-        ),
-      );
-    }
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -181,10 +169,22 @@ class _BodyPicturesSectionState extends State<BodyPicturesSection> {
             ],
           ),
         ),
-        PictureCalendar(
-          pictures: pictures,
-          onDayTap: _showPictureViewer,
-        ),
+        if (pictures.isEmpty)
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Center(
+              child: Text(
+                'No progress pictures yet\nTap the camera icon to add one',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey.shade600),
+              ),
+            ),
+          )
+        else
+          PictureCalendar(
+            pictures: pictures,
+            onDayTap: _showPictureViewer,
+          ),
       ],
     );
   }
