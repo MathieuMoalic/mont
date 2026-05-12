@@ -592,7 +592,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                             .catchError((_) {});
                       },
                     ),
-                    if (existing == null && matches.isNotEmpty)
+                    if (existing == null && (matches.isNotEmpty || usda_results.isNotEmpty || lookupBusy && usda_search_state != null))
                       Container(
                         margin: const EdgeInsets.only(top: 6, bottom: 4),
                         padding: const EdgeInsets.symmetric(
@@ -607,134 +607,62 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                         ),
                         child: Column(
                           children: [
-                            for (
-                              int index = 0;
-                              index < matches.length;
-                              index++
-                            ) ...[
-                              InkWell(
-                                borderRadius: BorderRadius.circular(6),
-                                onTap: () {
-                                  final saved = matches[index];
-                                  setLocalState(() {
-                                    nameController.text = saved.name;
-                                    foodQuery = saved.name;
-                                    proteinPer100Controller.text = _fmt(
-                                      saved.proteinPer100G,
-                                    );
-                                    carbsPer100Controller.text = _fmt(
-                                      saved.carbsPer100G,
-                                    );
-                                    fatsPer100Controller.text = _fmt(
-                                      saved.fatsPer100G,
-                                    );
-                                    weightController.text = _fmt(
-                                      saved.lastWeightG,
-                                    );
-                                  });
-                                  weightFocus.requestFocus();
-                                  weightController.selection = TextSelection(
-                                    baseOffset: 0,
-                                    extentOffset: weightController.text.length,
-                                  );
-                                },
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 4,
-                                    vertical: 4,
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          matches[index].name,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
+                            // Show loading spinner if searching USDA
+                            if (lookupBusy && usda_results.isEmpty)
+                              Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                child: Column(
+                                  children: [
+                                    const SizedBox(
+                                      height: 24,
+                                      width: 24,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
                                       ),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        '${_fmt(matches[index].lastWeightG)}g',
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              if (index != matches.length - 1)
-                                Divider(
-                                  height: 1,
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.outlineVariant,
-                                ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    if (existing == null && usda_results.isNotEmpty)
-                      Container(
-                        margin: const EdgeInsets.only(top: 6, bottom: 4),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.surfaceContainerHighest.withAlpha(200),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: Theme.of(context).colorScheme.primary.withAlpha(100),
-                            width: 1,
-                          ),
-                        ),
-                        child: Column(
-                          children: [
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-                              child: Align(
-                                alignment: Alignment.centerLeft,
-                                child: Text(
-                                  usda_search_state == 'showing_results'
-                                      ? '${usda_results[0]['data_type']} results:'
-                                      : 'USDA results:',
-                                  style: Theme.of(context).textTheme.labelSmall,
-                                ),
-                              ),
-                            ),
-                            const Divider(height: 8),
-                            for (int idx = 0; idx < usda_results.length; idx++) ...[
-                              InkWell(
-                                borderRadius: BorderRadius.circular(6),
-                                onTap: lookupBusy
-                                    ? null
-                                    : () => _selectUSDAResult(
-                                      context,
-                                      foodQuery,
-                                      usda_results[idx]['data_type'] ?? 'Foundation',
-                                      usda_results[idx],
-                                      setLocalState,
                                     ),
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 4,
-                                    vertical: 4,
-                                  ),
-                                  child: Text(
-                                    usda_results[idx]['description'] ?? 'Unknown',
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: Theme.of(context).textTheme.bodySmall,
-                                  ),
+                                    const SizedBox(height: 12),
+                                    Text(
+                                      'Searching ${usda_search_state == 'showing_results' ? 'USDA' : 'database'}...',
+                                      style: Theme.of(context).textTheme.bodySmall,
+                                    ),
+                                  ],
                                 ),
                               ),
-                              if (idx != usda_results.length - 1)
-                                Divider(
-                                  height: 1,
-                                  color: Theme.of(context).colorScheme.outlineVariant,
+                            // Show USDA results if available
+                            if (usda_results.isNotEmpty)
+                              for (int idx = 0; idx < usda_results.length; idx++) ...[
+                                InkWell(
+                                  borderRadius: BorderRadius.circular(6),
+                                  onTap: lookupBusy
+                                      ? null
+                                      : () => _selectUSDAResult(
+                                        context,
+                                        foodQuery,
+                                        usda_results[idx]['data_type'] ?? 'Foundation',
+                                        usda_results[idx],
+                                        setLocalState,
+                                      ),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 4,
+                                      vertical: 4,
+                                    ),
+                                    child: Text(
+                                      usda_results[idx]['description'] ?? 'Unknown',
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: Theme.of(context).textTheme.bodySmall,
+                                    ),
+                                  ),
                                 ),
-                            ],
-                            if (usda_search_state == 'showing_results') ...[
+                                if (idx != usda_results.length - 1)
+                                  Divider(
+                                    height: 1,
+                                    color: Theme.of(context).colorScheme.outlineVariant,
+                                  ),
+                              ],
+                            // Show "Extend search" button if USDA results displayed
+                            if (usda_results.isNotEmpty && usda_search_state == 'showing_results') ...[
                               const Divider(height: 8),
                               Padding(
                                 padding: const EdgeInsets.only(top: 4),
@@ -760,6 +688,69 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                                 ),
                               ),
                             ],
+                            // Show local DB results only if no USDA search in progress
+                            if (usda_results.isEmpty && !lookupBusy)
+                              for (
+                                int index = 0;
+                                index < matches.length;
+                                index++
+                              ) ...[
+                                InkWell(
+                                  borderRadius: BorderRadius.circular(6),
+                                  onTap: () {
+                                    final saved = matches[index];
+                                    setLocalState(() {
+                                      nameController.text = saved.name;
+                                      foodQuery = saved.name;
+                                      proteinPer100Controller.text = _fmt(
+                                        saved.proteinPer100G,
+                                      );
+                                      carbsPer100Controller.text = _fmt(
+                                        saved.carbsPer100G,
+                                      );
+                                      fatsPer100Controller.text = _fmt(
+                                        saved.fatsPer100G,
+                                      );
+                                      weightController.text = _fmt(
+                                        saved.lastWeightG,
+                                      );
+                                    });
+                                    weightFocus.requestFocus();
+                                    weightController.selection = TextSelection(
+                                      baseOffset: 0,
+                                      extentOffset: weightController.text.length,
+                                    );
+                                  },
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 4,
+                                      vertical: 4,
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            matches[index].name,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          '${_fmt(matches[index].lastWeightG)}g',
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                if (index != matches.length - 1)
+                                  Divider(
+                                    height: 1,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.outlineVariant,
+                                  ),
+                              ],
                           ],
                         ),
                       ),
