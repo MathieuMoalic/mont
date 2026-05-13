@@ -1,14 +1,21 @@
 import 'dart:convert';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, kDebugMode;
 import 'package:http/http.dart' as http;
 
 import './platform/kv_store.dart' as kv;
 import './models.dart';
 
-const String _defaultBaseUrl = String.fromEnvironment(
+const String _envBaseUrl = String.fromEnvironment(
   'API_BASE_URL',
-  defaultValue: 'https://mont.matmoa.eu',
+  defaultValue: '',
 );
+
+const String _prodBaseUrl = 'https://mont.matmoa.eu';
+const String _devBaseUrl = 'http://localhost:8080';
+
+final String _defaultBaseUrl = _envBaseUrl.isNotEmpty
+    ? _envBaseUrl
+    : (kDebugMode ? _devBaseUrl : _prodBaseUrl);
 
 const _kApiBaseUrlKey = 'api_base_url';
 
