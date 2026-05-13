@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../api.dart' as api;
 import '../models.dart';
 import 'barcode_scan_screen.dart';
+import 'food_management_screen.dart';
 
 class CaloriesScreen extends StatefulWidget {
   const CaloriesScreen({super.key});
@@ -1225,6 +1226,15 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
       appBar: AppBar(
         title: const Text('Calories'),
         actions: [
+          IconButton(
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const FoodManagementScreen(),
+              ),
+            ),
+            icon: const Icon(Icons.fastfood),
+            tooltip: 'Manage foods',
+          ),
           IconButton(
             onPressed: _showTargetsDialog,
             icon: const Icon(Icons.tune),

@@ -118,6 +118,10 @@ pub fn build_app(state: AppState) -> Router {
         )
         .route("/calories/foods", get(calories::list_foods))
         .route(
+            "/calories/foods/{id}",
+            patch(calories::update_food).delete(calories::delete_food),
+        )
+        .route(
             "/calories/foods/by-barcode/{barcode}",
             get(calories::get_food_by_barcode).put(calories::upsert_food_by_barcode),
         )

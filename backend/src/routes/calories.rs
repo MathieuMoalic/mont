@@ -73,6 +73,16 @@ pub struct FoodSearchQuery {
 }
 
 #[derive(Deserialize)]
+pub struct UpdateFoodRequest {
+    pub name: String,
+    pub brand: String,
+    pub protein_per_100g: f64,
+    pub carbs_per_100g: f64,
+    pub fats_per_100g: f64,
+    pub source: String,
+}
+
+#[derive(Deserialize)]
 pub struct LookupFoodsQuery {
     pub q: String,
     pub limit: Option<usize>,
@@ -303,6 +313,61 @@ pub async fn list_foods(
         .await?
     };
     Ok(Json(foods))
+}
+
+/// # Errors
+/// Returns an error if the food ID is not found or the query fails.
+pub async fn update_food(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Json(req): Json<UpdateFoodRequest>,
+) -> AppResult<Json<Food>> {
+    sqlx::query(
+        "UPDATE foods
+         SET name = ?, brand = ?, protein_per_100g = ?, carbs_per_100g = ?, fats_per_100g = ?, source = ?
+         WHERE id = ?",
+    )
+    .bind(&req.name)
+    .bind(&req.brand)
+    .bind(req.protein_per_100g)
+    .bind(req.carbs_per_100g)
+    .bind(req.fats_per_100g)
+    .bind(&req.source)
+    .bind(id)
+    .execute(&state.pool)
+    .await?;
+
+    let food = sqlx::query_as::<_, Food>(
+        "SELECT id, name, brand, protein_per_100g, carbs_per_100g, fats_per_100g, last_weight_g, source
+         FROM foods
+         WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_one(&state.pool)
+    .await?;
+
+    Ok(Json(food))
+}
+
+/// # Errors
+/// Returns an error if the food ID is not found or the query fails.
+pub async fn delete_food(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> AppResult<StatusCode> {
+    let result = sqlx::query("DELETE FROM foods WHERE id = ?")
+        .bind(id)
+        .execute(&state.pool)
+        .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(crate::error::AppError::Msg(
+            StatusCode::NOT_FOUND,
+            "Food not found".to_string(),
+        ));
+    }
+
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// # Errors

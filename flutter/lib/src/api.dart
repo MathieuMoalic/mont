@@ -540,6 +540,41 @@ Future<List<Food>> listFoods({String? query}) async {
       .toList();
 }
 
+Future<Food> updateFood(
+  int id, {
+  required String name,
+  required String brand,
+  required double proteinPer100G,
+  required double carbsPer100G,
+  required double fatsPer100G,
+  required String source,
+}) async {
+  final body = {
+    'name': name,
+    'brand': brand,
+    'protein_per_100g': proteinPer100G,
+    'carbs_per_100g': carbsPer100G,
+    'fats_per_100g': fatsPer100G,
+    'source': source,
+  };
+  final res = await _handleUnauthorized(
+    () => http.patch(
+      _u('/calories/foods/$id'),
+      headers: _headers(),
+      body: jsonEncode(body),
+    ),
+  );
+  if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
+  return Food.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+}
+
+Future<void> deleteFood(int id) async {
+  final res = await _handleUnauthorized(
+    () => http.delete(_u('/calories/foods/$id'), headers: _headers()),
+  );
+  if (res.statusCode != 204) throw Exception('HTTP ${res.statusCode}');
+}
+
 Future<Food> getFoodByBarcode(String barcode) async {
   final b = barcode.trim();
   final res = await _handleUnauthorized(
