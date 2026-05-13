@@ -1567,7 +1567,8 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
               for (final entry in entries)
                 ListTile(
                   dense: true,
-                  contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  visualDensity: VisualDensity.compact,
+                  contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 0),
                   onTap: () => _showFoodDialog(meal: meal, existing: entry),
                   title: Text(entry.name),
                   subtitle: RichText(
@@ -1644,7 +1645,8 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
               for (final entry in entries)
                 ListTile(
                   dense: true,
-                  contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  visualDensity: VisualDensity.compact,
+                  contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 0),
                   onTap: () => _showExerciseDialog(existing: entry),
                   title: Text(entry.name),
                   trailing: Text(
