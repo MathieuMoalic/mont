@@ -27,6 +27,19 @@ android {
         versionName = flutter.versionName
     }
 
+    flavorDimensions += "environment"
+
+    productFlavors {
+        create("prod") {
+            dimension = "environment"
+            applicationId = "eu.matmoa.mont"
+        }
+        create("dev") {
+            dimension = "environment"
+            applicationId = "eu.matmoa.mont.dev"
+        }
+    }
+
     buildTypes {
         release {
             // TODO: Add your own signing config for the release build.
