@@ -470,6 +470,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                     TextField(
                       controller: nameController,
                       focusNode: nameFocus,
+                      autofocus: true,
                       decoration: denseDecoration(
                         InputDecoration(
                           labelText: 'Name',
@@ -991,6 +992,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
             children: [
               TextField(
                 controller: nameController,
+                autofocus: true,
                 decoration: const InputDecoration(labelText: 'Exercise'),
               ),
               TextField(
