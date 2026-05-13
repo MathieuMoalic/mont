@@ -851,6 +851,16 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                 ),
               ),
               actions: [
+                if (existing != null)
+                  TextButton.icon(
+                    onPressed: () => _deleteFood(existing),
+                    icon: const Icon(Icons.delete),
+                    label: const Text('Delete'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.red,
+                    ),
+                  ),
+                const Spacer(),
                 TextButton(
                   onPressed: () => Navigator.of(ctx).pop(false),
                   child: const Text('Cancel'),
@@ -1004,6 +1014,16 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
             ],
           ),
           actions: [
+            if (existing != null)
+              TextButton.icon(
+                onPressed: () => _deleteExercise(existing),
+                icon: const Icon(Icons.delete),
+                label: const Text('Delete'),
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.red,
+                ),
+              ),
+            const Spacer(),
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(false),
               child: const Text('Cancel'),
@@ -1575,7 +1595,8 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
               for (final entry in entries)
                 ListTile(
                   dense: true,
-                  contentPadding: EdgeInsets.zero,
+                  contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  onTap: () => _showFoodDialog(meal: meal, existing: entry),
                   title: Text(entry.name),
                   subtitle: RichText(
                     text: TextSpan(
@@ -1608,25 +1629,9 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                       ],
                     ),
                   ),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        '${entry.kcal} kcal',
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                      IconButton(
-                        onPressed: () =>
-                            _showFoodDialog(meal: meal, existing: entry),
-                        icon: const Icon(Icons.edit_outlined),
-                        tooltip: 'Edit',
-                      ),
-                      IconButton(
-                        onPressed: () => _deleteFood(entry),
-                        icon: const Icon(Icons.delete_outline),
-                        tooltip: 'Delete',
-                      ),
-                    ],
+                  trailing: Text(
+                    '${entry.kcal} kcal',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
                   ),
                 ),
           ],
@@ -1667,26 +1672,12 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
               for (final entry in entries)
                 ListTile(
                   dense: true,
-                  contentPadding: EdgeInsets.zero,
+                  contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  onTap: () => _showExerciseDialog(existing: entry),
                   title: Text(entry.name),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        '+${_fmt(entry.kcal / 4)}g carbs',
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                      IconButton(
-                        onPressed: () => _showExerciseDialog(existing: entry),
-                        icon: const Icon(Icons.edit_outlined),
-                        tooltip: 'Edit',
-                      ),
-                      IconButton(
-                        onPressed: () => _deleteExercise(entry),
-                        icon: const Icon(Icons.delete_outline),
-                        tooltip: 'Delete',
-                      ),
-                    ],
+                  trailing: Text(
+                    '+${_fmt(entry.kcal / 4)}g carbs',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
                   ),
                 ),
           ],
