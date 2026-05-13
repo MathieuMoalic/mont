@@ -20,7 +20,6 @@ android {
     }
 
     defaultConfig {
-        applicationId = "eu.matmoa.mont"
         minSdk = flutter.minSdkVersion
         targetSdk = 36
         versionCode = flutter.versionCode
@@ -32,10 +31,12 @@ android {
     productFlavors {
         create("prod") {
             dimension = "environment"
+            applicationId = "eu.matmoa.mont"
+            resValue("string", "app_name", "mont")
         }
         create("dev") {
             dimension = "environment"
-            applicationIdSuffix = ".dev"
+            applicationId = "eu.matmoa.mont.dev"
             resValue("string", "app_name", "mont dev")
         }
     }

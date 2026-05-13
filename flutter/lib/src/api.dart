@@ -34,11 +34,27 @@ String get baseUrl => _baseUrl;
 
 Future<void> initApi() async {
   final saved = await kv.getString(_kApiBaseUrlKey);
-  if (saved != null && saved.trim().isNotEmpty) {
-    _baseUrl = _normalizeBase(saved);
-  } else if (kIsWeb && _baseUrl == _defaultBaseUrl) {
-    final origin = Uri.base.origin;
-    if (origin.isNotEmpty) _baseUrl = origin;
+  
+  // In debug builds, always prefer the dev default unless explicitly set
+  if (kDebugMode) {
+    if (saved != null && saved.trim().isNotEmpty && saved != _prodBaseUrl) {
+      // Keep custom URLs, but reset if it's the prod default
+      _baseUrl = _normalizeBase(saved);
+    } else {
+      // Clear saved URL in debug mode and use localhost
+      if (saved != null) {
+        await kv.setString(_kApiBaseUrlKey, '');
+      }
+      _baseUrl = _defaultBaseUrl;
+    }
+  } else {
+    // Release/prod mode: use saved URL if available
+    if (saved != null && saved.trim().isNotEmpty) {
+      _baseUrl = _normalizeBase(saved);
+    } else if (kIsWeb && _baseUrl == _defaultBaseUrl) {
+      final origin = Uri.base.origin;
+      if (origin.isNotEmpty) _baseUrl = origin;
+    }
   }
 }
 
