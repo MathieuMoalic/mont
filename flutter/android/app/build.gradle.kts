@@ -32,11 +32,11 @@ android {
     productFlavors {
         create("prod") {
             dimension = "environment"
-            applicationId = "eu.matmoa.mont"
         }
         create("dev") {
             dimension = "environment"
-            applicationId = "eu.matmoa.mont.dev"
+            applicationIdSuffix = ".dev"
+            resValue("string", "app_name", "mont dev")
         }
     }
 

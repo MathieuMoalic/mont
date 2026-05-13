@@ -854,7 +854,10 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
               actions: [
                 if (existing != null)
                   TextButton.icon(
-                    onPressed: () => _deleteFood(existing),
+                    onPressed: () async {
+                      await _deleteFood(existing);
+                      if (ctx.mounted) Navigator.of(ctx).pop(false);
+                    },
                     icon: const Icon(Icons.delete),
                     label: const Text('Delete'),
                     style: TextButton.styleFrom(
@@ -1015,15 +1018,18 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                 ),
             ],
           ),
-          actions: [
-            if (existing != null)
-              TextButton.icon(
-                onPressed: () => _deleteExercise(existing),
-                icon: const Icon(Icons.delete),
-                label: const Text('Delete'),
-                style: TextButton.styleFrom(
-                  foregroundColor: Colors.red,
-                ),
+              actions: [
+                if (existing != null)
+                  TextButton.icon(
+                    onPressed: () async {
+                      await _deleteExercise(existing);
+                      if (ctx.mounted) Navigator.of(ctx).pop(false);
+                    },
+                    icon: const Icon(Icons.delete),
+                    label: const Text('Delete'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.red,
+                    ),
               ),
             const Spacer(),
             TextButton(
@@ -1167,47 +1173,11 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
   }
 
   Future<void> _deleteFood(CalorieEntry entry) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete item?'),
-        content: Text(entry.name),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-    if (confirm != true) return;
     await api.deleteCalorieEntry(entry.id);
     await _loadMonth();
   }
 
   Future<void> _deleteExercise(CalorieExerciseEntry entry) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete exercise?'),
-        content: Text(entry.name),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-    if (confirm != true) return;
     await api.deleteCalorieExercise(entry.id);
     await _loadMonth();
   }

@@ -50,9 +50,9 @@ jobs:
         run: |
           set -euxo pipefail
           VERSION="${GITHUB_REF_NAME#v}"
-          flutter build apk --release --build-name "$VERSION" --build-number "${GITHUB_RUN_NUMBER}"
+          flutter build apk --flavor prod --release --build-name "$VERSION" --build-number "${GITHUB_RUN_NUMBER}"
           mkdir -p ../dist
-          cp build/app/outputs/flutter-apk/app-release.apk ../dist/mont-${GITHUB_REF_NAME}.apk
+          cp build/app/outputs/flutter-apk/app-prod-release.apk ../dist/mont-${GITHUB_REF_NAME}.apk
 
       - uses: actions/upload-artifact@v4.5.0
         with:
