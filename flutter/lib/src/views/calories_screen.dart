@@ -534,6 +534,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Column(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
                             // Show loading spinner if searching USDA
                             if (lookupBusy && usda_results.isEmpty)
