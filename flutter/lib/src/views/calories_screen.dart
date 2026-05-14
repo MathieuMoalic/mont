@@ -864,7 +864,6 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                       foregroundColor: Colors.red,
                     ),
                   ),
-                const Spacer(),
                 TextButton(
                   onPressed: () => Navigator.of(ctx).pop(false),
                   child: const Text('Cancel'),
@@ -1031,7 +1030,6 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                       foregroundColor: Colors.red,
                     ),
               ),
-            const Spacer(),
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(false),
               child: const Text('Cancel'),
