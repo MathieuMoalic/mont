@@ -440,9 +440,8 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
               actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
               scrollable: true,
               title: null,
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
                   children: [
                     // Section dropdown removed for speed; defaults to the section
                     // that the user tapped (or the existing entry's section).
@@ -852,7 +851,6 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                       ),
                   ],
                 ),
-              ),
               actions: [
                 if (existing != null)
                   TextButton.icon(
