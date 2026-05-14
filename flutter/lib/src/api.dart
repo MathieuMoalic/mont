@@ -75,15 +75,21 @@ bool _isRefreshing = false;
 /// Returns true if successful.
 Future<bool> _tryRefreshToken() async {
   if (_refreshToken == null || _refreshToken!.isEmpty || _isRefreshing) {
+    if (kDebugMode) {
+      print('Token refresh skipped: null=${_refreshToken == null}, empty=${_refreshToken?.isEmpty}, refreshing=$_isRefreshing');
+    }
     return false;
   }
   _isRefreshing = true;
   try {
+    if (kDebugMode) print('Attempting token refresh...');
     final newToken = await refreshAccessToken(_refreshToken!);
     _authToken = newToken;
     await kv.setString('auth_token', newToken);
+    if (kDebugMode) print('Token refresh successful');
     return true;
-  } catch (_) {
+  } catch (e) {
+    if (kDebugMode) print('Token refresh failed: $e');
     return false;
   } finally {
     _isRefreshing = false;
@@ -179,8 +185,10 @@ Future<String> refreshAccessToken(String refreshToken) async {
     _u('/auth/refresh'),
     headers: {'Content-Type': 'application/json'},
     body: jsonEncode({'refresh_token': refreshToken}),
-  );
-  if (res.statusCode != 200) throw Exception('Token refresh failed');
+  ).timeout(const Duration(seconds: 10));
+  if (res.statusCode != 200) {
+    throw Exception('Token refresh failed with status ${res.statusCode}: ${res.body}');
+  }
   final data = jsonDecode(res.body) as Map<String, dynamic>;
   return data['token'] as String;
 }
