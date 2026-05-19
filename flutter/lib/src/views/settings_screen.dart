@@ -53,13 +53,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _logIssue() async {
-    final ctrl = TextEditingController();
+    String message = '';
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Log an issue'),
         content: TextFormField(
-          controller: ctrl,
           autofocus: true,
           minLines: 3,
           maxLines: 8,
@@ -67,6 +66,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             labelText: 'What went wrong?',
             hintText: 'Steps, expected vs actual, anything helpful...',
           ),
+          onChanged: (v) => message = v,
         ),
         actions: [
           TextButton(
@@ -80,8 +80,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
       ),
     );
-    final message = ctrl.text.trim();
-    ctrl.dispose();
+    message = message.trim();
     if (ok != true || message.isEmpty || !mounted) return;
 
     final platform = kIsWeb
