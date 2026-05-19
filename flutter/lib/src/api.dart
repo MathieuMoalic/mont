@@ -34,7 +34,7 @@ String get baseUrl => _baseUrl;
 
 Future<void> initApi() async {
   final saved = await kv.getString(_kApiBaseUrlKey);
-  
+
   // In debug builds, always prefer the dev default unless explicitly set
   if (kDebugMode) {
     if (saved != null && saved.trim().isNotEmpty && saved != _prodBaseUrl) {
@@ -69,31 +69,44 @@ Map<String, String> _headers() => {
   if (_authToken != null) 'Authorization': 'Bearer $_authToken',
 };
 
-bool _isRefreshing = false;
+Future<bool>? _refreshInFlight;
 
 /// Try to refresh the access token using the stored refresh token.
 /// Returns true if successful.
 Future<bool> _tryRefreshToken() async {
-  if (_refreshToken == null || _refreshToken!.isEmpty || _isRefreshing) {
+  if (_refreshToken == null || _refreshToken!.isEmpty) {
     if (kDebugMode) {
-      print('Token refresh skipped: null=${_refreshToken == null}, empty=${_refreshToken?.isEmpty}, refreshing=$_isRefreshing');
+      print(
+        'Token refresh skipped: null=${_refreshToken == null}, empty=${_refreshToken?.isEmpty}',
+      );
     }
     return false;
   }
-  _isRefreshing = true;
-  try {
-    if (kDebugMode) print('Attempting token refresh...');
-    final newToken = await refreshAccessToken(_refreshToken!);
-    _authToken = newToken;
-    await kv.setString('auth_token', newToken);
-    if (kDebugMode) print('Token refresh successful');
-    return true;
-  } catch (e) {
-    if (kDebugMode) print('Token refresh failed: $e');
-    return false;
-  } finally {
-    _isRefreshing = false;
+
+  final inFlight = _refreshInFlight;
+  if (inFlight != null) {
+    if (kDebugMode) print('Token refresh awaiting in-flight refresh...');
+    return await inFlight;
   }
+
+  Future<bool> doRefresh() async {
+    try {
+      if (kDebugMode) print('Attempting token refresh...');
+      final newToken = await refreshAccessToken(_refreshToken!);
+      _authToken = newToken;
+      await kv.setString('auth_token', newToken);
+      if (kDebugMode) print('Token refresh successful');
+      return true;
+    } catch (e) {
+      if (kDebugMode) print('Token refresh failed: $e');
+      return false;
+    }
+  }
+
+  _refreshInFlight = doRefresh().whenComplete(() {
+    _refreshInFlight = null;
+  });
+  return await _refreshInFlight!;
 }
 
 /// Handle 401 response: try to refresh token and retry, or trigger auth failure
@@ -105,12 +118,13 @@ Future<http.Response> _handleUnauthorized(
     final refreshed = await _tryRefreshToken();
     if (refreshed) {
       // Retry the request with new token
-      return await request();
-    } else {
-      // Refresh failed, trigger auth failure callback
-      onAuthFailure?.call();
-      throw Exception('Session expired. Please log in again.');
+      final retry = await request();
+      if (retry.statusCode != 401) return retry;
     }
+
+    // Refresh failed (or retry still unauthorized), trigger auth failure callback
+    onAuthFailure?.call();
+    throw Exception('Session expired. Please log in again.');
   }
   return res;
 }
@@ -181,13 +195,17 @@ Future<LoginResult> login({required String password}) async {
 }
 
 Future<String> refreshAccessToken(String refreshToken) async {
-  final res = await http.post(
-    _u('/auth/refresh'),
-    headers: {'Content-Type': 'application/json'},
-    body: jsonEncode({'refresh_token': refreshToken}),
-  ).timeout(const Duration(seconds: 10));
+  final res = await http
+      .post(
+        _u('/auth/refresh'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'refresh_token': refreshToken}),
+      )
+      .timeout(const Duration(seconds: 10));
   if (res.statusCode != 200) {
-    throw Exception('Token refresh failed with status ${res.statusCode}: ${res.body}');
+    throw Exception(
+      'Token refresh failed with status ${res.statusCode}: ${res.body}',
+    );
   }
   final data = jsonDecode(res.body) as Map<String, dynamic>;
   return data['token'] as String;
@@ -615,16 +633,19 @@ Future<FoodLookupResult> lookupFoodByBarcode(String barcode) async {
 
 /// Search for foods by name. Returns local database results first (if available),
 /// then falls back to online lookup via Open Food Facts.
-Future<List<FoodLookupResult>> lookupFoodsByQuery(String query, {int? limit}) async {
+Future<List<FoodLookupResult>> lookupFoodsByQuery(
+  String query, {
+  int? limit,
+}) async {
   final q = query.trim();
   if (q.isEmpty) throw Exception('Query cannot be empty');
-  
+
   final params = <String>['q=${Uri.encodeQueryComponent(q)}'];
   if (limit != null && limit > 0) {
     params.add('limit=${limit.clamp(1, 20)}');
   }
   final suffix = '?${params.join('&')}';
-  
+
   final res = await _handleUnauthorized(
     () => http.get(_u('/calories/foods/lookup$suffix'), headers: _headers()),
   );
@@ -632,14 +653,17 @@ Future<List<FoodLookupResult>> lookupFoodsByQuery(String query, {int? limit}) as
     throw Exception('Invalid query parameters');
   }
   if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
-  
+
   return (jsonDecode(res.body) as List)
       .map((e) => FoodLookupResult.fromJson(e as Map<String, dynamic>))
       .toList();
 }
 
 /// Extract food macros using LLM based on food name
-Future<Map<String, dynamic>> extractMacrosWithLlm(String query, [String? dataType]) async {
+Future<Map<String, dynamic>> extractMacrosWithLlm(
+  String query, [
+  String? dataType,
+]) async {
   final q = query.trim();
   if (q.isEmpty) throw Exception('Food name cannot be empty');
 
@@ -650,7 +674,10 @@ Future<Map<String, dynamic>> extractMacrosWithLlm(String query, [String? dataTyp
   final suffix = '?${Uri(queryParameters: params).query}';
 
   final res = await _handleUnauthorized(
-    () => http.get(_u('/calories/foods/extract-macros$suffix'), headers: _headers()),
+    () => http.get(
+      _u('/calories/foods/extract-macros$suffix'),
+      headers: _headers(),
+    ),
   );
   if (res.statusCode == 400) {
     throw Exception('Invalid food name');
@@ -670,7 +697,10 @@ Future<Map<String, dynamic>> extractMacrosWithLlm(String query, [String? dataTyp
   };
 }
 
-Future<List<Map<String, dynamic>>> searchUSDAFoods(String query, [String? dataType]) async {
+Future<List<Map<String, dynamic>>> searchUSDAFoods(
+  String query, [
+  String? dataType,
+]) async {
   final q = query.trim();
   if (q.isEmpty) throw Exception('Food name cannot be empty');
 
@@ -681,7 +711,8 @@ Future<List<Map<String, dynamic>>> searchUSDAFoods(String query, [String? dataTy
   final suffix = '?${Uri(queryParameters: params).query}';
 
   final res = await _handleUnauthorized(
-    () => http.get(_u('/calories/foods/search-usda$suffix'), headers: _headers()),
+    () =>
+        http.get(_u('/calories/foods/search-usda$suffix'), headers: _headers()),
   );
   if (res.statusCode == 400) {
     throw Exception('Invalid food name');
@@ -696,14 +727,16 @@ Future<List<Map<String, dynamic>>> searchUSDAFoods(String query, [String? dataTy
   if (results == null) throw Exception('Invalid response format');
 
   return results
-      .map((r) => {
-            'fdc_id': r['fdc_id'] as String,
-            'description': r['description'] as String,
-            'data_type': r['data_type'] as String,
-            'protein_per_100g': r['protein_per_100g'] as num?,
-            'carbs_per_100g': r['carbs_per_100g'] as num?,
-            'fats_per_100g': r['fats_per_100g'] as num?,
-          })
+      .map(
+        (r) => {
+          'fdc_id': r['fdc_id'] as String,
+          'description': r['description'] as String,
+          'data_type': r['data_type'] as String,
+          'protein_per_100g': r['protein_per_100g'] as num?,
+          'carbs_per_100g': r['carbs_per_100g'] as num?,
+          'fats_per_100g': r['fats_per_100g'] as num?,
+        },
+      )
       .toList();
 }
 
@@ -952,10 +985,7 @@ Future<List<DailyHealth>> listDailyHealth() async {
       .toList();
 }
 
-Future<List<BodyPicture>> listBodyPictures({
-  String? from,
-  String? to,
-}) async {
+Future<List<BodyPicture>> listBodyPictures({String? from, String? to}) async {
   String query = '/health/pictures';
   final params = <String>[];
   if (from != null) params.add('from=$from');
@@ -999,10 +1029,7 @@ Future<void> uploadBodyPicture({
 
 Future<void> deleteBodyPicture(String pictureDate) async {
   final res = await _handleUnauthorized(
-    () => http.delete(
-      _u('/health/pictures/$pictureDate'),
-      headers: _headers(),
-    ),
+    () => http.delete(_u('/health/pictures/$pictureDate'), headers: _headers()),
   );
   if (res.statusCode != 204) throw Exception('HTTP ${res.statusCode}');
 }

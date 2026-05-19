@@ -9,8 +9,12 @@ class Auth {
   static String? _refreshToken;
 
   static Future<void> init() async {
-    _token = await kv.getString(_kAuthTokenKey);
-    _refreshToken = await kv.getString(_kRefreshTokenKey);
+    final token = await kv.getString(_kAuthTokenKey);
+    final refreshToken = await kv.getString(_kRefreshTokenKey);
+    _token = (token == null || token.isEmpty) ? null : token;
+    _refreshToken = (refreshToken == null || refreshToken.isEmpty)
+        ? null
+        : refreshToken;
     api.setAuthToken(_token);
     api.setRefreshToken(_refreshToken);
   }
