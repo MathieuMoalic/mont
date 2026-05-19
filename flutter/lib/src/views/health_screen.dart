@@ -33,6 +33,11 @@ class _HealthScreenState extends State<HealthScreen> {
   bool _syncing = false;
   _Range _range = _Range.twoWeeks;
 
+  double? _parseWeightKg(String raw) {
+    final v = raw.trim().replaceAll(',', '.');
+    return double.tryParse(v);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -87,19 +92,19 @@ class _HealthScreenState extends State<HealthScreen> {
   }
 
   Future<void> _addWeight() async {
-    double? entered;
+    final ctrl = TextEditingController();
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Log body mass'),
         content: TextFormField(
           autofocus: true,
+          controller: ctrl,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           decoration: const InputDecoration(
             labelText: 'Body mass (kg)',
             suffixText: 'kg',
           ),
-          onChanged: (v) => entered = double.tryParse(v),
           onFieldSubmitted: (_) => Navigator.pop(ctx, true),
         ),
         actions: [
@@ -114,11 +119,19 @@ class _HealthScreenState extends State<HealthScreen> {
         ],
       ),
     );
-    if (confirmed != true || entered == null || entered! <= 0 || !mounted)
+    final entered = _parseWeightKg(ctrl.text);
+    ctrl.dispose();
+    if (confirmed != true || entered == null || entered <= 0 || !mounted) {
+      if (confirmed == true && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Enter a valid body mass (kg)')),
+        );
+      }
       return;
+    }
     try {
-      await api.createWeightEntry(weightKg: entered!);
-      _load();
+      await api.createWeightEntry(weightKg: entered);
+      await _load();
     } catch (e) {
       if (mounted)
         ScaffoldMessenger.of(
@@ -172,13 +185,11 @@ class _HealthScreenState extends State<HealthScreen> {
 
       // Get today's date in YYYY-MM-DD format
       final now = DateTime.now();
-      final today = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+      final today =
+          '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
 
       // Upload to backend
-      await api.uploadBodyPicture(
-        pictureDate: today,
-        base64Data: base64Data,
-      );
+      await api.uploadBodyPicture(pictureDate: today, base64Data: base64Data);
 
       if (mounted) {
         Navigator.pop(context); // Close upload dialog
@@ -190,9 +201,9 @@ class _HealthScreenState extends State<HealthScreen> {
     } catch (e) {
       if (mounted) {
         Navigator.pop(context); // Close upload dialog
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Upload failed: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Upload failed: $e')));
       }
     }
   }
@@ -236,7 +247,7 @@ class _HealthScreenState extends State<HealthScreen> {
                 labelText: 'Body mass (kg)',
                 suffixText: 'kg',
               ),
-              onChanged: (v) => newKg = double.tryParse(v),
+              onChanged: (v) => newKg = _parseWeightKg(v),
             ),
             const SizedBox(height: 8),
             TextFormField(
@@ -259,16 +270,23 @@ class _HealthScreenState extends State<HealthScreen> {
         ],
       ),
     );
+    final parsedKg = _parseWeightKg(kgCtrl.text);
     kgCtrl.dispose();
     dateCtrl.dispose();
     if (confirmed != true || !mounted) return;
+    if (parsedKg == null || parsedKg <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter a valid body mass (kg)')),
+      );
+      return;
+    }
     try {
       final measuredAt = newDate != null && newDate!.isNotEmpty
           ? '${newDate!}T12:00:00Z'
           : null;
       await api.updateWeightEntry(
         entry.id,
-        weightKg: newKg,
+        weightKg: parsedKg,
         measuredAt: measuredAt,
       );
       _load();
