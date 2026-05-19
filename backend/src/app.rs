@@ -1,5 +1,5 @@
 use crate::rate_limit::{RateLimitState, rate_limit_middleware};
-use crate::routes::{auth, calories, exercises, health, runs, weight, workouts};
+use crate::routes::{auth, calories, exercises, health, issues, runs, weight, workouts};
 use crate::{
     auth_middleware::require_auth,
     config::Config,
@@ -107,6 +107,10 @@ pub fn build_app(state: AppState) -> Router {
         .route(
             "/weight/{id}",
             delete(weight::delete_weight_entry).patch(weight::update_weight_entry),
+        )
+        .route(
+            "/issues",
+            get(issues::list_issue_reports).post(issues::create_issue_report),
         )
         .route(
             "/calories",

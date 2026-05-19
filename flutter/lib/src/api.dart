@@ -435,6 +435,49 @@ Future<WeightEntry> createWeightEntry({
   return WeightEntry.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
 }
 
+// ── Issue reports ────────────────────────────────────────────────────────────
+
+Future<void> createIssueReport({
+  required String message,
+  String? clientVersion,
+  String? serverVersion,
+  String? platform,
+  String? baseUrl,
+  String? route,
+  String? extraJson,
+}) async {
+  final res = await _handleUnauthorized(
+    () => http.post(
+      _u('/issues'),
+      headers: _headers(),
+      body: jsonEncode({
+        'message': message,
+        if (clientVersion != null) 'client_version': clientVersion,
+        if (serverVersion != null) 'server_version': serverVersion,
+        if (platform != null) 'platform': platform,
+        if (baseUrl != null) 'base_url': baseUrl,
+        if (route != null) 'route': route,
+        if (extraJson != null) 'extra_json': extraJson,
+      }),
+    ),
+  );
+  if (res.statusCode != 201) throw Exception('HTTP ${res.statusCode}');
+}
+
+Future<List<Map<String, dynamic>>> listIssueReports({
+  int limit = 50,
+  int offset = 0,
+}) async {
+  final res = await _handleUnauthorized(
+    () => http.get(
+      _u('/issues?limit=$limit&offset=$offset'),
+      headers: _headers(),
+    ),
+  );
+  if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
+  return (jsonDecode(res.body) as List).cast<Map<String, dynamic>>();
+}
+
 Future<void> deleteWeightEntry(int id) async {
   final res = await _handleUnauthorized(
     () => http.delete(_u('/weight/$id'), headers: _headers()),

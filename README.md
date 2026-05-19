@@ -51,6 +51,10 @@ flutter run -d <device-id>
 
 ## Development
 
+### Issue reports
+
+The mobile app can submit issue reports from **Settings → Log an issue**. Reports are stored in the backend SQLite database in the `issue_reports` table (migration `backend/migrations/00029_issue_reports.sql`), and can be fetched via the authenticated `GET /issues` endpoint.
+
 ```bash
 # Backend checks
 cd backend && cargo clippy -- -D warnings && cargo test
