@@ -20,9 +20,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   int _smoothing = kSmoothingDefault;
   String? _clientVersion;
   String? _serverVersion;
-  String? _issueError;
-  bool _loadingIssues = false;
-  List<Map<String, dynamic>>? _issues;
 
   @override
   void initState() {
@@ -108,90 +105,109 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  Future<void> _loadIssues() async {
-    setState(() {
-      _loadingIssues = true;
-      _issueError = null;
-    });
-    try {
-      final issues = await api.listIssueReports(limit: 50, offset: 0);
-      if (!mounted) return;
-      setState(() => _issues = issues);
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _issueError = e.toString());
-    } finally {
-      if (!mounted) return;
-      setState(() => _loadingIssues = false);
-    }
-  }
-
   void _showIssues() {
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Issue reports',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                  ),
-                  IconButton(
-                    tooltip: 'Refresh',
-                    onPressed: _loadingIssues ? null : _loadIssues,
-                    icon: const Icon(Icons.refresh),
-                  ),
-                ],
-              ),
-              if (_loadingIssues)
-                const Padding(
-                  padding: EdgeInsets.only(top: 12),
-                  child: Center(child: CircularProgressIndicator()),
-                )
-              else if (_issueError != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 12),
-                  child: Text('Failed to load: $_issueError'),
-                )
-              else
-                Expanded(
-                  child: ListView.separated(
-                    itemCount: (_issues ?? const []).length,
-                    separatorBuilder: (_, __) => const Divider(height: 1),
-                    itemBuilder: (_, i) {
-                      final r = _issues![i];
-                      final createdAt = (r['created_at'] ?? '').toString();
-                      final message = (r['message'] ?? '').toString();
-                      final platform = (r['platform'] ?? '').toString();
-                      return ListTile(
-                        title: Text(
-                          message,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
+      builder: (ctx) {
+        bool loading = false;
+        String? error;
+        List<Map<String, dynamic>>? issues;
+
+        Future<void> refresh(
+          void Function(void Function()) setModalState,
+        ) async {
+          setModalState(() {
+            loading = true;
+            error = null;
+          });
+          try {
+            final res = await api.listIssueReports(limit: 50, offset: 0);
+            setModalState(() => issues = res);
+          } catch (e) {
+            setModalState(() => error = e.toString());
+          } finally {
+            setModalState(() => loading = false);
+          }
+        }
+
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            if (issues == null && !loading && error == null) {
+              // Kick off initial load once the sheet is built.
+              Future.microtask(() => refresh(setModalState));
+            }
+
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Issue reports',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
                         ),
-                        subtitle: Text(
-                          [
-                            if (createdAt.isNotEmpty) createdAt,
-                            if (platform.isNotEmpty) platform,
-                          ].join(' • '),
+                        IconButton(
+                          tooltip: 'Refresh',
+                          onPressed: loading
+                              ? null
+                              : () => refresh(setModalState),
+                          icon: const Icon(Icons.refresh),
                         ),
-                      );
-                    },
-                  ),
+                      ],
+                    ),
+                    if (loading)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 12),
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                    else if (error != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: Text('Failed to load: $error'),
+                      )
+                    else
+                      Expanded(
+                        child: ListView.separated(
+                          itemCount: (issues ?? const []).length,
+                          separatorBuilder: (_, __) => const Divider(height: 1),
+                          itemBuilder: (_, i) {
+                            final r = issues![i];
+                            final createdAt = (r['created_at'] ?? '')
+                                .toString();
+                            final message = (r['message'] ?? '').toString();
+                            final platform = (r['platform'] ?? '').toString();
+                            return ListTile(
+                              title: Text(
+                                message,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              subtitle: Text(
+                                [
+                                  if (createdAt.isNotEmpty) createdAt,
+                                  if (platform.isNotEmpty) platform,
+                                ].join(' • '),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                  ],
                 ),
-            ],
-          ),
-        ),
-      ),
+              ),
+            );
+          },
+        );
+      },
     );
-    if (_issues == null && !_loadingIssues) _loadIssues();
   }
 
   @override
