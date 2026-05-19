@@ -92,19 +92,19 @@ class _HealthScreenState extends State<HealthScreen> {
   }
 
   Future<void> _addWeight() async {
-    final ctrl = TextEditingController();
+    String raw = '';
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Log body mass'),
         content: TextFormField(
           autofocus: true,
-          controller: ctrl,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           decoration: const InputDecoration(
             labelText: 'Body mass (kg)',
             suffixText: 'kg',
           ),
+          onChanged: (v) => raw = v,
           onFieldSubmitted: (_) => Navigator.pop(ctx, true),
         ),
         actions: [
@@ -119,8 +119,7 @@ class _HealthScreenState extends State<HealthScreen> {
         ],
       ),
     );
-    final entered = _parseWeightKg(ctrl.text);
-    ctrl.dispose();
+    final entered = _parseWeightKg(raw);
     if (confirmed != true || entered == null || entered <= 0 || !mounted) {
       if (confirmed == true && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -271,8 +270,10 @@ class _HealthScreenState extends State<HealthScreen> {
       ),
     );
     final parsedKg = _parseWeightKg(kgCtrl.text);
-    kgCtrl.dispose();
-    dateCtrl.dispose();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      kgCtrl.dispose();
+      dateCtrl.dispose();
+    });
     if (confirmed != true || !mounted) return;
     if (parsedKg == null || parsedKg <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
