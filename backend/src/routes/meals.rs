@@ -107,8 +107,8 @@ fn validate_day(day: &str) -> bool {
             .all(|(i, b)| (i == 4 || i == 7) || b.is_ascii_digit())
 }
 
+#[allow(clippy::cast_possible_truncation)]
 fn kcal_from_macros(protein_g: f64, carbs_g: f64, fats_g: f64) -> i64 {
-    #[allow(clippy::cast_possible_truncation)]
     (protein_g * 4.0 + carbs_g * 4.0 + fats_g * 9.0).round() as i64
 }
 
@@ -344,7 +344,7 @@ pub async fn update_meal(
     }
 
     tx.commit().await?;
-    Ok(get_meal(State(state), Path(id)).await?.0)
+    Ok(get_meal(State(state), Path(id)).await?)
 }
 
 /// # Errors
