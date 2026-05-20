@@ -3,6 +3,7 @@ pub mod calories;
 pub mod exercises;
 pub mod health;
 pub mod issues;
+pub mod meals;
 pub mod runs;
 pub mod weight;
 pub mod workouts;

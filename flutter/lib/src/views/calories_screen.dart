@@ -220,7 +220,8 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
     String? error;
     String? macroSource;
     bool lookupBusy = false;
-    String? usda_search_state; // null, 'foundation_empty', 'legacy_empty', 'found'
+    String?
+    usda_search_state; // null, 'foundation_empty', 'legacy_empty', 'found'
 
     final saved = await showDialog<bool>(
       context: context,
@@ -317,9 +318,15 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                 setLocalState(() {
                   nameController.text = (macros['name'] as String?) ?? name;
                   foodQuery = (macros['name'] as String?) ?? name;
-                  proteinPer100Controller.text = _fmt(macros['protein_per_100g'] ?? 0);
-                  carbsPer100Controller.text = _fmt(macros['carbs_per_100g'] ?? 0);
-                  fatsPer100Controller.text = _fmt(macros['fats_per_100g'] ?? 0);
+                  proteinPer100Controller.text = _fmt(
+                    macros['protein_per_100g'] ?? 0,
+                  );
+                  carbsPer100Controller.text = _fmt(
+                    macros['carbs_per_100g'] ?? 0,
+                  );
+                  fatsPer100Controller.text = _fmt(
+                    macros['fats_per_100g'] ?? 0,
+                  );
                   macroSource = (macros['source'] as String?) ?? 'unknown';
                   if (weightController.text.trim().isEmpty) {
                     weightController.text = '100';
@@ -348,19 +355,19 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
             ) async {
               final name = foodName.trim();
               if (name.isEmpty) return;
-              
+
               setLocalState(() {
                 lookupBusy = true;
                 error = null;
                 macroSource = null;
               });
-              
+
               try {
                 // First, search for results
                 final results = await api.searchUSDAFoods(name, dataType);
-                
+
                 if (!context.mounted) return;
-                
+
                 if (results.isEmpty) {
                   // No results, move to next dataset or LLM
                   setLocalState(() {
@@ -400,17 +407,22 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
             ) async {
               try {
                 // Extract macros directly from search result (already available from USDA API)
-                final protein = (result['protein_per_100g'] as num?)?.toDouble() ?? 0.0;
-                final carbs = (result['carbs_per_100g'] as num?)?.toDouble() ?? 0.0;
-                final fats = (result['fats_per_100g'] as num?)?.toDouble() ?? 0.0;
-                
+                final protein =
+                    (result['protein_per_100g'] as num?)?.toDouble() ?? 0.0;
+                final carbs =
+                    (result['carbs_per_100g'] as num?)?.toDouble() ?? 0.0;
+                final fats =
+                    (result['fats_per_100g'] as num?)?.toDouble() ?? 0.0;
+
                 setLocalState(() {
-                  nameController.text = (result['description'] as String?) ?? foodName;
+                  nameController.text =
+                      (result['description'] as String?) ?? foodName;
                   foodQuery = (result['description'] as String?) ?? foodName;
                   proteinPer100Controller.text = _fmt(protein);
                   carbsPer100Controller.text = _fmt(carbs);
                   fatsPer100Controller.text = _fmt(fats);
-                  macroSource = 'usda_${dataType.toLowerCase().replaceAll(' ', '_')}';
+                  macroSource =
+                      'usda_${dataType.toLowerCase().replaceAll(' ', '_')}';
                   usda_search_state = 'found';
                   usda_results = [];
                   if (weightController.text.trim().isEmpty) {
@@ -442,415 +454,437 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
               title: null,
               content: Column(
                 mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Section dropdown removed for speed; defaults to the section
-                    // that the user tapped (or the existing entry's section).
-                    if (scannedBarcode != null && scannedBarcode!.isNotEmpty)
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: Padding(
-                          padding: const EdgeInsets.only(bottom: 6),
-                          child: Text(
-                            'Barcode: $scannedBarcode',
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
+                children: [
+                  // Section dropdown removed for speed; defaults to the section
+                  // that the user tapped (or the existing entry's section).
+                  if (scannedBarcode != null && scannedBarcode!.isNotEmpty)
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Text(
+                          'Barcode: $scannedBarcode',
+                          style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ),
-                    if (scannedBarcode != null && error != null)
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: Padding(
-                          padding: const EdgeInsets.only(bottom: 6),
-                          child: Text(
-                            'Not found. Type name + macros, Save to cache this barcode.',
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                        ),
-                      ),
-                    TextField(
-                      controller: nameController,
-                      focusNode: nameFocus,
-                      autofocus: true,
-                      decoration: denseDecoration(
-                        InputDecoration(
-                          labelText: 'Name',
-                          prefixIcon: const Icon(Icons.search),
-                          suffixIcon: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              IconButton(
-                                tooltip: 'Scan barcode',
-                                icon: const Icon(Icons.qr_code_scanner),
-                                onPressed: () async {
-                                  final scanned = await Navigator.of(context)
-                                      .push<String>(
-                                        MaterialPageRoute(
-                                          builder: (_) => const BarcodeScanScreen(),
-                                        ),
-                                      );
-                                  if (scanned == null || scanned.trim().isEmpty) {
-                                    return;
-                                  }
-                                  await lookupAndFill(scanned);
-                                },
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      onChanged: (v) {
-                        setLocalState(() => foodQuery = v);
-                        final q = v.trim();
-                        if (existing != null) return;
-                        if (q.length < 2) {
-                          setLocalState(() => matches = <Food>[]);
-                          return;
-                        }
-                        final mySeq = ++searchSeq;
-                        api
-                            .listFoods(query: q)
-                            .then((results) {
-                              if (!context.mounted) return;
-                              if (mySeq != searchSeq) return;
-                              setLocalState(
-                                () => matches = results.take(4).toList(),
-                              );
-                            })
-                            .catchError((_) {});
-                      },
                     ),
-                    if (existing == null && (matches.isNotEmpty || usda_results.isNotEmpty || lookupBusy && usda_search_state != null))
-                      Container(
-                        margin: const EdgeInsets.only(top: 6, bottom: 4),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 6,
+                  if (scannedBarcode != null && error != null)
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Text(
+                          'Not found. Type name + macros, Save to cache this barcode.',
+                          style: Theme.of(context).textTheme.bodySmall,
                         ),
-                        decoration: BoxDecoration(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.surfaceContainerHighest,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Column(
+                      ),
+                    ),
+                  TextField(
+                    controller: nameController,
+                    focusNode: nameFocus,
+                    autofocus: true,
+                    decoration: denseDecoration(
+                      InputDecoration(
+                        labelText: 'Name',
+                        prefixIcon: const Icon(Icons.search),
+                        suffixIcon: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            // Show loading spinner if searching USDA
-                            if (lookupBusy && usda_results.isEmpty)
-                              Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 16),
-                                child: Column(
-                                  children: [
-                                    const SizedBox(
-                                      height: 24,
-                                      width: 24,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
+                            IconButton(
+                              tooltip: 'Scan barcode',
+                              icon: const Icon(Icons.qr_code_scanner),
+                              onPressed: () async {
+                                final scanned = await Navigator.of(context)
+                                    .push<String>(
+                                      MaterialPageRoute(
+                                        builder: (_) =>
+                                            const BarcodeScanScreen(),
                                       ),
+                                    );
+                                if (scanned == null || scanned.trim().isEmpty) {
+                                  return;
+                                }
+                                await lookupAndFill(scanned);
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    onChanged: (v) {
+                      setLocalState(() => foodQuery = v);
+                      final q = v.trim();
+                      if (existing != null) return;
+                      if (q.length < 2) {
+                        setLocalState(() => matches = <Food>[]);
+                        return;
+                      }
+                      final mySeq = ++searchSeq;
+                      api
+                          .listFoods(query: q)
+                          .then((results) {
+                            if (!context.mounted) return;
+                            if (mySeq != searchSeq) return;
+                            setLocalState(
+                              () => matches = results.take(4).toList(),
+                            );
+                          })
+                          .catchError((_) {});
+                    },
+                  ),
+                  if (existing == null &&
+                      (matches.isNotEmpty ||
+                          usda_results.isNotEmpty ||
+                          lookupBusy && usda_search_state != null))
+                    Container(
+                      margin: const EdgeInsets.only(top: 6, bottom: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Show loading spinner if searching USDA
+                          if (lookupBusy && usda_results.isEmpty)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              child: Column(
+                                children: [
+                                  const SizedBox(
+                                    height: 24,
+                                    width: 24,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
                                     ),
-                                    const SizedBox(height: 12),
-                                    Text(
-                                      'Searching ${usda_search_state == 'showing_results' ? 'USDA' : 'database'}...',
-                                      style: Theme.of(context).textTheme.bodySmall,
-                                    ),
-                                  ],
-                                ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    'Searching ${usda_search_state == 'showing_results' ? 'USDA' : 'database'}...',
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodySmall,
+                                  ),
+                                ],
                               ),
-                            // Show USDA results if available
-                            if (usda_results.isNotEmpty)
-                              for (int idx = 0; idx < usda_results.length; idx++) ...[
-                                InkWell(
-                                  borderRadius: BorderRadius.circular(6),
-                                  onTap: lookupBusy
-                                      ? null
-                                      : () => _selectUSDAResult(
+                            ),
+                          // Show USDA results if available
+                          if (usda_results.isNotEmpty)
+                            for (
+                              int idx = 0;
+                              idx < usda_results.length;
+                              idx++
+                            ) ...[
+                              InkWell(
+                                borderRadius: BorderRadius.circular(6),
+                                onTap: lookupBusy
+                                    ? null
+                                    : () => _selectUSDAResult(
                                         context,
                                         foodQuery,
-                                        usda_results[idx]['data_type'] ?? 'Foundation',
+                                        usda_results[idx]['data_type'] ??
+                                            'Foundation',
                                         usda_results[idx],
                                         setLocalState,
                                       ),
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                      vertical: 12,
-                                    ),
-                                    child: Text(
-                                      usda_results[idx]['description'] ?? 'Unknown',
-                                      maxLines: 3,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: Theme.of(context).textTheme.bodyMedium,
-                                    ),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 12,
+                                  ),
+                                  child: Text(
+                                    usda_results[idx]['description'] ??
+                                        'Unknown',
+                                    maxLines: 3,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodyMedium,
                                   ),
                                 ),
-                                if (idx != usda_results.length - 1)
-                                  Divider(
-                                    height: 1,
-                                    color: Theme.of(context).colorScheme.outlineVariant,
-                                  ),
-                              ],
-                            // Show "Extend search" button if USDA results displayed
-                            if (usda_results.isNotEmpty && usda_search_state == 'showing_results') ...[
-                              const Divider(height: 8),
-                              Padding(
-                                padding: const EdgeInsets.only(top: 4),
-                                child: SizedBox(
-                                  width: double.infinity,
-                                  child: FilledButton.tonal(
-                                    onPressed: lookupBusy
-                                        ? null
-                                        : () => _searchUSDAAndFallback(
+                              ),
+                              if (idx != usda_results.length - 1)
+                                Divider(
+                                  height: 1,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.outlineVariant,
+                                ),
+                            ],
+                          // Show "Extend search" button if USDA results displayed
+                          if (usda_results.isNotEmpty &&
+                              usda_search_state == 'showing_results') ...[
+                            const Divider(height: 8),
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: SizedBox(
+                                width: double.infinity,
+                                child: FilledButton.tonal(
+                                  onPressed: lookupBusy
+                                      ? null
+                                      : () => _searchUSDAAndFallback(
                                           context,
                                           foodQuery,
-                                          usda_results[0]['data_type'] == 'Foundation'
+                                          usda_results[0]['data_type'] ==
+                                                  'Foundation'
                                               ? 'SR Legacy'
                                               : 'Foundation',
                                           setLocalState,
                                         ),
-                                    child: Text(
-                                      usda_results[0]['data_type'] == 'Foundation'
-                                          ? 'Extend search to SR Legacy'
-                                          : 'Estimate with AI',
-                                    ),
+                                  child: Text(
+                                    usda_results[0]['data_type'] == 'Foundation'
+                                        ? 'Extend search to SR Legacy'
+                                        : 'Estimate with AI',
                                   ),
                                 ),
                               ),
-                            ],
-                            // Show local DB results only if no USDA search in progress
-                            if (usda_results.isEmpty && !lookupBusy)
-                              for (
-                                int index = 0;
-                                index < matches.length;
-                                index++
-                              ) ...[
-                                InkWell(
-                                  borderRadius: BorderRadius.circular(6),
-                                  onTap: () {
-                                    final saved = matches[index];
-                                    setLocalState(() {
-                                      nameController.text = saved.name;
-                                      foodQuery = saved.name;
-                                      proteinPer100Controller.text = _fmt(
-                                        saved.proteinPer100G,
-                                      );
-                                      carbsPer100Controller.text = _fmt(
-                                        saved.carbsPer100G,
-                                      );
-                                      fatsPer100Controller.text = _fmt(
-                                        saved.fatsPer100G,
-                                      );
-                                      weightController.text = _fmt(
-                                        saved.lastWeightG,
-                                      );
-                                    });
-                                    weightFocus.requestFocus();
-                                    weightController.selection = TextSelection(
-                                      baseOffset: 0,
-                                      extentOffset: weightController.text.length,
-                                    );
-                                  },
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 4,
-                                      vertical: 4,
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        Expanded(
-                                          child: Text(
-                                            matches[index].name,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          '${_fmt(matches[index].lastWeightG)}g',
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                                if (index != matches.length - 1)
-                                  Divider(
-                                    height: 1,
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.outlineVariant,
-                                  ),
-                              ],
+                            ),
                           ],
-                        ),
-                      ),
-                    if (existing == null && foodQuery.isNotEmpty && (matches.isEmpty || matches.length < 4))
-                      Column(
-                        children: [
-                                                     if (usda_search_state == null && usda_results.isEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 6, bottom: 4),
-                              child: SizedBox(
-                                width: double.infinity,
-                                child: FilledButton.tonal(
-                                  onPressed: lookupBusy
-                                      ? null
-                                      : () => _searchUSDAAndFallback(
-                                            context,
-                                            foodQuery,
-                                            'Foundation',
-                                            setLocalState,
-                                          ),
-                                  child: lookupBusy && usda_search_state != 'found'
-                                      ? const SizedBox(
-                                          height: 16,
-                                          width: 16,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                          ),
-                                        )
-                                      : const Text('Search USDA Foundation'),
+                          // Show local DB results only if no USDA search in progress
+                          if (usda_results.isEmpty && !lookupBusy)
+                            for (
+                              int index = 0;
+                              index < matches.length;
+                              index++
+                            ) ...[
+                              InkWell(
+                                borderRadius: BorderRadius.circular(6),
+                                onTap: () {
+                                  final saved = matches[index];
+                                  setLocalState(() {
+                                    nameController.text = saved.name;
+                                    foodQuery = saved.name;
+                                    proteinPer100Controller.text = _fmt(
+                                      saved.proteinPer100G,
+                                    );
+                                    carbsPer100Controller.text = _fmt(
+                                      saved.carbsPer100G,
+                                    );
+                                    fatsPer100Controller.text = _fmt(
+                                      saved.fatsPer100G,
+                                    );
+                                    weightController.text = _fmt(
+                                      saved.lastWeightG,
+                                    );
+                                  });
+                                  weightFocus.requestFocus();
+                                  weightController.selection = TextSelection(
+                                    baseOffset: 0,
+                                    extentOffset: weightController.text.length,
+                                  );
+                                },
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 4,
+                                    vertical: 4,
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          matches[index].name,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        '${_fmt(matches[index].lastWeightG)}g',
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
-                            ),
-                                                     if (usda_search_state == 'foundation_empty' && usda_results.isEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 6, bottom: 4),
-                              child: SizedBox(
-                                width: double.infinity,
-                                child: FilledButton.tonal(
-                                  onPressed: lookupBusy
-                                      ? null
-                                      : () => _searchUSDAAndFallback(
-                                            context,
-                                            foodQuery,
-                                            'SR Legacy',
-                                            setLocalState,
-                                          ),
-                                  child: lookupBusy
-                                      ? const SizedBox(
-                                          height: 16,
-                                          width: 16,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                          ),
-                                        )
-                                      : const Text('Extend search to SR Legacy'),
+                              if (index != matches.length - 1)
+                                Divider(
+                                  height: 1,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.outlineVariant,
                                 ),
-                              ),
-                            ),
-                          if (usda_search_state == 'legacy_empty')
-                            Padding(
-                              padding: const EdgeInsets.only(top: 6, bottom: 4),
-                              child: SizedBox(
-                                width: double.infinity,
-                                child: FilledButton.tonal(
-                                  onPressed: lookupBusy
-                                      ? null
-                                      : () => _extractMacrosWithLlm(
-                                            context,
-                                            foodQuery,
-                                            setLocalState,
-                                          ),
-                                  child: lookupBusy
-                                      ? const SizedBox(
-                                          height: 16,
-                                          width: 16,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                          ),
-                                        )
-                                      : const Text('Estimate with AI'),
-                                ),
-                              ),
-                            ),
+                            ],
                         ],
                       ),
-                    TextField(
-                      controller: proteinPer100Controller,
-                      decoration: denseDecoration(
-                        const InputDecoration(
-                          labelText: 'Protein per 100g (g)',
-                        ).copyWith(
-                          prefixIcon: const Icon(
-                            Icons.circle,
-                            color: _proteinColor,
-                            size: 12,
+                    ),
+                  if (existing == null &&
+                      foodQuery.isNotEmpty &&
+                      (matches.isEmpty || matches.length < 4))
+                    Column(
+                      children: [
+                        if (usda_search_state == null && usda_results.isEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 6, bottom: 4),
+                            child: SizedBox(
+                              width: double.infinity,
+                              child: FilledButton.tonal(
+                                onPressed: lookupBusy
+                                    ? null
+                                    : () => _searchUSDAAndFallback(
+                                        context,
+                                        foodQuery,
+                                        'Foundation',
+                                        setLocalState,
+                                      ),
+                                child:
+                                    lookupBusy && usda_search_state != 'found'
+                                    ? const SizedBox(
+                                        height: 16,
+                                        width: 16,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Text('Search USDA Foundation'),
+                              ),
+                            ),
                           ),
-                          labelStyle: const TextStyle(color: _proteinColor),
+                        if (usda_search_state == 'foundation_empty' &&
+                            usda_results.isEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 6, bottom: 4),
+                            child: SizedBox(
+                              width: double.infinity,
+                              child: FilledButton.tonal(
+                                onPressed: lookupBusy
+                                    ? null
+                                    : () => _searchUSDAAndFallback(
+                                        context,
+                                        foodQuery,
+                                        'SR Legacy',
+                                        setLocalState,
+                                      ),
+                                child: lookupBusy
+                                    ? const SizedBox(
+                                        height: 16,
+                                        width: 16,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Text('Extend search to SR Legacy'),
+                              ),
+                            ),
+                          ),
+                        if (usda_search_state == 'legacy_empty')
+                          Padding(
+                            padding: const EdgeInsets.only(top: 6, bottom: 4),
+                            child: SizedBox(
+                              width: double.infinity,
+                              child: FilledButton.tonal(
+                                onPressed: lookupBusy
+                                    ? null
+                                    : () => _extractMacrosWithLlm(
+                                        context,
+                                        foodQuery,
+                                        setLocalState,
+                                      ),
+                                child: lookupBusy
+                                    ? const SizedBox(
+                                        height: 16,
+                                        width: 16,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Text('Estimate with AI'),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  TextField(
+                    controller: proteinPer100Controller,
+                    decoration: denseDecoration(
+                      const InputDecoration(
+                        labelText: 'Protein per 100g (g)',
+                      ).copyWith(
+                        prefixIcon: const Icon(
+                          Icons.circle,
+                          color: _proteinColor,
+                          size: 12,
                         ),
-                      ),
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
+                        labelStyle: const TextStyle(color: _proteinColor),
                       ),
                     ),
-                    TextField(
-                      controller: carbsPer100Controller,
-                      decoration: denseDecoration(
-                        const InputDecoration(
-                          labelText: 'Carbs per 100g (g)',
-                        ).copyWith(
-                          prefixIcon: const Icon(
-                            Icons.circle,
-                            color: _carbsColor,
-                            size: 12,
-                          ),
-                          labelStyle: const TextStyle(color: _carbsColor),
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                  ),
+                  TextField(
+                    controller: carbsPer100Controller,
+                    decoration: denseDecoration(
+                      const InputDecoration(
+                        labelText: 'Carbs per 100g (g)',
+                      ).copyWith(
+                        prefixIcon: const Icon(
+                          Icons.circle,
+                          color: _carbsColor,
+                          size: 12,
                         ),
-                      ),
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
+                        labelStyle: const TextStyle(color: _carbsColor),
                       ),
                     ),
-                    TextField(
-                      controller: fatsPer100Controller,
-                      decoration: denseDecoration(
-                        const InputDecoration(
-                          labelText: 'Fats per 100g (g)',
-                        ).copyWith(
-                          prefixIcon: const Icon(
-                            Icons.circle,
-                            color: _fatsColor,
-                            size: 12,
-                          ),
-                          labelStyle: const TextStyle(color: _fatsColor),
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                  ),
+                  TextField(
+                    controller: fatsPer100Controller,
+                    decoration: denseDecoration(
+                      const InputDecoration(
+                        labelText: 'Fats per 100g (g)',
+                      ).copyWith(
+                        prefixIcon: const Icon(
+                          Icons.circle,
+                          color: _fatsColor,
+                          size: 12,
                         ),
-                      ),
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
+                        labelStyle: const TextStyle(color: _fatsColor),
                       ),
                     ),
-                    TextField(
-                      controller: weightController,
-                      decoration: denseDecoration(
-                        const InputDecoration(labelText: 'Total weight (g)'),
-                      ),
-                      focusNode: weightFocus,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                  ),
+                  TextField(
+                    controller: weightController,
+                    decoration: denseDecoration(
+                      const InputDecoration(labelText: 'Total weight (g)'),
+                    ),
+                    focusNode: weightFocus,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                  ),
+                  if (error != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        error!,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                        ),
                       ),
                     ),
-                    if (error != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Text(
-                          error!,
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.error,
-                          ),
+                  if (macroSource != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        'Source: ${macroSource!.toUpperCase()}',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.secondary,
+                          fontSize: 12,
                         ),
                       ),
-                    if (macroSource != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Text(
-                          'Source: ${macroSource!.toUpperCase()}',
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.secondary,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
+                    ),
+                ],
+              ),
               actions: [
                 if (existing != null)
                   TextButton.icon(
@@ -860,9 +894,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                     },
                     icon: const Icon(Icons.delete),
                     label: const Text('Delete'),
-                    style: TextButton.styleFrom(
-                      foregroundColor: Colors.red,
-                    ),
+                    style: TextButton.styleFrom(foregroundColor: Colors.red),
                   ),
                 TextButton(
                   onPressed: () => Navigator.of(ctx).pop(false),
@@ -1017,18 +1049,16 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                 ),
             ],
           ),
-              actions: [
-                if (existing != null)
-                  TextButton.icon(
-                    onPressed: () async {
-                      await _deleteExercise(existing);
-                      if (ctx.mounted) Navigator.of(ctx).pop(false);
-                    },
-                    icon: const Icon(Icons.delete),
-                    label: const Text('Delete'),
-                    style: TextButton.styleFrom(
-                      foregroundColor: Colors.red,
-                    ),
+          actions: [
+            if (existing != null)
+              TextButton.icon(
+                onPressed: () async {
+                  await _deleteExercise(existing);
+                  if (ctx.mounted) Navigator.of(ctx).pop(false);
+                },
+                icon: const Icon(Icons.delete),
+                label: const Text('Delete'),
+                style: TextButton.styleFrom(foregroundColor: Colors.red),
               ),
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(false),
@@ -1170,6 +1200,717 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
     }
   }
 
+  Future<void> _showAddItemSheet(String meal) async {
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.restaurant_outlined),
+                title: const Text('Add food'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showFoodDialog(meal: meal);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.dining_outlined),
+                title: const Text('Add meal'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showMealLogDialog(meal: meal);
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<Food?> _showCreateFoodDialog() async {
+    final nameCtrl = TextEditingController();
+    final brandCtrl = TextEditingController();
+    final pCtrl = TextEditingController();
+    final cCtrl = TextEditingController();
+    final fCtrl = TextEditingController();
+    final wCtrl = TextEditingController(text: '100');
+    String? error;
+
+    final created = await showDialog<Food>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setLocalState) => AlertDialog(
+          title: const Text('Create food'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameCtrl,
+                  autofocus: true,
+                  decoration: const InputDecoration(labelText: 'Name'),
+                ),
+                TextField(
+                  controller: brandCtrl,
+                  decoration: const InputDecoration(labelText: 'Brand'),
+                ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: pCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: const InputDecoration(labelText: 'P/100g'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextField(
+                        controller: cCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: const InputDecoration(labelText: 'C/100g'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextField(
+                        controller: fCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: const InputDecoration(labelText: 'F/100g'),
+                      ),
+                    ),
+                  ],
+                ),
+                TextField(
+                  controller: wCtrl,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(labelText: 'Default grams'),
+                ),
+                if (error != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 10),
+                    child: Text(
+                      error!,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                final name = nameCtrl.text.trim();
+                final p = double.tryParse(pCtrl.text.trim());
+                final c = double.tryParse(cCtrl.text.trim());
+                final f = double.tryParse(fCtrl.text.trim());
+                final w = double.tryParse(wCtrl.text.trim());
+                if (name.isEmpty ||
+                    p == null ||
+                    c == null ||
+                    f == null ||
+                    w == null) {
+                  setLocalState(() => error = 'Enter valid values');
+                  return;
+                }
+                try {
+                  final food = await api.upsertFoodManual(
+                    name: name,
+                    brand: brandCtrl.text.trim(),
+                    proteinPer100G: p,
+                    carbsPer100G: c,
+                    fatsPer100G: f,
+                    lastWeightG: w,
+                    source: 'manual',
+                  );
+                  if (ctx.mounted) Navigator.pop(ctx, food);
+                } catch (e) {
+                  setLocalState(() => error = e.toString());
+                }
+              },
+              child: const Text('Create'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    nameCtrl.dispose();
+    brandCtrl.dispose();
+    pCtrl.dispose();
+    cCtrl.dispose();
+    fCtrl.dispose();
+    wCtrl.dispose();
+
+    return created;
+  }
+
+  Future<Food?> _showPickFoodDialog() async {
+    String query = '';
+    List<Food> foods = const [];
+    bool loading = false;
+    String? error;
+
+    Future<void> load(StateSetter setLocalState) async {
+      setLocalState(() {
+        loading = true;
+        error = null;
+      });
+      try {
+        final res = await api.listFoods(query: query);
+        setLocalState(() => foods = res);
+      } catch (e) {
+        setLocalState(() => error = e.toString());
+      } finally {
+        setLocalState(() => loading = false);
+      }
+    }
+
+    return showDialog<Food>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setLocalState) {
+          if (!loading && foods.isEmpty && error == null) {
+            Future.microtask(() => load(setLocalState));
+          }
+          return AlertDialog(
+            title: const Text('Pick food'),
+            content: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    autofocus: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Search',
+                      prefixIcon: Icon(Icons.search),
+                    ),
+                    onChanged: (v) {
+                      query = v;
+                      load(setLocalState);
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  if (loading)
+                    const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else if (error != null)
+                    Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Text(error!),
+                    )
+                  else
+                    SizedBox(
+                      height: 320,
+                      child: ListView.builder(
+                        itemCount: foods.length,
+                        itemBuilder: (_, i) {
+                          final f = foods[i];
+                          return ListTile(
+                            dense: true,
+                            title: Text(f.name),
+                            subtitle: Text(
+                              'P ${_fmt(f.proteinPer100G)} C ${_fmt(f.carbsPer100G)} F ${_fmt(f.fatsPer100G)}',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                            onTap: () => Navigator.pop(ctx, f),
+                          );
+                        },
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              FilledButton.icon(
+                onPressed: () async {
+                  final created = await _showCreateFoodDialog();
+                  if (ctx.mounted && created != null)
+                    Navigator.pop(ctx, created);
+                },
+                icon: const Icon(Icons.add),
+                label: const Text('New food'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Future<MealDetail?> _showMealEditor({MealDetail? existing}) async {
+    final nameCtrl = TextEditingController(text: existing?.name ?? '');
+    final foods = <Food>[];
+    final grams = <double>[];
+    if (existing != null) {
+      for (final ing in existing.ingredients) {
+        foods.add(
+          Food(
+            id: ing.foodId,
+            name: ing.foodName,
+            brand: ing.foodBrand,
+            proteinPer100G: ing.proteinPer100G,
+            carbsPer100G: ing.carbsPer100G,
+            fatsPer100G: ing.fatsPer100G,
+            lastWeightG: ing.grams,
+            source: 'meal',
+          ),
+        );
+        grams.add(ing.grams);
+      }
+    }
+
+    String? error;
+    bool saving = false;
+    bool deleting = false;
+
+    Future<MealDetail?> doSave(StateSetter setLocalState) async {
+      final name = nameCtrl.text.trim();
+      if (name.isEmpty || foods.isEmpty) {
+        setLocalState(() => error = 'Name and at least 1 ingredient required');
+        return null;
+      }
+      final payload = <Map<String, dynamic>>[];
+      for (var i = 0; i < foods.length; i++) {
+        payload.add({'food_id': foods[i].id, 'grams': grams[i]});
+      }
+      setLocalState(() {
+        saving = true;
+        error = null;
+      });
+      try {
+        if (existing == null) {
+          return await api.createMeal(name: name, ingredients: payload);
+        }
+        return await api.updateMeal(
+          existing.id,
+          name: name,
+          ingredients: payload,
+        );
+      } catch (e) {
+        setLocalState(() => error = e.toString());
+        return null;
+      } finally {
+        setLocalState(() => saving = false);
+      }
+    }
+
+    final result = await showDialog<MealDetail>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setLocalState) => AlertDialog(
+          title: Text(existing == null ? 'Create meal' : 'Edit meal'),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: nameCtrl,
+                    autofocus: true,
+                    decoration: const InputDecoration(labelText: 'Meal name'),
+                  ),
+                  const SizedBox(height: 12),
+                  for (var i = 0; i < foods.length; i++)
+                    ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(foods[i].name),
+                      subtitle: Text('${_fmt(grams[i])}g'),
+                      trailing: IconButton(
+                        tooltip: 'Remove',
+                        onPressed: saving || deleting
+                            ? null
+                            : () => setLocalState(() {
+                                foods.removeAt(i);
+                                grams.removeAt(i);
+                              }),
+                        icon: const Icon(Icons.close),
+                      ),
+                      onTap: saving || deleting
+                          ? null
+                          : () async {
+                              final gCtrl = TextEditingController(
+                                text: _fmt(grams[i]),
+                              );
+                              final ok = await showDialog<bool>(
+                                context: context,
+                                builder: (gctx) => AlertDialog(
+                                  title: const Text('Ingredient grams'),
+                                  content: TextField(
+                                    controller: gCtrl,
+                                    keyboardType:
+                                        const TextInputType.numberWithOptions(
+                                          decimal: true,
+                                        ),
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.pop(gctx, false),
+                                      child: const Text('Cancel'),
+                                    ),
+                                    FilledButton(
+                                      onPressed: () =>
+                                          Navigator.pop(gctx, true),
+                                      child: const Text('Save'),
+                                    ),
+                                  ],
+                                ),
+                              );
+                              final parsed = double.tryParse(gCtrl.text.trim());
+                              gCtrl.dispose();
+                              if (ok == true && parsed != null && parsed > 0) {
+                                setLocalState(() => grams[i] = parsed);
+                              }
+                            },
+                    ),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: saving || deleting
+                          ? null
+                          : () async {
+                              final food = await _showPickFoodDialog();
+                              if (food == null) return;
+                              final gCtrl = TextEditingController(
+                                text: _fmt(food.lastWeightG),
+                              );
+                              final ok = await showDialog<bool>(
+                                context: context,
+                                builder: (gctx) => AlertDialog(
+                                  title: const Text('Ingredient grams'),
+                                  content: TextField(
+                                    controller: gCtrl,
+                                    keyboardType:
+                                        const TextInputType.numberWithOptions(
+                                          decimal: true,
+                                        ),
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.pop(gctx, false),
+                                      child: const Text('Cancel'),
+                                    ),
+                                    FilledButton(
+                                      onPressed: () =>
+                                          Navigator.pop(gctx, true),
+                                      child: const Text('Add'),
+                                    ),
+                                  ],
+                                ),
+                              );
+                              final parsed = double.tryParse(gCtrl.text.trim());
+                              gCtrl.dispose();
+                              if (ok == true && parsed != null && parsed > 0) {
+                                setLocalState(() {
+                                  foods.add(food);
+                                  grams.add(parsed);
+                                });
+                              }
+                            },
+                      icon: const Icon(Icons.add),
+                      label: const Text('Add ingredient'),
+                    ),
+                  ),
+                  if (error != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 10),
+                      child: Text(
+                        error!,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            Row(
+              children: [
+                if (existing != null)
+                  IconButton(
+                    tooltip: 'Delete meal',
+                    color: Colors.red,
+                    onPressed: saving || deleting
+                        ? null
+                        : () async {
+                            setLocalState(() {
+                              deleting = true;
+                              error = null;
+                            });
+                            try {
+                              await api.deleteMeal(existing.id);
+                              if (ctx.mounted) Navigator.pop(ctx);
+                            } catch (e) {
+                              setLocalState(() => error = e.toString());
+                            } finally {
+                              setLocalState(() => deleting = false);
+                            }
+                          },
+                    icon: const Icon(Icons.delete_outline),
+                  ),
+                const Spacer(),
+                TextButton(
+                  onPressed: saving || deleting
+                      ? null
+                      : () => Navigator.pop(ctx),
+                  child: const Text('Cancel'),
+                ),
+                const SizedBox(width: 8),
+                FilledButton(
+                  onPressed: saving || deleting
+                      ? null
+                      : () async {
+                          final saved = await doSave(setLocalState);
+                          if (saved != null && ctx.mounted)
+                            Navigator.pop(ctx, saved);
+                        },
+                  child: Text(existing == null ? 'Create' : 'Save'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+
+    nameCtrl.dispose();
+    return result;
+  }
+
+  Future<void> _showMealLogDialog({required String meal}) async {
+    var selectedMeal = meal;
+    MealSummary? picked;
+    var query = '';
+    final percentCtrl = TextEditingController(text: '100');
+    List<MealSummary> allMeals = const [];
+    String? error;
+    bool loading = false;
+
+    Future<void> load(StateSetter setLocalState) async {
+      setLocalState(() {
+        loading = true;
+        error = null;
+      });
+      try {
+        allMeals = await api.listMeals();
+      } catch (e) {
+        error = e.toString();
+      } finally {
+        setLocalState(() => loading = false);
+      }
+    }
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setLocalState) {
+          if (!loading && allMeals.isEmpty && error == null) {
+            Future.microtask(() => load(setLocalState));
+          }
+          final matches = query.trim().isEmpty
+              ? allMeals
+              : allMeals
+                    .where(
+                      (m) => m.name.toLowerCase().contains(
+                        query.trim().toLowerCase(),
+                      ),
+                    )
+                    .toList();
+
+          return AlertDialog(
+            title: const Text('Add meal'),
+            content: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    DropdownButtonFormField<String>(
+                      value: selectedMeal,
+                      decoration: const InputDecoration(
+                        labelText: 'Meal period',
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'morning',
+                          child: Text('Morning'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'afternoon',
+                          child: Text('Afternoon'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'evening',
+                          child: Text('Evening'),
+                        ),
+                      ],
+                      onChanged: (v) =>
+                          setLocalState(() => selectedMeal = v ?? meal),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      decoration: const InputDecoration(
+                        labelText: 'Search meals',
+                        prefixIcon: Icon(Icons.search),
+                      ),
+                      onChanged: (v) => setLocalState(() => query = v),
+                    ),
+                    const SizedBox(height: 8),
+                    if (loading)
+                      const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                    else if (error != null)
+                      Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Text(error!),
+                      )
+                    else
+                      SizedBox(
+                        height: 260,
+                        child: ListView.builder(
+                          itemCount: matches.length,
+                          itemBuilder: (_, i) {
+                            final m = matches[i];
+                            final selected = picked?.id == m.id;
+                            return ListTile(
+                              dense: true,
+                              selected: selected,
+                              title: Text(m.name),
+                              subtitle: Text(
+                                '${_fmt(m.totalGrams)}g · P ${_fmt(m.proteinG)} C ${_fmt(m.carbsG)} F ${_fmt(m.fatsG)}',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                              onTap: () => setLocalState(() => picked = m),
+                            );
+                          },
+                        ),
+                      ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: percentCtrl,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: const InputDecoration(
+                        labelText: 'Percent eaten',
+                        suffixText: '%',
+                      ),
+                    ),
+                    if (picked != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton.icon(
+                            onPressed: () async {
+                              final detail = await api.getMeal(picked!.id);
+                              final updated = await _showMealEditor(
+                                existing: detail,
+                              );
+                              if (updated != null) {
+                                await load(setLocalState);
+                                picked = allMeals.firstWhere(
+                                  (m) => m.id == updated.id,
+                                  orElse: () => picked!,
+                                );
+                              }
+                            },
+                            icon: const Icon(Icons.edit),
+                            label: const Text('Edit selected meal'),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () async {
+                  final created = await _showMealEditor();
+                  if (created == null) return;
+                  await load(setLocalState);
+                  picked = allMeals.firstWhere(
+                    (m) => m.id == created.id,
+                    orElse: () => picked ?? allMeals.first,
+                  );
+                },
+                child: const Text('New meal'),
+              ),
+              FilledButton(
+                onPressed: picked == null
+                    ? null
+                    : () => Navigator.pop(ctx, true),
+                child: const Text('Add'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    if (ok != true || picked == null || !mounted) {
+      percentCtrl.dispose();
+      return;
+    }
+    final percent = double.tryParse(percentCtrl.text.trim()) ?? 100.0;
+    percentCtrl.dispose();
+    try {
+      await api.logMeal(
+        day: _dayString(_selectedDay),
+        mealPeriod: selectedMeal,
+        mealId: picked!.id,
+        percent: percent,
+      );
+      await _loadMonth();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to add meal: $e')));
+    }
+  }
+
   Future<void> _deleteFood(CalorieEntry entry) async {
     await api.deleteCalorieEntry(entry.id);
     await _loadMonth();
@@ -1225,9 +1966,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
         actions: [
           IconButton(
             onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => const FoodManagementScreen(),
-              ),
+              MaterialPageRoute(builder: (_) => const FoodManagementScreen()),
             ),
             icon: const Icon(Icons.fastfood),
             tooltip: 'Manage foods',
@@ -1562,7 +2301,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                   ),
                 ),
                 IconButton(
-                  onPressed: () => _showFoodDialog(meal: meal),
+                  onPressed: () => _showAddItemSheet(meal),
                   icon: const Icon(Icons.add),
                   tooltip: 'Add item',
                 ),
@@ -1575,7 +2314,10 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                 ListTile(
                   dense: true,
                   visualDensity: VisualDensity.compact,
-                  contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 0,
+                  ),
                   onTap: () => _showFoodDialog(meal: meal, existing: entry),
                   title: Text(entry.name),
                   subtitle: RichText(
@@ -1653,7 +2395,10 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                 ListTile(
                   dense: true,
                   visualDensity: VisualDensity.compact,
-                  contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 0,
+                  ),
                   onTap: () => _showExerciseDialog(existing: entry),
                   title: Text(entry.name),
                   trailing: Text(

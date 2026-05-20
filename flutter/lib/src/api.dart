@@ -637,11 +637,123 @@ Future<Food> updateFood(
   return Food.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
 }
 
+Future<Food> upsertFoodManual({
+  required String name,
+  String? brand,
+  required double proteinPer100G,
+  required double carbsPer100G,
+  required double fatsPer100G,
+  required double lastWeightG,
+  String? source,
+}) async {
+  final res = await _handleUnauthorized(
+    () => http.post(
+      _u('/calories/foods'),
+      headers: _headers(),
+      body: jsonEncode({
+        'name': name,
+        if (brand != null) 'brand': brand,
+        'protein_per_100g': proteinPer100G,
+        'carbs_per_100g': carbsPer100G,
+        'fats_per_100g': fatsPer100G,
+        'last_weight_g': lastWeightG,
+        if (source != null) 'source': source,
+      }),
+    ),
+  );
+  if (res.statusCode != 201) throw Exception('HTTP ${res.statusCode}');
+  return Food.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+}
+
 Future<void> deleteFood(int id) async {
   final res = await _handleUnauthorized(
     () => http.delete(_u('/calories/foods/$id'), headers: _headers()),
   );
   if (res.statusCode != 204) throw Exception('HTTP ${res.statusCode}');
+}
+
+// ── Meals ────────────────────────────────────────────────────────────────────
+
+Future<List<MealSummary>> listMeals({int limit = 200, int offset = 0}) async {
+  final res = await _handleUnauthorized(
+    () =>
+        http.get(_u('/meals?limit=$limit&offset=$offset'), headers: _headers()),
+  );
+  if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
+  return (jsonDecode(res.body) as List)
+      .map((e) => MealSummary.fromJson(e as Map<String, dynamic>))
+      .toList();
+}
+
+Future<MealDetail> getMeal(int id) async {
+  final res = await _handleUnauthorized(
+    () => http.get(_u('/meals/$id'), headers: _headers()),
+  );
+  if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
+  return MealDetail.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+}
+
+Future<MealDetail> createMeal({
+  required String name,
+  required List<Map<String, dynamic>> ingredients,
+}) async {
+  final res = await _handleUnauthorized(
+    () => http.post(
+      _u('/meals'),
+      headers: _headers(),
+      body: jsonEncode({'name': name, 'ingredients': ingredients}),
+    ),
+  );
+  if (res.statusCode != 201) throw Exception('HTTP ${res.statusCode}');
+  return MealDetail.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+}
+
+Future<MealDetail> updateMeal(
+  int id, {
+  String? name,
+  List<Map<String, dynamic>>? ingredients,
+}) async {
+  final res = await _handleUnauthorized(
+    () => http.patch(
+      _u('/meals/$id'),
+      headers: _headers(),
+      body: jsonEncode({
+        if (name != null) 'name': name,
+        if (ingredients != null) 'ingredients': ingredients,
+      }),
+    ),
+  );
+  if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
+  return MealDetail.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+}
+
+Future<void> deleteMeal(int id) async {
+  final res = await _handleUnauthorized(
+    () => http.delete(_u('/meals/$id'), headers: _headers()),
+  );
+  if (res.statusCode != 204) throw Exception('HTTP ${res.statusCode}');
+}
+
+Future<CalorieEntry> logMeal({
+  required String day,
+  required String mealPeriod,
+  required int mealId,
+  required double percent,
+}) async {
+  final res = await _handleUnauthorized(
+    () => http.post(
+      _u('/meals/log'),
+      headers: _headers(),
+      body: jsonEncode({
+        'day': day,
+        'meal_period': mealPeriod,
+        'meal_id': mealId,
+        'percent': percent,
+      }),
+    ),
+  );
+  if (res.statusCode != 201) throw Exception('HTTP ${res.statusCode}');
+  return CalorieEntry.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
 }
 
 Future<Food> getFoodByBarcode(String barcode) async {

@@ -99,6 +99,58 @@ pub struct UpsertFoodBody {
     pub source: Option<String>,
 }
 
+/// # Errors
+/// Returns an error if validation fails or the insert/update fails.
+pub async fn upsert_food_manual(
+    State(state): State<AppState>,
+    Json(body): Json<UpsertFoodBody>,
+) -> AppResult<(StatusCode, Json<Food>)> {
+    if body.name.trim().is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Food name cannot be empty".to_string(),
+        )
+            .into());
+    }
+    if body.protein_per_100g < 0.0
+        || body.carbs_per_100g < 0.0
+        || body.fats_per_100g < 0.0
+        || body.last_weight_g <= 0.0
+    {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Per-100g macros must be non-negative and last_weight_g must be > 0".to_string(),
+        )
+            .into());
+    }
+
+    let brand = body.brand.unwrap_or_default().trim().to_string();
+    let source = body.source.unwrap_or_else(|| "manual".to_string());
+
+    let food = sqlx::query_as::<_, Food>(
+        "INSERT INTO foods (name, brand, protein_per_100g, carbs_per_100g, fats_per_100g, last_weight_g, source)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(name, brand) DO UPDATE SET
+            protein_per_100g = excluded.protein_per_100g,
+            carbs_per_100g = excluded.carbs_per_100g,
+            fats_per_100g = excluded.fats_per_100g,
+            last_weight_g = excluded.last_weight_g,
+            source = excluded.source
+         RETURNING id, name, brand, protein_per_100g, carbs_per_100g, fats_per_100g, last_weight_g, source",
+    )
+    .bind(body.name.trim())
+    .bind(brand.as_str())
+    .bind(body.protein_per_100g)
+    .bind(body.carbs_per_100g)
+    .bind(body.fats_per_100g)
+    .bind(body.last_weight_g)
+    .bind(source.as_str())
+    .fetch_one(&state.pool)
+    .await?;
+
+    Ok((StatusCode::CREATED, Json(food)))
+}
+
 #[derive(Deserialize)]
 pub struct ExtractMacrosQuery {
     pub q: String,
@@ -515,7 +567,11 @@ pub async fn lookup_food_by_barcode(
 /// # Errors
 /// Returns an error if the query is empty. Network errors are logged but don't fail the request
 /// if local results are found.
-#[allow(clippy::cast_possible_wrap, clippy::cast_possible_truncation, clippy::too_many_lines)]
+#[allow(
+    clippy::cast_possible_wrap,
+    clippy::cast_possible_truncation,
+    clippy::too_many_lines
+)]
 pub async fn lookup_foods_by_query(
     State(state): State<AppState>,
     Query(query): Query<LookupFoodsQuery>,
@@ -560,14 +616,16 @@ pub async fn lookup_foods_by_query(
 
     // 3. Fallback to Open Food Facts for additional results
     let remaining_limit = limit - out.len();
-    let mut url = reqwest::Url::parse("https://world.openfoodfacts.org/api/v2/search")
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Bad OFF url: {e}")))?;
+    let mut url =
+        reqwest::Url::parse("https://world.openfoodfacts.org/api/v2/search").map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Bad OFF url: {e}"),
+            )
+        })?;
     url.query_pairs_mut()
         .append_pair("search_terms", term)
-        .append_pair(
-            "fields",
-            "product_name,product_name_pl,brands,nutriments",
-        )
+        .append_pair("fields", "product_name,product_name_pl,brands,nutriments")
         .append_pair("lc", "pl")
         .append_pair("cc", "pl")
         .append_pair("page_size", &remaining_limit.to_string());
@@ -612,11 +670,9 @@ pub async fn lookup_foods_by_query(
         }
 
         let Some(nutr) = p.nutriments else { continue };
-        let (Some(protein), Some(carbs), Some(fats)) = (
-            nutr.proteins,
-            nutr.carbohydrates,
-            nutr.fat,
-        ) else {
+        let (Some(protein), Some(carbs), Some(fats)) =
+            (nutr.proteins, nutr.carbohydrates, nutr.fat)
+        else {
             continue;
         };
         let name = p
@@ -1133,7 +1189,7 @@ pub async fn extract_macros_with_llm(
     Query(query): Query<ExtractMacrosQuery>,
 ) -> AppResult<Json<ExtractMacrosResponse>> {
     const USDA_API_URL: &str = "https://api.nal.usda.gov/fdc/v1";
-    
+
     let food_name = query.q.trim();
     if food_name.is_empty() {
         return Err((
@@ -1148,7 +1204,9 @@ pub async fn extract_macros_with_llm(
         let data_type = query.data_type.as_deref().unwrap_or("Foundation");
         match lookup_usda_food(food_name, usda_key, USDA_API_URL, data_type).await {
             Ok(result) => {
-                tracing::info!("Successfully extracted macros from USDA ({data_type}) for: {food_name}");
+                tracing::info!(
+                    "Successfully extracted macros from USDA ({data_type}) for: {food_name}"
+                );
                 return Ok(Json(result));
             }
             Err(e) => {
@@ -1160,19 +1218,21 @@ pub async fn extract_macros_with_llm(
     }
 
     // Fall back to LLM
-    let llm_key = state
-        .config
-        .llm_api_key
-        .as_ref()
-        .ok_or_else(|| {
-            (
-                StatusCode::SERVICE_UNAVAILABLE,
-                "No nutrition data source available (USDA and LLM both unavailable)".to_string(),
-            )
-        })?;
+    let llm_key = state.config.llm_api_key.as_ref().ok_or_else(|| {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "No nutrition data source available (USDA and LLM both unavailable)".to_string(),
+        )
+    })?;
 
     tracing::info!("Using LLM to extract macros for: {food_name}");
-    lookup_llm_food(food_name, llm_key, &state.config.llm_api_url, &state.config.llm_model).await
+    lookup_llm_food(
+        food_name,
+        llm_key,
+        &state.config.llm_api_url,
+        &state.config.llm_model,
+    )
+    .await
 }
 
 /// Search USDA database and return top 5 results with descriptions.
@@ -1185,7 +1245,7 @@ pub async fn search_usda_foods(
     Query(query): Query<ExtractMacrosQuery>,
 ) -> AppResult<Json<USDASearchResponse>> {
     const USDA_API_URL: &str = "https://api.nal.usda.gov/fdc/v1";
-    
+
     let food_name = query.q.trim();
     if food_name.is_empty() {
         return Err((
@@ -1195,16 +1255,12 @@ pub async fn search_usda_foods(
             .into());
     }
 
-    let usda_key = state
-        .config
-        .usda_api_key
-        .as_ref()
-        .ok_or_else(|| {
-            (
-                StatusCode::SERVICE_UNAVAILABLE,
-                "USDA API key not configured".to_string(),
-            )
-        })?;
+    let usda_key = state.config.usda_api_key.as_ref().ok_or_else(|| {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "USDA API key not configured".to_string(),
+        )
+    })?;
 
     let data_type = query.data_type.as_deref().unwrap_or("Foundation");
     search_usda_food_list(food_name, usda_key, data_type, USDA_API_URL).await
@@ -1217,7 +1273,10 @@ fn extract_macros_from_nutrients(nutrients: &[serde_json::Value]) -> (f64, f64, 
 
     for nutrient in nutrients {
         if let Some(value) = nutrient.get("value").and_then(serde_json::Value::as_f64)
-            && let Some(name) = nutrient.get("nutrientName").and_then(serde_json::Value::as_str) {
+            && let Some(name) = nutrient
+                .get("nutrientName")
+                .and_then(serde_json::Value::as_str)
+        {
             match name {
                 "Protein" => {
                     protein = value;
@@ -1245,10 +1304,10 @@ async fn search_usda_food_list(
     api_url: &str,
 ) -> AppResult<Json<USDASearchResponse>> {
     tracing::debug!("Searching USDA ({data_type}): {food_name}");
-    
+
     let client = reqwest::Client::new();
     let url = format!("{api_url}/foods/search");
-    
+
     let response = client
         .get(&url)
         .query(&[
@@ -1314,14 +1373,22 @@ async fn search_usda_food_list(
         .filter_map(|food| {
             let fdc_id = food.get("fdcId")?.as_i64()?.to_string();
             let description = food.get("description")?.as_str()?.to_string();
-            
+
             let (protein_per_100g, carbs_per_100g, fats_per_100g) = food
                 .get("foodNutrients")?
                 .as_array()
-                .map_or((0.0, 0.0, 0.0), |nutrients| extract_macros_from_nutrients(nutrients));
-            
-            tracing::debug!("Final macros for {}: protein={}, carbs={}, fats={}", description, protein_per_100g, carbs_per_100g, fats_per_100g);
-            
+                .map_or((0.0, 0.0, 0.0), |nutrients| {
+                    extract_macros_from_nutrients(nutrients)
+                });
+
+            tracing::debug!(
+                "Final macros for {}: protein={}, carbs={}, fats={}",
+                description,
+                protein_per_100g,
+                carbs_per_100g,
+                fats_per_100g
+            );
+
             Some(USDAFoodResult {
                 fdc_id,
                 description,
@@ -1333,7 +1400,10 @@ async fn search_usda_food_list(
         })
         .collect();
 
-    tracing::debug!("Found {} foods in USDA ({data_type}) for query: {food_name}", results.len());
+    tracing::debug!(
+        "Found {} foods in USDA ({data_type}) for query: {food_name}",
+        results.len()
+    );
     Ok(Json(USDASearchResponse { results }))
 }
 
@@ -1344,10 +1414,10 @@ async fn lookup_usda_food(
     data_type: &str,
 ) -> AppResult<ExtractMacrosResponse> {
     tracing::debug!("Looking up food in USDA ({data_type}): {food_name}");
-    
+
     let client = reqwest::Client::new();
     let url = format!("{}/foods/search", api_url.trim_end_matches('/'));
-    
+
     let response = client
         .get(&url)
         .query(&[
@@ -1437,8 +1507,13 @@ async fn lookup_usda_food(
     let mut fats = 0.0;
 
     for nutrient in nutrients {
-        let nutrient_id = nutrient.get("nutrientId").and_then(serde_json::Value::as_i64);
-        let value = nutrient.get("value").and_then(serde_json::Value::as_f64).unwrap_or(0.0);
+        let nutrient_id = nutrient
+            .get("nutrientId")
+            .and_then(serde_json::Value::as_i64);
+        let value = nutrient
+            .get("value")
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or(0.0);
 
         match nutrient_id {
             Some(1003) => protein = value, // Protein
@@ -1471,7 +1546,7 @@ async fn lookup_llm_food(
     let client = reqwest::Client::new();
     let url = format!("{}/chat/completions", api_url.trim_end_matches('/'));
     tracing::debug!("Calling LLM API at: {url}");
-    
+
     let response = client
         .post(&url)
         .bearer_auth(api_key)
@@ -1554,10 +1629,7 @@ async fn lookup_llm_food(
     })?;
 
     // Validate macros are non-negative and reasonable
-    if macros.protein_per_100g < 0.0
-        || macros.carbs_per_100g < 0.0
-        || macros.fats_per_100g < 0.0
-    {
+    if macros.protein_per_100g < 0.0 || macros.carbs_per_100g < 0.0 || macros.fats_per_100g < 0.0 {
         return Err((
             StatusCode::BAD_GATEWAY,
             "LLM returned negative macro values".to_string(),
@@ -1580,4 +1652,3 @@ async fn lookup_llm_food(
     response.source = "llm".to_string();
     Ok(Json(response))
 }
-

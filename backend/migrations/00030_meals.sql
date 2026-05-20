@@ -1,0 +1,17 @@
+CREATE TABLE meals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE meal_ingredients (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    meal_id INTEGER NOT NULL REFERENCES meals(id) ON DELETE CASCADE,
+    food_id INTEGER NOT NULL REFERENCES foods(id) ON DELETE RESTRICT,
+    grams REAL NOT NULL,
+    position INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX idx_meal_ingredients_meal_id ON meal_ingredients(meal_id);
+

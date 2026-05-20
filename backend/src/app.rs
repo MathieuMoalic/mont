@@ -1,5 +1,5 @@
 use crate::rate_limit::{RateLimitState, rate_limit_middleware};
-use crate::routes::{auth, calories, exercises, health, issues, runs, weight, workouts};
+use crate::routes::{auth, calories, exercises, health, issues, meals, runs, weight, workouts};
 use crate::{
     auth_middleware::require_auth,
     config::Config,
@@ -8,10 +8,10 @@ use crate::{
     models::AppState,
 };
 
+use axum::extract::DefaultBodyLimit;
 use axum::middleware::{from_fn, from_fn_with_state};
 use axum::routing::{delete, get, patch, post};
 use axum::{Json, Router};
-use axum::extract::DefaultBodyLimit;
 use serde::Serialize;
 
 use tower::ServiceBuilder;
@@ -112,6 +112,14 @@ pub fn build_app(state: AppState) -> Router {
             "/issues",
             get(issues::list_issue_reports).post(issues::create_issue_report),
         )
+        .route("/meals", get(meals::list_meals).post(meals::create_meal))
+        .route(
+            "/meals/{id}",
+            get(meals::get_meal)
+                .patch(meals::update_meal)
+                .delete(meals::delete_meal),
+        )
+        .route("/meals/log", post(meals::log_meal))
         .route(
             "/calories",
             get(calories::list_calories).post(calories::create_calorie_entry),
@@ -120,7 +128,10 @@ pub fn build_app(state: AppState) -> Router {
             "/calories/{id}",
             patch(calories::update_calorie_entry).delete(calories::delete_calorie_entry),
         )
-        .route("/calories/foods", get(calories::list_foods))
+        .route(
+            "/calories/foods",
+            get(calories::list_foods).post(calories::upsert_food_manual),
+        )
         .route(
             "/calories/foods/{id}",
             patch(calories::update_food).delete(calories::delete_food),
@@ -133,7 +144,10 @@ pub fn build_app(state: AppState) -> Router {
             "/calories/foods/lookup/{barcode}",
             get(calories::lookup_food_by_barcode),
         )
-        .route("/calories/foods/lookup", get(calories::lookup_foods_by_query))
+        .route(
+            "/calories/foods/lookup",
+            get(calories::lookup_foods_by_query),
+        )
         .route(
             "/calories/foods/extract-macros",
             get(calories::extract_macros_with_llm),

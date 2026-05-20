@@ -400,6 +400,116 @@ class FoodLookupResult {
   );
 }
 
+class MealSummary {
+  final int id;
+  final String name;
+  final double totalGrams;
+  final double proteinG;
+  final double carbsG;
+  final double fatsG;
+  final int kcal;
+
+  MealSummary({
+    required this.id,
+    required this.name,
+    required this.totalGrams,
+    required this.proteinG,
+    required this.carbsG,
+    required this.fatsG,
+    required this.kcal,
+  });
+
+  factory MealSummary.fromJson(Map<String, dynamic> j) => MealSummary(
+    id: j['id'] as int,
+    name: j['name'] as String,
+    totalGrams: (j['total_grams'] as num).toDouble(),
+    proteinG: (j['protein_g'] as num).toDouble(),
+    carbsG: (j['carbs_g'] as num).toDouble(),
+    fatsG: (j['fats_g'] as num).toDouble(),
+    kcal: (j['kcal'] as num).toInt(),
+  );
+}
+
+class MealIngredient {
+  final int id;
+  final int foodId;
+  final String foodName;
+  final String foodBrand;
+  final double proteinPer100G;
+  final double carbsPer100G;
+  final double fatsPer100G;
+  final double grams;
+
+  MealIngredient({
+    required this.id,
+    required this.foodId,
+    required this.foodName,
+    required this.foodBrand,
+    required this.proteinPer100G,
+    required this.carbsPer100G,
+    required this.fatsPer100G,
+    required this.grams,
+  });
+
+  factory MealIngredient.fromJson(Map<String, dynamic> j) => MealIngredient(
+    id: j['id'] as int,
+    foodId: j['food_id'] as int,
+    foodName: (j['food_name'] as String?) ?? '',
+    foodBrand: (j['food_brand'] as String?) ?? '',
+    proteinPer100G: (j['protein_per_100g'] as num).toDouble(),
+    carbsPer100G: (j['carbs_per_100g'] as num).toDouble(),
+    fatsPer100G: (j['fats_per_100g'] as num).toDouble(),
+    grams: (j['grams'] as num).toDouble(),
+  );
+}
+
+class MealTotals {
+  final double totalGrams;
+  final double proteinG;
+  final double carbsG;
+  final double fatsG;
+  final int kcal;
+
+  MealTotals({
+    required this.totalGrams,
+    required this.proteinG,
+    required this.carbsG,
+    required this.fatsG,
+    required this.kcal,
+  });
+
+  factory MealTotals.fromJson(Map<String, dynamic> j) => MealTotals(
+    totalGrams: (j['total_grams'] as num).toDouble(),
+    proteinG: (j['protein_g'] as num).toDouble(),
+    carbsG: (j['carbs_g'] as num).toDouble(),
+    fatsG: (j['fats_g'] as num).toDouble(),
+    kcal: (j['kcal'] as num).toInt(),
+  );
+}
+
+class MealDetail {
+  final int id;
+  final String name;
+  final List<MealIngredient> ingredients;
+  final MealTotals totals;
+
+  MealDetail({
+    required this.id,
+    required this.name,
+    required this.ingredients,
+    required this.totals,
+  });
+
+  factory MealDetail.fromJson(Map<String, dynamic> j) => MealDetail(
+    id: j['id'] as int,
+    name: j['name'] as String,
+    ingredients: (j['ingredients'] as List)
+        .map((e) => MealIngredient.fromJson(e as Map<String, dynamic>))
+        .toList(),
+    totals: MealTotals.fromJson(j['totals'] as Map<String, dynamic>),
+  );
+}
+
 class WorkoutSummary {
   final int id;
   final DateTime startedAt;
