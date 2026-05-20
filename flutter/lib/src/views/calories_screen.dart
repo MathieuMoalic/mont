@@ -171,6 +171,94 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
   int _kcalFromMacros(double proteinG, double carbsG, double fatsG) =>
       (proteinG * 4 + carbsG * 4 + fatsG * 9).round();
 
+  Future<void> _logMealQuick({
+    required MealSummary meal,
+    required String mealPeriod,
+  }) async {
+    final percentCtrl = TextEditingController(text: '100');
+    String? error;
+    bool busy = false;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setLocalState) => AlertDialog(
+          title: Text('Add ${meal.name}'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '${_fmt(meal.totalGrams)}g · '
+                  'P ${_fmt(meal.proteinG)} C ${_fmt(meal.carbsG)} F ${_fmt(meal.fatsG)}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: percentCtrl,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: 'Percent eaten',
+                    suffixText: '%',
+                  ),
+                ),
+                if (error != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 10),
+                    child: Text(
+                      error!,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: busy ? null : () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: busy
+                  ? null
+                  : () async {
+                      final percent =
+                          double.tryParse(percentCtrl.text.trim()) ?? 100.0;
+                      setLocalState(() {
+                        busy = true;
+                        error = null;
+                      });
+                      try {
+                        await api.logMeal(
+                          day: _dayString(_selectedDay),
+                          mealPeriod: mealPeriod,
+                          mealId: meal.id,
+                          percent: percent,
+                        );
+                        if (ctx.mounted) Navigator.pop(ctx, true);
+                      } catch (e) {
+                        setLocalState(() => error = e.toString());
+                      } finally {
+                        setLocalState(() => busy = false);
+                      }
+                    },
+              child: const Text('Add'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    percentCtrl.dispose();
+    if (ok == true && mounted) {
+      await _loadMonth();
+    }
+  }
+
   Future<void> _changeMonth(int delta) async {
     setState(() {
       _visibleMonth = DateTime(
@@ -222,6 +310,9 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
     bool lookupBusy = false;
     String?
     usda_search_state; // null, 'foundation_empty', 'legacy_empty', 'found'
+    List<MealSummary> allMeals = const [];
+    List<MealSummary> mealMatches = const [];
+    bool mealsLoading = false;
 
     final saved = await showDialog<bool>(
       context: context,
@@ -235,6 +326,33 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                 vertical: 10,
               ),
             );
+
+            Future<void> loadMealsOnce() async {
+              if (mealsLoading || allMeals.isNotEmpty) return;
+              setLocalState(() => mealsLoading = true);
+              try {
+                final res = await api.listMeals(limit: 500, offset: 0);
+                if (!context.mounted) return;
+                setLocalState(() {
+                  allMeals = res;
+                  final q = foodQuery.trim().toLowerCase();
+                  mealMatches = q.isEmpty
+                      ? const []
+                      : allMeals
+                            .where((m) => m.name.toLowerCase().contains(q))
+                            .take(4)
+                            .toList();
+                });
+              } catch (_) {
+                // Ignore meal suggestions failure; food flow still works.
+              } finally {
+                if (context.mounted) setLocalState(() => mealsLoading = false);
+              }
+            }
+
+            if (existing == null && allMeals.isEmpty && !mealsLoading) {
+              Future.microtask(loadMealsOnce);
+            }
 
             Future<void> lookupAndFill(String rawBarcode) async {
               final b = rawBarcode.trim();
@@ -514,9 +632,19 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                     onChanged: (v) {
                       setLocalState(() => foodQuery = v);
                       final q = v.trim();
+                      final mq = q.toLowerCase();
+                      mealMatches = mq.isEmpty
+                          ? const []
+                          : allMeals
+                                .where((m) => m.name.toLowerCase().contains(mq))
+                                .take(4)
+                                .toList();
                       if (existing != null) return;
                       if (q.length < 2) {
-                        setLocalState(() => matches = <Food>[]);
+                        setLocalState(() {
+                          matches = <Food>[];
+                          mealMatches = const [];
+                        });
                         return;
                       }
                       final mySeq = ++searchSeq;
@@ -533,7 +661,8 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                     },
                   ),
                   if (existing == null &&
-                      (matches.isNotEmpty ||
+                      (mealMatches.isNotEmpty ||
+                          matches.isNotEmpty ||
                           usda_results.isNotEmpty ||
                           lookupBusy && usda_search_state != null))
                     Container(
@@ -551,6 +680,60 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
+                          if (usda_results.isEmpty &&
+                              !lookupBusy &&
+                              mealMatches.isNotEmpty) ...[
+                            for (var i = 0; i < mealMatches.length; i++) ...[
+                              InkWell(
+                                borderRadius: BorderRadius.circular(6),
+                                onTap: () async {
+                                  final pickedMeal = mealMatches[i];
+                                  Navigator.pop(ctx, false);
+                                  await _logMealQuick(
+                                    meal: pickedMeal,
+                                    mealPeriod: selectedMeal,
+                                  );
+                                },
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 4,
+                                    vertical: 6,
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      const Icon(
+                                        Icons.dining_outlined,
+                                        size: 18,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          mealMatches[i].name,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text('${mealMatches[i].kcal} kcal'),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              if (i != mealMatches.length - 1)
+                                Divider(
+                                  height: 1,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.outlineVariant,
+                                ),
+                            ],
+                            Divider(
+                              height: 10,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.outlineVariant,
+                            ),
+                          ],
                           // Show loading spinner if searching USDA
                           if (lookupBusy && usda_results.isEmpty)
                             Padding(
@@ -1200,40 +1383,6 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
     }
   }
 
-  Future<void> _showAddItemSheet(String meal) async {
-    if (!mounted) return;
-    await showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.restaurant_outlined),
-                title: const Text('Add food'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _showFoodDialog(meal: meal);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.dining_outlined),
-                title: const Text('Add meal'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _showMealLogDialog(meal: meal);
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   Future<Food?> _showCreateFoodDialog() async {
     final nameCtrl = TextEditingController();
     final brandCtrl = TextEditingController();
@@ -1398,51 +1547,53 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
             title: const Text('Pick food'),
             content: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 520),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    autofocus: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Search',
-                      prefixIcon: Icon(Icons.search),
-                    ),
-                    onChanged: (v) {
-                      query = v;
-                      load(setLocalState);
-                    },
-                  ),
-                  const SizedBox(height: 8),
-                  if (loading)
-                    const Padding(
-                      padding: EdgeInsets.all(12),
-                      child: Center(child: CircularProgressIndicator()),
-                    )
-                  else if (error != null)
-                    Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Text(error!),
-                    )
-                  else
-                    SizedBox(
-                      height: 320,
-                      child: ListView.builder(
-                        itemCount: foods.length,
-                        itemBuilder: (_, i) {
-                          final f = foods[i];
-                          return ListTile(
-                            dense: true,
-                            title: Text(f.name),
-                            subtitle: Text(
-                              'P ${_fmt(f.proteinPer100G)} C ${_fmt(f.carbsPer100G)} F ${_fmt(f.fatsPer100G)}',
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                            onTap: () => Navigator.pop(ctx, f),
-                          );
-                        },
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 420),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      autofocus: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Search',
+                        prefixIcon: Icon(Icons.search),
                       ),
+                      onChanged: (v) {
+                        query = v;
+                        load(setLocalState);
+                      },
                     ),
-                ],
+                    const SizedBox(height: 8),
+                    Flexible(
+                      child: loading
+                          ? const Center(child: CircularProgressIndicator())
+                          : error != null
+                          ? SingleChildScrollView(
+                              child: Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: Text(error!),
+                              ),
+                            )
+                          : ListView.builder(
+                              itemCount: foods.length,
+                              itemBuilder: (_, i) {
+                                final f = foods[i];
+                                return ListTile(
+                                  dense: true,
+                                  title: Text(f.name),
+                                  subtitle: Text(
+                                    'P ${_fmt(f.proteinPer100G)} C ${_fmt(f.carbsPer100G)} F ${_fmt(f.fatsPer100G)}',
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodySmall,
+                                  ),
+                                  onTap: () => Navigator.pop(ctx, f),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
               ),
             ),
             actions: [
@@ -1965,6 +2116,17 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
         title: const Text('Calories'),
         actions: [
           IconButton(
+            onPressed: () async {
+              final created = await _showMealEditor();
+              if (!mounted || created == null) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Meal created: ${created.name}')),
+              );
+            },
+            icon: const Icon(Icons.dining_outlined),
+            tooltip: 'New meal',
+          ),
+          IconButton(
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const FoodManagementScreen()),
             ),
@@ -2301,7 +2463,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                   ),
                 ),
                 IconButton(
-                  onPressed: () => _showAddItemSheet(meal),
+                  onPressed: () => _showFoodDialog(meal: meal),
                   icon: const Icon(Icons.add),
                   tooltip: 'Add item',
                 ),
