@@ -141,31 +141,31 @@ class _FoodManagementScreenState extends State<FoodManagementScreen> {
             ),
           ),
           actions: [
-            TextButton.icon(
-              onPressed: deleting || saving
-                  ? null
-                  : () async {
-                      try {
-                        setLocalState(() {
-                          deleting = true;
-                          error = null;
-                        });
-                        await api.deleteFood(food.id);
-                        if (ctx.mounted) Navigator.of(ctx).pop(true);
-                        await _loadFoods();
-                      } catch (e) {
-                        setLocalState(() => error = e.toString());
-                      } finally {
-                        setLocalState(() => deleting = false);
-                      }
-                    },
-              icon: const Icon(Icons.delete),
-              label: const Text('Delete'),
-              style: TextButton.styleFrom(foregroundColor: Colors.red),
-            ),
             Row(
-              mainAxisSize: MainAxisSize.min,
               children: [
+                IconButton(
+                  tooltip: 'Delete',
+                  onPressed: deleting || saving
+                      ? null
+                      : () async {
+                          try {
+                            setLocalState(() {
+                              deleting = true;
+                              error = null;
+                            });
+                            await api.deleteFood(food.id);
+                            if (ctx.mounted) Navigator.of(ctx).pop(true);
+                            await _loadFoods();
+                          } catch (e) {
+                            setLocalState(() => error = e.toString());
+                          } finally {
+                            setLocalState(() => deleting = false);
+                          }
+                        },
+                  icon: const Icon(Icons.delete_outline),
+                  color: Colors.red,
+                ),
+                const Spacer(),
                 TextButton(
                   onPressed: deleting || saving
                       ? null
