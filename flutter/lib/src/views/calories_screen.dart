@@ -253,7 +253,9 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
       ),
     );
 
-    percentCtrl.dispose();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      percentCtrl.dispose();
+    });
     if (ok == true && mounted) {
       await _loadMonth();
     }
@@ -1505,12 +1507,14 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
       ),
     );
 
-    nameCtrl.dispose();
-    brandCtrl.dispose();
-    pCtrl.dispose();
-    cCtrl.dispose();
-    fCtrl.dispose();
-    wCtrl.dispose();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      nameCtrl.dispose();
+      brandCtrl.dispose();
+      pCtrl.dispose();
+      cCtrl.dispose();
+      fCtrl.dispose();
+      wCtrl.dispose();
+    });
 
     return created;
   }
@@ -1739,7 +1743,9 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                                 ),
                               );
                               final parsed = double.tryParse(gCtrl.text.trim());
-                              gCtrl.dispose();
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                gCtrl.dispose();
+                              });
                               if (ok == true && parsed != null && parsed > 0) {
                                 setLocalState(() => grams[i] = parsed);
                               }
@@ -1782,7 +1788,9 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                                 ),
                               );
                               final parsed = double.tryParse(gCtrl.text.trim());
-                              gCtrl.dispose();
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                gCtrl.dispose();
+                              });
                               if (ok == true && parsed != null && parsed > 0) {
                                 setLocalState(() {
                                   foods.add(food);
@@ -1858,7 +1866,9 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
       ),
     );
 
-    nameCtrl.dispose();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      nameCtrl.dispose();
+    });
     return result;
   }
 
@@ -2040,12 +2050,13 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
       ),
     );
 
-    if (ok != true || picked == null || !mounted) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       percentCtrl.dispose();
+    });
+    if (ok != true || picked == null || !mounted) {
       return;
     }
     final percent = double.tryParse(percentCtrl.text.trim()) ?? 100.0;
-    percentCtrl.dispose();
     try {
       await api.logMeal(
         day: _dayString(_selectedDay),
