@@ -26,11 +26,12 @@ bump TYPE:
     git tag -a "v$new_version" -m "Release v$new_version"
     echo "✓ Version bumped to $new_version and tagged"
 
-start-copilot:
-    #!/usr/bin/env bash
-    mkdir -p ~/.local/copilot-shims
-    ln -sf /run/current-system/sw/bin/bash ~/.local/copilot-shims/bash
-    export PATH="$HOME/.local/copilot-shims:$PATH"
-    export SHELL=/run/current-system/sw/bin/bash
-    export CONFIG_SHELL=/run/current-system/sw/bin/bash
-    exec copilot --allow-all
+backend:
+    cd backend && cargo watch -q -c -w src -w Cargo.toml -x 'run -- -v'
+
+android:
+  adb reverse tcp:8080 tcp:8080
+  cd flutter && flutter run --flavor dev -d CPH2465
+
+web:
+  cd flutter && flutter run -d web-server --web-hostname 127.0.0.1 --web-port 5173

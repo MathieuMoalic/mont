@@ -13,3 +13,4 @@ result
 target/rust-analyzer/
 backend/mont.log
 gadgetbridge_export/
+.logs/
