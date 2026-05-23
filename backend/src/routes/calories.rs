@@ -1297,16 +1297,15 @@ fn extract_macros_from_nutrients(nutrients: &[serde_json::Value]) -> (f64, f64, 
     (protein, carbs, fats)
 }
 
-async fn search_usda_food_list(
+async fn fetch_usda_foods(
     food_name: &str,
     api_key: &str,
-    data_type: &str,
     api_url: &str,
-) -> AppResult<Json<USDASearchResponse>> {
-    tracing::debug!("Searching USDA ({data_type}): {food_name}");
-
+    data_type: &str,
+    page_size: &str,
+) -> AppResult<Vec<serde_json::Value>> {
     let client = reqwest::Client::new();
-    let url = format!("{api_url}/foods/search");
+    let url = format!("{}/foods/search", api_url.trim_end_matches('/'));
 
     let response = client
         .get(&url)
@@ -1314,7 +1313,7 @@ async fn search_usda_food_list(
             ("query", food_name),
             ("api_key", api_key),
             ("dataType", data_type),
-            ("pageSize", "5"),
+            ("pageSize", page_size),
         ])
         .send()
         .await
@@ -1362,6 +1361,19 @@ async fn search_usda_food_list(
                 "Invalid USDA response format".to_string(),
             )
         })?;
+
+    Ok(foods.clone())
+}
+
+async fn search_usda_food_list(
+    food_name: &str,
+    api_key: &str,
+    data_type: &str,
+    api_url: &str,
+) -> AppResult<Json<USDASearchResponse>> {
+    tracing::debug!("Searching USDA ({data_type}): {food_name}");
+
+    let foods = fetch_usda_foods(food_name, api_key, api_url, data_type, "5").await?;
 
     if foods.is_empty() {
         tracing::info!("No foods found in USDA ({data_type}) for query: {food_name}");
@@ -1415,65 +1427,8 @@ async fn lookup_usda_food(
 ) -> AppResult<ExtractMacrosResponse> {
     tracing::debug!("Looking up food in USDA ({data_type}): {food_name}");
 
-    let client = reqwest::Client::new();
-    let url = format!("{}/foods/search", api_url.trim_end_matches('/'));
-
-    let response = client
-        .get(&url)
-        .query(&[
-            ("query", food_name),
-            ("api_key", api_key),
-            ("dataType", data_type),
-            ("pageSize", "1"),
-        ])
-        .send()
-        .await
-        .map_err(|e| {
-            tracing::error!("USDA API request failed: {e}");
-            (
-                StatusCode::BAD_GATEWAY,
-                format!("USDA API request failed: {e}"),
-            )
-        })?;
-
-    let status = response.status();
-    tracing::debug!("USDA API response status: {status}");
-
-    if !status.is_success() {
-        let error_text = response.text().await.unwrap_or_default();
-        let truncated = if error_text.len() > 200 {
-            format!("{}...", &error_text[..200])
-        } else {
-            error_text
-        };
-        tracing::warn!("USDA API returned error ({data_type}): {truncated}");
-        return Err((
-            StatusCode::BAD_GATEWAY,
-            "USDA API returned an error".to_string(),
-        )
-            .into());
-    }
-
-    let body: serde_json::Value = response.json().await.map_err(|e| {
-        tracing::error!("Failed to parse USDA response as JSON: {e}");
-        (
-            StatusCode::BAD_GATEWAY,
-            format!("Failed to parse USDA response: {e}"),
-        )
-    })?;
-
+    let foods = fetch_usda_foods(food_name, api_key, api_url, data_type, "1").await?;
     tracing::debug!("USDA response parsed successfully");
-
-    let foods = body
-        .get("foods")
-        .and_then(|f| f.as_array())
-        .ok_or_else(|| {
-            tracing::warn!("Invalid USDA response format: missing or invalid 'foods' array");
-            (
-                StatusCode::BAD_GATEWAY,
-                "Invalid USDA response format".to_string(),
-            )
-        })?;
 
     if foods.is_empty() {
         tracing::info!("No foods found in USDA ({data_type}) for query: {food_name}");
@@ -1502,26 +1457,7 @@ async fn lookup_usda_food(
             )
         })?;
 
-    let mut protein = 0.0;
-    let mut carbs = 0.0;
-    let mut fats = 0.0;
-
-    for nutrient in nutrients {
-        let nutrient_id = nutrient
-            .get("nutrientId")
-            .and_then(serde_json::Value::as_i64);
-        let value = nutrient
-            .get("value")
-            .and_then(serde_json::Value::as_f64)
-            .unwrap_or(0.0);
-
-        match nutrient_id {
-            Some(1003) => protein = value, // Protein
-            Some(1005) => carbs = value,   // Carbohydrate
-            Some(1004) => fats = value,    // Fat
-            _ => {}
-        }
-    }
+    let (protein, carbs, fats) = extract_macros_from_nutrients(nutrients);
 
     Ok(ExtractMacrosResponse {
         name: food_name.to_string(),

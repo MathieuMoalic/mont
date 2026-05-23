@@ -90,6 +90,11 @@ pub struct CalorieEntry {
     pub kcal: i64,
 }
 
+#[derive(sqlx::FromRow)]
+struct MealNameRow {
+    name: String,
+}
+
 fn validate_meal_period(meal_period: &str) -> bool {
     matches!(meal_period, "morning" | "afternoon" | "evening")
 }
@@ -109,7 +114,9 @@ fn validate_day(day: &str) -> bool {
 
 #[allow(clippy::cast_possible_truncation)]
 fn kcal_from_macros(protein_g: f64, carbs_g: f64, fats_g: f64) -> i64 {
-    (protein_g * 4.0 + carbs_g * 4.0 + fats_g * 9.0).round() as i64
+    fats_g
+        .mul_add(9.0, protein_g.mul_add(4.0, carbs_g * 4.0))
+        .round() as i64
 }
 
 async fn compute_meal_totals(pool: &sqlx::SqlitePool, meal_id: i64) -> AppResult<MealTotals> {
@@ -259,13 +266,19 @@ pub async fn create_meal(
         .await?;
 
     for (pos, ing) in body.ingredients.iter().enumerate() {
+        let position = i64::try_from(pos).map_err(|_| {
+            (
+                StatusCode::BAD_REQUEST,
+                "too many ingredients".to_string(),
+            )
+        })?;
         sqlx::query(
             "INSERT INTO meal_ingredients (meal_id, food_id, grams, position) VALUES (?, ?, ?, ?)",
         )
         .bind(meal_id)
         .bind(ing.food_id)
         .bind(ing.grams)
-        .bind(pos as i64)
+        .bind(position)
         .execute(&mut *tx)
         .await?;
     }
@@ -327,13 +340,19 @@ pub async fn update_meal(
             .execute(&mut *tx)
             .await?;
         for (pos, ing) in ingredients.iter().enumerate() {
+            let position = i64::try_from(pos).map_err(|_| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    "too many ingredients".to_string(),
+                )
+            })?;
             sqlx::query(
                 "INSERT INTO meal_ingredients (meal_id, food_id, grams, position) VALUES (?, ?, ?, ?)",
             )
             .bind(id)
             .bind(ing.food_id)
             .bind(ing.grams)
-            .bind(pos as i64)
+            .bind(position)
             .execute(&mut *tx)
             .await?;
         }
@@ -344,7 +363,7 @@ pub async fn update_meal(
     }
 
     tx.commit().await?;
-    Ok(get_meal(State(state), Path(id)).await?)
+    get_meal(State(state), Path(id)).await
 }
 
 /// # Errors
@@ -394,11 +413,7 @@ pub async fn log_meal(
             .into());
     }
 
-    #[derive(sqlx::FromRow)]
-    struct MealRow {
-        name: String,
-    }
-    let meal = sqlx::query_as::<_, MealRow>("SELECT name FROM meals WHERE id = ?")
+    let meal = sqlx::query_as::<_, MealNameRow>("SELECT name FROM meals WHERE id = ?")
         .bind(body.meal_id)
         .fetch_optional(&state.pool)
         .await?
