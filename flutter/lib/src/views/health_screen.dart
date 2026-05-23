@@ -32,6 +32,39 @@ class CaffeineDose {
   });
 }
 
+class AlcoholDrink {
+  final int id;
+  final double amountMl;
+  final double ethanolPercent;
+  final DateTime timestamp;
+
+  AlcoholDrink({
+    required this.id,
+    required this.amountMl,
+    required this.ethanolPercent,
+    required this.timestamp,
+  });
+}
+
+class _CaffeineInput {
+  final int mg;
+  final TimeOfDay time;
+
+  const _CaffeineInput({required this.mg, required this.time});
+}
+
+class _AlcoholInput {
+  final double amountMl;
+  final double ethanolPercent;
+  final TimeOfDay time;
+
+  const _AlcoholInput({
+    required this.amountMl,
+    required this.ethanolPercent,
+    required this.time,
+  });
+}
+
 
 enum _Range {
   twoWeeks('2W', 14),
@@ -59,6 +92,7 @@ class _HealthScreenState extends State<HealthScreen> {
   _Range _range = _Range.twoWeeks;
   Map<DateTime, List<HealthJournalEntry>> _journalEntries = {};
   Map<DateTime, List<CaffeineDose>> _caffeineDoses = {};
+  Map<DateTime, List<AlcoholDrink>> _alcoholDrinks = {};
 
   double? _parseWeightKg(String raw) {
     final v = raw.trim().replaceAll(',', '.');
@@ -405,9 +439,20 @@ class _HealthScreenState extends State<HealthScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Health Journal',
-            style: Theme.of(context).textTheme.titleLarge,
+          Row(
+            children: [
+              Text(
+                'Health Journal',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const Spacer(),
+              IconButton(
+                tooltip: 'Add journal entry',
+                visualDensity: VisualDensity.compact,
+                onPressed: _addJournalEntry,
+                icon: const Icon(Icons.add),
+              ),
+            ],
           ),
           const SizedBox(height: 12),
           if (allEntries.isEmpty)
@@ -519,84 +564,30 @@ class _HealthScreenState extends State<HealthScreen> {
     return '$dateStr at $time';
   }
 
-  void _addCaffeineDose() {
-    int mg = 50;
-    TimeOfDay time = TimeOfDay.now();
-    
-    showDialog(
+  Future<void> _addCaffeineDose() async {
+    final result = await showDialog<_CaffeineInput>(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setLocalState) => AlertDialog(
-          title: const Text('Add Caffeine Dose'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                autofocus: true,
-                keyboardType: TextInputType.number,
-                onChanged: (v) => setLocalState(() => mg = int.tryParse(v) ?? 50),
-                decoration: const InputDecoration(
-                  labelText: 'Caffeine (mg)',
-                  suffixText: 'mg',
-                ),
-                controller: TextEditingController(text: mg.toString()),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  const Text('Time:'),
-                  const SizedBox(width: 12),
-                  TextButton(
-                    onPressed: () async {
-                      final picked = await showTimePicker(
-                        context: context,
-                        initialTime: time,
-                      );
-                      if (picked != null) {
-                        setLocalState(() => time = picked);
-                      }
-                    },
-                    child: Text(
-                      '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}',
-                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () {
-                final now = DateTime.now();
-                final today = DateTime(now.year, now.month, now.day);
-                final doseTime = today.add(Duration(hours: time.hour, minutes: time.minute));
-                
-                setState(() {
-                  _caffeineDoses.putIfAbsent(today, () => []);
-                  _caffeineDoses[today]!.add(
-                    CaffeineDose(
-                      id: DateTime.now().millisecondsSinceEpoch,
-                      mg: mg,
-                      timestamp: doseTime,
-                    ),
-                  );
-                  // Sort by time
-                  _caffeineDoses[today]!.sort((a, b) => a.timestamp.compareTo(b.timestamp));
-                });
-                Navigator.pop(ctx);
-              },
-              child: const Text('Add'),
-            ),
-          ],
-          actionsPadding: EdgeInsets.zero,
-        ),
-      ),
+      barrierDismissible: false,
+      builder: (_) => const _CaffeineDialog(),
     );
+    if (result == null) return;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final doseTime = today.add(
+      Duration(hours: result.time.hour, minutes: result.time.minute),
+    );
+
+    setState(() {
+      _caffeineDoses.putIfAbsent(today, () => []);
+      _caffeineDoses[today]!.add(
+        CaffeineDose(
+          id: DateTime.now().millisecondsSinceEpoch,
+          mg: result.mg,
+          timestamp: doseTime,
+        ),
+      );
+      _caffeineDoses[today]!.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    });
   }
 
   Widget _buildCaffeineSection() {
@@ -611,12 +602,19 @@ class _HealthScreenState extends State<HealthScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
                 'Caffeine Today',
                 style: Theme.of(context).textTheme.titleLarge,
               ),
+              const Spacer(),
+              IconButton(
+                tooltip: 'Add caffeine dose',
+                visualDensity: VisualDensity.compact,
+                onPressed: _addCaffeineDose,
+                icon: const Icon(Icons.add),
+              ),
+              const SizedBox(width: 4),
               Text(
                 '${totalMg}mg',
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
@@ -666,37 +664,117 @@ class _HealthScreenState extends State<HealthScreen> {
     );
   }
 
+  Future<void> _addAlcoholDrink() async {
+    final result = await showDialog<_AlcoholInput>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const _AlcoholDialog(),
+    );
+    if (result == null) return;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final drinkTime = today.add(
+      Duration(hours: result.time.hour, minutes: result.time.minute),
+    );
+
+    setState(() {
+      _alcoholDrinks.putIfAbsent(today, () => []);
+      _alcoholDrinks[today]!.add(
+        AlcoholDrink(
+          id: DateTime.now().millisecondsSinceEpoch,
+          amountMl: result.amountMl,
+          ethanolPercent: result.ethanolPercent,
+          timestamp: drinkTime,
+        ),
+      );
+      _alcoholDrinks[today]!.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    });
+  }
+
+  Widget _buildAlcoholSection() {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final drinks = _alcoholDrinks[today] ?? [];
+    final totalEthanolMl = drinks.fold<double>(
+      0,
+      (sum, drink) => sum + drink.amountMl * (drink.ethanolPercent / 100),
+    );
+
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                'Alcohol Today',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const Spacer(),
+              IconButton(
+                tooltip: 'Add alcohol',
+                visualDensity: VisualDensity.compact,
+                onPressed: _addAlcoholDrink,
+                icon: const Icon(Icons.add),
+              ),
+              const SizedBox(width: 4),
+              Text(
+                '${totalEthanolMl.toStringAsFixed(1)} ml',
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (drinks.isEmpty)
+            Text(
+              'No drinks logged',
+              style: Theme.of(context).textTheme.bodySmall,
+            )
+          else
+            ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: drinks.length,
+              itemBuilder: (ctx, i) {
+                final drink = drinks[i];
+                final drinkTime =
+                    '${drink.timestamp.hour.toString().padLeft(2, '0')}:${drink.timestamp.minute.toString().padLeft(2, '0')}';
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  child: ListTile(
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    title: Text(
+                      '${drink.amountMl.toStringAsFixed(0)} ml · ${drink.ethanolPercent.toStringAsFixed(1)}%',
+                    ),
+                    subtitle: Text(drinkTime),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.close, size: 18),
+                      onPressed: () {
+                        setState(() {
+                          _alcoholDrinks[today]
+                              ?.removeWhere((d) => d.id == drink.id);
+                        });
+                      },
+                      tooltip: 'Delete',
+                    ),
+                  ),
+                );
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      floatingActionButton: Column(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          FloatingActionButton(
-            onPressed: _captureBodyPicture,
-            tooltip: 'Capture body picture',
-            child: const Icon(Icons.camera_alt),
-          ),
-          const SizedBox(height: 16),
-          FloatingActionButton(
-            onPressed: _addWeight,
-            tooltip: 'Log body mass',
-            child: const Icon(Icons.monitor_weight_outlined),
-          ),
-          const SizedBox(height: 16),
-          FloatingActionButton(
-            onPressed: _addJournalEntry,
-            tooltip: 'Add journal entry',
-            child: const Icon(Icons.edit_note),
-          ),
-          const SizedBox(height: 16),
-          FloatingActionButton(
-            onPressed: _addCaffeineDose,
-            tooltip: 'Add caffeine dose',
-            child: const Icon(Icons.local_cafe),
-          ),
-        ],
-      ),
       body: RefreshIndicator(
         onRefresh: _load,
         child: _error != null
@@ -735,13 +813,16 @@ class _HealthScreenState extends State<HealthScreen> {
           ],
         ),
         SliverToBoxAdapter(child: _buildRangeChips()),
-        SliverToBoxAdapter(child: _buildHrChart(days)),
-        SliverToBoxAdapter(child: _buildHrvChart(days)),
-        SliverToBoxAdapter(child: _buildStepsChart(days)),
         SliverToBoxAdapter(child: _buildWeightChart(weights)),
-        const SliverToBoxAdapter(child: BodyPicturesSection()),
         SliverToBoxAdapter(child: _buildJournalSection()),
         SliverToBoxAdapter(child: _buildCaffeineSection()),
+        SliverToBoxAdapter(child: _buildAlcoholSection()),
+        SliverToBoxAdapter(
+          child: BodyPicturesSection(onAdd: _captureBodyPicture),
+        ),
+        SliverToBoxAdapter(child: _buildStepsChart(days)),
+        SliverToBoxAdapter(child: _buildHrChart(days)),
+        SliverToBoxAdapter(child: _buildHrvChart(days)),
         const SliverToBoxAdapter(child: SizedBox(height: 80)),
       ],
     );
@@ -1242,6 +1323,12 @@ class _HealthScreenState extends State<HealthScreen> {
       return _chartSection(
         label: 'Body Mass (kg)',
         height: 48,
+        action: IconButton(
+          tooltip: 'Log body mass',
+          visualDensity: VisualDensity.compact,
+          onPressed: _addWeight,
+          icon: const Icon(Icons.add),
+        ),
         child: Center(
           child: Text(
             weights.isEmpty
@@ -1275,7 +1362,18 @@ class _HealthScreenState extends State<HealthScreen> {
     return _chartSection(
       label: 'Body Mass (kg)',
       height: 160,
-      action: _detailsBtn(() => _showWeightDetails(weights)),
+      action: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _detailsBtn(() => _showWeightDetails(weights)),
+          IconButton(
+            tooltip: 'Log body mass',
+            visualDensity: VisualDensity.compact,
+            onPressed: _addWeight,
+            icon: const Icon(Icons.add),
+          ),
+        ],
+      ),
       child: LineChart(
         LineChartData(
           minX: minX,
@@ -1350,6 +1448,243 @@ class _HealthScreenState extends State<HealthScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _CaffeineDialog extends StatefulWidget {
+  const _CaffeineDialog();
+
+  @override
+  State<_CaffeineDialog> createState() => _CaffeineDialogState();
+}
+
+class _CaffeineDialogState extends State<_CaffeineDialog> {
+  late final TextEditingController _mgController;
+  TimeOfDay _time = TimeOfDay.now();
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _mgController = TextEditingController(text: '50');
+  }
+
+  @override
+  void dispose() {
+    _mgController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _time,
+    );
+    if (picked != null) {
+      setState(() => _time = picked);
+    }
+  }
+
+  void _save() {
+    final parsed = int.tryParse(_mgController.text.trim());
+    if (parsed == null || parsed <= 0) {
+      setState(() => _error = 'Enter a valid caffeine dose');
+      return;
+    }
+    Navigator.pop(
+      context,
+      _CaffeineInput(mg: parsed, time: _time),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Add Caffeine Dose'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              autofocus: true,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'Caffeine (mg)',
+                suffixText: 'mg',
+              ),
+              controller: _mgController,
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                const Text('Time:'),
+                const SizedBox(width: 12),
+                TextButton(
+                  onPressed: _pickTime,
+                  child: Text(
+                    '${_time.hour.toString().padLeft(2, '0')}:${_time.minute.toString().padLeft(2, '0')}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  _error!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _save,
+          child: const Text('Add'),
+        ),
+      ],
+      actionsPadding: EdgeInsets.zero,
+    );
+  }
+}
+
+class _AlcoholDialog extends StatefulWidget {
+  const _AlcoholDialog();
+
+  @override
+  State<_AlcoholDialog> createState() => _AlcoholDialogState();
+}
+
+class _AlcoholDialogState extends State<_AlcoholDialog> {
+  late final TextEditingController _amountController;
+  late final TextEditingController _percentController;
+  TimeOfDay _time = TimeOfDay.now();
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _amountController = TextEditingController(text: '150');
+    _percentController = TextEditingController(text: '12.0');
+  }
+
+  @override
+  void dispose() {
+    _amountController.dispose();
+    _percentController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _time,
+    );
+    if (picked != null) {
+      setState(() => _time = picked);
+    }
+  }
+
+  void _save() {
+    final amount = double.tryParse(_amountController.text.trim());
+    final percent = double.tryParse(_percentController.text.trim());
+    if (amount == null || percent == null || amount <= 0 || percent <= 0) {
+      setState(() => _error = 'Enter a valid amount and ethanol %');
+      return;
+    }
+    Navigator.pop(
+      context,
+      _AlcoholInput(
+        amountMl: amount,
+        ethanolPercent: percent,
+        time: _time,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Add Alcohol'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              autofocus: true,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              decoration: const InputDecoration(
+                labelText: 'Amount',
+                suffixText: 'ml',
+              ),
+              controller: _amountController,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              decoration: const InputDecoration(
+                labelText: 'Ethanol %',
+                suffixText: '%',
+              ),
+              controller: _percentController,
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                const Text('Time:'),
+                const SizedBox(width: 12),
+                TextButton(
+                  onPressed: _pickTime,
+                  child: Text(
+                    '${_time.hour.toString().padLeft(2, '0')}:${_time.minute.toString().padLeft(2, '0')}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  _error!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _save,
+          child: const Text('Add'),
+        ),
+      ],
+      actionsPadding: EdgeInsets.zero,
     );
   }
 }

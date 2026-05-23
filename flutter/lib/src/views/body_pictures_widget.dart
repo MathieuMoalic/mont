@@ -5,8 +5,9 @@ import '../models.dart';
 
 class BodyPicturesSection extends StatefulWidget {
   final Function? onRefresh;
+  final Future<void> Function()? onAdd;
 
-  const BodyPicturesSection({super.key, this.onRefresh});
+  const BodyPicturesSection({super.key, this.onRefresh, this.onAdd});
 
   @override
   State<BodyPicturesSection> createState() => _BodyPicturesSectionState();
@@ -84,9 +85,25 @@ class _BodyPicturesSectionState extends State<BodyPicturesSection> {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: Text(
-            'Progress Pictures',
-            style: Theme.of(context).textTheme.titleLarge,
+          child: Row(
+            children: [
+              Text(
+                'Progress Pictures',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              if (widget.onAdd != null) ...[
+                const Spacer(),
+                IconButton(
+                  tooltip: 'Add progress picture',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () async {
+                    await widget.onAdd?.call();
+                    await _loadPictures();
+                  },
+                  icon: const Icon(Icons.add),
+                ),
+              ],
+            ],
           ),
         ),
         if (pictures.isEmpty)
