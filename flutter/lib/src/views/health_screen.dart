@@ -8,6 +8,31 @@ import '../api.dart' as api;
 import '../models.dart';
 import 'body_pictures_widget.dart';
 
+class HealthJournalEntry {
+  final int id;
+  String text;
+  final DateTime createdAt;
+
+  HealthJournalEntry({
+    required this.id,
+    required this.text,
+    required this.createdAt,
+  });
+}
+
+class CaffeineDose {
+  final int id;
+  final int mg;
+  final DateTime timestamp;
+
+  CaffeineDose({
+    required this.id,
+    required this.mg,
+    required this.timestamp,
+  });
+}
+
+
 enum _Range {
   twoWeeks('2W', 14),
   oneMonth('1M', 30),
@@ -32,6 +57,8 @@ class _HealthScreenState extends State<HealthScreen> {
   String? _error;
   bool _syncing = false;
   _Range _range = _Range.twoWeeks;
+  Map<DateTime, List<HealthJournalEntry>> _journalEntries = {};
+  Map<DateTime, List<CaffeineDose>> _caffeineDoses = {};
 
   double? _parseWeightKg(String raw) {
     final v = raw.trim().replaceAll(',', '.');
@@ -315,6 +342,330 @@ class _HealthScreenState extends State<HealthScreen> {
     return all.where((w) => w.measuredAt.isAfter(cutoff)).toList();
   }
 
+  void _addJournalEntry() {
+    final textCtrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Add Journal Entry'),
+        content: TextField(
+          controller: textCtrl,
+          autofocus: true,
+          maxLines: 5,
+          minLines: 3,
+          decoration: const InputDecoration(
+            labelText: 'What\'s on your mind?',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final text = textCtrl.text.trim();
+              if (text.isEmpty) return;
+              setState(() {
+                final today = DateTime(
+                  DateTime.now().year,
+                  DateTime.now().month,
+                  DateTime.now().day,
+                );
+                _journalEntries.putIfAbsent(today, () => []);
+                _journalEntries[today]!.insert(
+                  0,
+                  HealthJournalEntry(
+                    id: DateTime.now().millisecondsSinceEpoch,
+                    text: text,
+                    createdAt: DateTime.now(),
+                  ),
+                );
+              });
+              Navigator.pop(ctx);
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildJournalSection() {
+    // Get all entries sorted by date (newest first)
+    final allEntries = <HealthJournalEntry>[];
+    for (final entries in _journalEntries.values) {
+      allEntries.addAll(entries);
+    }
+    allEntries.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Health Journal',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          const SizedBox(height: 12),
+          if (allEntries.isEmpty)
+            Text(
+              'No journal entries yet',
+              style: Theme.of(context).textTheme.bodySmall,
+            )
+          else
+            ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: allEntries.length,
+              itemBuilder: (ctx, i) {
+                final entry = allEntries[i];
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  child: ListTile(
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    title: Text(
+                      entry.text,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Text(
+                      _formatEntryDate(entry.createdAt),
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.close, size: 18),
+                      onPressed: () {
+                        setState(() {
+                          _journalEntries.values
+                              .toList()
+                              .forEach((entries) => entries.removeWhere(
+                                    (e) => e.id == entry.id,
+                                  ));
+                        });
+                      },
+                      tooltip: 'Delete',
+                    ),
+                    onTap: () => _editJournalEntry(entry),
+                  ),
+                );
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  void _editJournalEntry(HealthJournalEntry entry) {
+    final textCtrl = TextEditingController(text: entry.text);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Edit Journal Entry'),
+        content: TextField(
+          controller: textCtrl,
+          autofocus: true,
+          maxLines: 5,
+          minLines: 3,
+          decoration: const InputDecoration(
+            labelText: 'Journal entry',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final text = textCtrl.text.trim();
+              if (text.isNotEmpty) {
+                setState(() {
+                  entry.text = text;
+                });
+              }
+              Navigator.pop(ctx);
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatEntryDate(DateTime dt) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = today.subtract(const Duration(days: 1));
+    final entryDate = DateTime(dt.year, dt.month, dt.day);
+
+    String dateStr;
+    if (entryDate == today) {
+      dateStr = 'Today';
+    } else if (entryDate == yesterday) {
+      dateStr = 'Yesterday';
+    } else {
+      dateStr =
+          '${entryDate.day}/${entryDate.month}/${entryDate.year}';
+    }
+
+    final time = '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+    return '$dateStr at $time';
+  }
+
+  void _addCaffeineDose() {
+    int mg = 50;
+    TimeOfDay time = TimeOfDay.now();
+    
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setLocalState) => AlertDialog(
+          title: const Text('Add Caffeine Dose'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                autofocus: true,
+                keyboardType: TextInputType.number,
+                onChanged: (v) => setLocalState(() => mg = int.tryParse(v) ?? 50),
+                decoration: const InputDecoration(
+                  labelText: 'Caffeine (mg)',
+                  suffixText: 'mg',
+                ),
+                controller: TextEditingController(text: mg.toString()),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  const Text('Time:'),
+                  const SizedBox(width: 12),
+                  TextButton(
+                    onPressed: () async {
+                      final picked = await showTimePicker(
+                        context: context,
+                        initialTime: time,
+                      );
+                      if (picked != null) {
+                        setLocalState(() => time = picked);
+                      }
+                    },
+                    child: Text(
+                      '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}',
+                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final now = DateTime.now();
+                final today = DateTime(now.year, now.month, now.day);
+                final doseTime = today.add(Duration(hours: time.hour, minutes: time.minute));
+                
+                setState(() {
+                  _caffeineDoses.putIfAbsent(today, () => []);
+                  _caffeineDoses[today]!.add(
+                    CaffeineDose(
+                      id: DateTime.now().millisecondsSinceEpoch,
+                      mg: mg,
+                      timestamp: doseTime,
+                    ),
+                  );
+                  // Sort by time
+                  _caffeineDoses[today]!.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+                });
+                Navigator.pop(ctx);
+              },
+              child: const Text('Add'),
+            ),
+          ],
+          actionsPadding: EdgeInsets.zero,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCaffeineSection() {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final doses = _caffeineDoses[today] ?? [];
+    final totalMg = doses.fold<int>(0, (sum, dose) => sum + dose.mg);
+
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Caffeine Today',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              Text(
+                '${totalMg}mg',
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (doses.isEmpty)
+            Text(
+              'No doses logged',
+              style: Theme.of(context).textTheme.bodySmall,
+            )
+          else
+            ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: doses.length,
+              itemBuilder: (ctx, i) {
+                final dose = doses[i];
+                final doseTime = '${dose.timestamp.hour.toString().padLeft(2, '0')}:${dose.timestamp.minute.toString().padLeft(2, '0')}';
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  child: ListTile(
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    title: Text('${dose.mg}mg'),
+                    subtitle: Text(doseTime),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.close, size: 18),
+                      onPressed: () {
+                        setState(() {
+                          _caffeineDoses[today]?.removeWhere((d) => d.id == dose.id);
+                        });
+                      },
+                      tooltip: 'Delete',
+                    ),
+                  ),
+                );
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -331,6 +682,18 @@ class _HealthScreenState extends State<HealthScreen> {
             onPressed: _addWeight,
             tooltip: 'Log body mass',
             child: const Icon(Icons.monitor_weight_outlined),
+          ),
+          const SizedBox(height: 16),
+          FloatingActionButton(
+            onPressed: _addJournalEntry,
+            tooltip: 'Add journal entry',
+            child: const Icon(Icons.edit_note),
+          ),
+          const SizedBox(height: 16),
+          FloatingActionButton(
+            onPressed: _addCaffeineDose,
+            tooltip: 'Add caffeine dose',
+            child: const Icon(Icons.local_cafe),
           ),
         ],
       ),
@@ -377,6 +740,8 @@ class _HealthScreenState extends State<HealthScreen> {
         SliverToBoxAdapter(child: _buildStepsChart(days)),
         SliverToBoxAdapter(child: _buildWeightChart(weights)),
         const SliverToBoxAdapter(child: BodyPicturesSection()),
+        SliverToBoxAdapter(child: _buildJournalSection()),
+        SliverToBoxAdapter(child: _buildCaffeineSection()),
         const SliverToBoxAdapter(child: SizedBox(height: 80)),
       ],
     );

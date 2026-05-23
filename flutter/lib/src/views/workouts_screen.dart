@@ -320,26 +320,6 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
             ),
             const SizedBox(height: 4),
             Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                _legendDot(
-                  Theme.of(context).colorScheme.surfaceContainerLow,
-                  'No session',
-                ),
-                const SizedBox(width: 12),
-                _legendDot(
-                  Theme.of(context).colorScheme.primaryContainer,
-                  'Session',
-                ),
-                const SizedBox(width: 12),
-                _legendDot(
-                  Theme.of(context).colorScheme.tertiaryContainer,
-                  'Today',
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Row(
               children: [
                 for (final day in weekdays)
                   Expanded(

@@ -11,6 +11,10 @@ class FoodManagementScreen extends StatefulWidget {
 }
 
 class _FoodManagementScreenState extends State<FoodManagementScreen> {
+  static const _proteinColor = Color(0xFF2E7D32);
+  static const _carbsColor = Color(0xFF1565C0);
+  static const _fatsColor = Color(0xFFF57C00);
+
   final _searchController = TextEditingController();
   List<Food> foods = [];
   bool isLoading = false;
@@ -26,6 +30,12 @@ class _FoodManagementScreenState extends State<FoodManagementScreen> {
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  String _fmt(double value) {
+    final rounded = value.roundToDouble();
+    if ((value - rounded).abs() < 0.001) return rounded.toStringAsFixed(0);
+    return value.toStringAsFixed(1);
   }
 
   Future<void> _loadFoods({String? query}) async {
@@ -294,11 +304,38 @@ class _FoodManagementScreenState extends State<FoodManagementScreen> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        subtitle: Text(
-                          '${food.brand} · P ${food.proteinPer100G}g C ${food.carbsPer100G}g F ${food.fatsPer100G}g · ${food.source}',
+                        subtitle: RichText(
+                          text: TextSpan(
+                            style: Theme.of(context).textTheme.bodySmall,
+                            children: [
+                              if (food.brand.isNotEmpty)
+                                TextSpan(text: '${food.brand} · '),
+                              TextSpan(
+                                text: 'P ${_fmt(food.proteinPer100G)}',
+                                style: const TextStyle(
+                                  color: _proteinColor,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              TextSpan(
+                                text: ' C ${_fmt(food.carbsPer100G)}',
+                                style: const TextStyle(
+                                  color: _carbsColor,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              TextSpan(
+                                text: ' F ${_fmt(food.fatsPer100G)}',
+                                style: const TextStyle(
+                                  color: _fatsColor,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              TextSpan(text: ' · ${food.source}'),
+                            ],
+                          ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.bodySmall,
                         ),
                       );
                     },

@@ -4,6 +4,7 @@ import '../api.dart' as api;
 import '../models.dart';
 import 'barcode_scan_screen.dart';
 import 'food_management_screen.dart';
+import 'meal_management_screen.dart';
 
 class CaloriesScreen extends StatefulWidget {
   const CaloriesScreen({super.key});
@@ -1585,11 +1586,33 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                                 return ListTile(
                                   dense: true,
                                   title: Text(f.name),
-                                  subtitle: Text(
-                                    'P ${_fmt(f.proteinPer100G)} C ${_fmt(f.carbsPer100G)} F ${_fmt(f.fatsPer100G)}',
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodySmall,
+                                  subtitle: RichText(
+                                    text: TextSpan(
+                                      style: Theme.of(context).textTheme.bodySmall,
+                                      children: [
+                                        TextSpan(
+                                          text: 'P ${_fmt(f.proteinPer100G)}',
+                                          style: const TextStyle(
+                                            color: _proteinColor,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                        TextSpan(
+                                          text: ' C ${_fmt(f.carbsPer100G)}',
+                                          style: const TextStyle(
+                                            color: _carbsColor,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                        TextSpan(
+                                          text: ' F ${_fmt(f.fatsPer100G)}',
+                                          style: const TextStyle(
+                                            color: _fatsColor,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                   onTap: () => Navigator.pop(ctx, f),
                                 );
@@ -1876,7 +1899,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
     var selectedMeal = meal;
     MealSummary? picked;
     var query = '';
-    final percentCtrl = TextEditingController(text: '100');
+    double percent = 100.0;
     List<MealSummary> allMeals = const [];
     String? error;
     bool loading = false;
@@ -1913,37 +1936,14 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                     .toList();
 
           return AlertDialog(
-            title: const Text('Add meal'),
             content: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 520),
               child: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    DropdownButtonFormField<String>(
-                      value: selectedMeal,
-                      decoration: const InputDecoration(
-                        labelText: 'Meal period',
-                      ),
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'morning',
-                          child: Text('Morning'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'afternoon',
-                          child: Text('Afternoon'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'evening',
-                          child: Text('Evening'),
-                        ),
-                      ],
-                      onChanged: (v) =>
-                          setLocalState(() => selectedMeal = v ?? meal),
-                    ),
-                    const SizedBox(height: 8),
                     TextField(
+                      autofocus: true,
                       decoration: const InputDecoration(
                         labelText: 'Search meals',
                         prefixIcon: Icon(Icons.search),
@@ -1961,62 +1961,98 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                         padding: const EdgeInsets.all(12),
                         child: Text(error!),
                       )
-                    else
-                      SizedBox(
-                        height: 260,
-                        child: ListView.builder(
-                          itemCount: matches.length,
-                          itemBuilder: (_, i) {
-                            final m = matches[i];
-                            final selected = picked?.id == m.id;
-                            return ListTile(
-                              dense: true,
-                              selected: selected,
-                              title: Text(m.name),
-                              subtitle: Text(
-                                '${_fmt(m.totalGrams)}g · P ${_fmt(m.proteinG)} C ${_fmt(m.carbsG)} F ${_fmt(m.fatsG)}',
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                              onTap: () => setLocalState(() => picked = m),
-                            );
-                          },
+                    else if (matches.isNotEmpty)
+                      Container(
+                        margin: const EdgeInsets.only(top: 4, bottom: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 6,
                         ),
-                      ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: percentCtrl,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration: const InputDecoration(
-                        labelText: 'Percent eaten',
-                        suffixText: '%',
-                      ),
-                    ),
-                    if (picked != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: TextButton.icon(
-                            onPressed: () async {
-                              final detail = await api.getMeal(picked!.id);
-                              final updated = await _showMealEditor(
-                                existing: detail,
-                              );
-                              if (updated != null) {
+                        decoration: BoxDecoration(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            for (int index = 0; index < (matches.length > 5 ? 5 : matches.length); index++) ...[
+                              InkWell(
+                                borderRadius: BorderRadius.circular(6),
+                                onTap: () => setLocalState(() => picked = matches[index]),
+                                child: Container(
+                                  color: picked?.id == matches[index].id
+                                      ? Theme.of(context)
+                                          .colorScheme
+                                          .primaryContainer
+                                      : null,
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 4,
+                                      vertical: 4,
+                                    ),
+                                    child: Text(
+                                      matches[index].name,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              if (index < (matches.length > 5 ? 4 : matches.length - 1))
+                                Divider(
+                                  height: 1,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.outlineVariant,
+                                ),
+                            ],
+                            Divider(
+                              height: 10,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.outlineVariant,
+                            ),
+                            FilledButton.icon(
+                              onPressed: () async {
+                                final created = await _showMealEditor();
+                                if (created == null) return;
                                 await load(setLocalState);
                                 picked = allMeals.firstWhere(
-                                  (m) => m.id == updated.id,
-                                  orElse: () => picked!,
+                                  (m) => m.id == created.id,
+                                  orElse: () => picked ?? allMeals.first,
                                 );
-                              }
-                            },
-                            icon: const Icon(Icons.edit),
-                            label: const Text('Edit selected meal'),
-                          ),
+                              },
+                              icon: const Icon(Icons.add),
+                              label: const Text('Add new meal'),
+                            ),
+                          ],
                         ),
                       ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Slider(
+                            value: percent,
+                            min: 0,
+                            max: 100,
+                            divisions: 20,
+                            onChanged: (v) => setLocalState(() => percent = v),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        SizedBox(
+                          width: 40,
+                          child: Text(
+                            '${percent.toStringAsFixed(0)}%',
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                            textAlign: TextAlign.right,
+                          ),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),
@@ -2026,18 +2062,6 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                 onPressed: () => Navigator.pop(ctx, false),
                 child: const Text('Cancel'),
               ),
-              TextButton(
-                onPressed: () async {
-                  final created = await _showMealEditor();
-                  if (created == null) return;
-                  await load(setLocalState);
-                  picked = allMeals.firstWhere(
-                    (m) => m.id == created.id,
-                    orElse: () => picked ?? allMeals.first,
-                  );
-                },
-                child: const Text('New meal'),
-              ),
               FilledButton(
                 onPressed: picked == null
                     ? null
@@ -2045,18 +2069,15 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                 child: const Text('Add'),
               ),
             ],
+            actionsPadding: EdgeInsets.zero,
           );
         },
       ),
     );
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      percentCtrl.dispose();
-    });
     if (ok != true || picked == null || !mounted) {
       return;
     }
-    final percent = double.tryParse(percentCtrl.text.trim()) ?? 100.0;
     try {
       await api.logMeal(
         day: _dayString(_selectedDay),
@@ -2127,15 +2148,13 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
         title: const Text('Calories'),
         actions: [
           IconButton(
-            onPressed: () async {
-              final created = await _showMealEditor();
-              if (!mounted || created == null) return;
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Meal created: ${created.name}')),
-              );
-            },
-            icon: const Icon(Icons.dining_outlined),
-            tooltip: 'New meal',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const MealManagementScreen(),
+              ),
+            ),
+            icon: const Icon(Icons.restaurant_menu),
+            tooltip: 'Manage meals',
           ),
           IconButton(
             onPressed: () => Navigator.of(context).push(
@@ -2474,9 +2493,14 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                   ),
                 ),
                 IconButton(
+                  onPressed: () => _showMealLogDialog(meal: meal),
+                  icon: const Icon(Icons.add_circle_outline),
+                  tooltip: 'Add meal',
+                ),
+                IconButton(
                   onPressed: () => _showFoodDialog(meal: meal),
                   icon: const Icon(Icons.add),
-                  tooltip: 'Add item',
+                  tooltip: 'Add food',
                 ),
               ],
             ),
