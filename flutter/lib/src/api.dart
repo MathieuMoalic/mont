@@ -408,13 +408,27 @@ Future<WorkoutSet> updateSet({
 // ── Weight ────────────────────────────────────────────────────────────────────
 
 Future<List<WeightEntry>> listWeight() async {
-  final res = await _handleUnauthorized(
-    () => http.get(_u('/weight'), headers: _headers()),
-  );
-  if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
-  return (jsonDecode(res.body) as List)
-      .map((e) => WeightEntry.fromJson(e as Map<String, dynamic>))
-      .toList();
+  const pageSize = 500;
+  var offset = 0;
+  final all = <WeightEntry>[];
+
+  while (true) {
+    final res = await _handleUnauthorized(
+      () => http.get(
+        _u('/weight?limit=$pageSize&offset=$offset'),
+        headers: _headers(),
+      ),
+    );
+    if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
+    final batch = (jsonDecode(res.body) as List)
+        .map((e) => WeightEntry.fromJson(e as Map<String, dynamic>))
+        .toList();
+    all.addAll(batch);
+    if (batch.length < pageSize) break;
+    offset += pageSize;
+  }
+
+  return all;
 }
 
 Future<WeightEntry> createWeightEntry({
