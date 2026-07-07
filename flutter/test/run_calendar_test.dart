@@ -16,17 +16,13 @@ void main() {
   group('RunCalendarScreen', () {
     testWidgets('shows month label', (tester) async {
       final runs = [_run(startedAt: DateTime.utc(2025, 6, 10))];
-      await tester.pumpWidget(MaterialApp(
-        home: RunCalendarScreen(runs: runs),
-      ));
+      await tester.pumpWidget(MaterialApp(home: RunCalendarScreen(runs: runs)));
       await tester.pump();
       expect(find.text('June 2025'), findsOneWidget);
     });
 
     testWidgets('shows day-of-week headers', (tester) async {
-      await tester.pumpWidget(MaterialApp(
-        home: RunCalendarScreen(runs: []),
-      ));
+      await tester.pumpWidget(MaterialApp(home: RunCalendarScreen(runs: [])));
       await tester.pump();
       for (final d in ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su']) {
         expect(find.text(d), findsOneWidget);
@@ -36,9 +32,7 @@ void main() {
     testWidgets('shows "No runs this month" when empty', (tester) async {
       // Pick a historic month with no runs
       final runs = <RunSummary>[];
-      await tester.pumpWidget(MaterialApp(
-        home: RunCalendarScreen(runs: runs),
-      ));
+      await tester.pumpWidget(MaterialApp(home: RunCalendarScreen(runs: runs)));
       await tester.pump();
       // Scroll down to make sure the empty-state message is visible
       await tester.scrollUntilVisible(
@@ -51,9 +45,7 @@ void main() {
 
     testWidgets('navigates to previous month', (tester) async {
       final runs = [_run(startedAt: DateTime.utc(2025, 6, 15))];
-      await tester.pumpWidget(MaterialApp(
-        home: RunCalendarScreen(runs: runs),
-      ));
+      await tester.pumpWidget(MaterialApp(home: RunCalendarScreen(runs: runs)));
       await tester.pump();
       expect(find.text('June 2025'), findsOneWidget);
 
@@ -64,9 +56,7 @@ void main() {
 
     testWidgets('navigates to next month', (tester) async {
       final runs = [_run(startedAt: DateTime.utc(2025, 6, 15))];
-      await tester.pumpWidget(MaterialApp(
-        home: RunCalendarScreen(runs: runs),
-      ));
+      await tester.pumpWidget(MaterialApp(home: RunCalendarScreen(runs: runs)));
       await tester.pump();
       await tester.tap(find.byIcon(Icons.chevron_right));
       await tester.pump();
@@ -74,10 +64,10 @@ void main() {
     });
 
     testWidgets('shows run km in calendar cell', (tester) async {
-      final runs = [_run(startedAt: DateTime.utc(2025, 6, 15), distanceM: 10000)];
-      await tester.pumpWidget(MaterialApp(
-        home: RunCalendarScreen(runs: runs),
-      ));
+      final runs = [
+        _run(startedAt: DateTime.utc(2025, 6, 15), distanceM: 10000),
+      ];
+      await tester.pumpWidget(MaterialApp(home: RunCalendarScreen(runs: runs)));
       await tester.pump();
       // Calendar cell shows rounded km with 'k' suffix
       expect(find.text('10k'), findsOneWidget);
@@ -85,9 +75,7 @@ void main() {
 
     testWidgets('wraps month correctly crossing year boundary', (tester) async {
       final runs = [_run(startedAt: DateTime.utc(2025, 1, 5))];
-      await tester.pumpWidget(MaterialApp(
-        home: RunCalendarScreen(runs: runs),
-      ));
+      await tester.pumpWidget(MaterialApp(home: RunCalendarScreen(runs: runs)));
       await tester.pump();
       expect(find.text('January 2025'), findsOneWidget);
 

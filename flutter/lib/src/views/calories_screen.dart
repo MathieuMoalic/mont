@@ -1588,7 +1588,9 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                                   title: Text(f.name),
                                   subtitle: RichText(
                                     text: TextSpan(
-                                      style: Theme.of(context).textTheme.bodySmall,
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall,
                                       children: [
                                         TextSpan(
                                           text: 'P ${_fmt(f.proteinPer100G)}',
@@ -1977,15 +1979,21 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            for (int index = 0; index < (matches.length > 5 ? 5 : matches.length); index++) ...[
+                            for (
+                              int index = 0;
+                              index < (matches.length > 5 ? 5 : matches.length);
+                              index++
+                            ) ...[
                               InkWell(
                                 borderRadius: BorderRadius.circular(6),
-                                onTap: () => setLocalState(() => picked = matches[index]),
+                                onTap: () => setLocalState(
+                                  () => picked = matches[index],
+                                ),
                                 child: Container(
                                   color: picked?.id == matches[index].id
-                                      ? Theme.of(context)
-                                          .colorScheme
-                                          .primaryContainer
+                                      ? Theme.of(
+                                          context,
+                                        ).colorScheme.primaryContainer
                                       : null,
                                   child: Padding(
                                     padding: const EdgeInsets.symmetric(
@@ -2000,7 +2008,8 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                                   ),
                                 ),
                               ),
-                              if (index < (matches.length > 5 ? 4 : matches.length - 1))
+                              if (index <
+                                  (matches.length > 5 ? 4 : matches.length - 1))
                                 Divider(
                                   height: 1,
                                   color: Theme.of(
@@ -2149,9 +2158,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
         actions: [
           IconButton(
             onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => const MealManagementScreen(),
-              ),
+              MaterialPageRoute(builder: (_) => const MealManagementScreen()),
             ),
             icon: const Icon(Icons.restaurant_menu),
             tooltip: 'Manage meals',

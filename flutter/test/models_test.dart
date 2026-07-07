@@ -4,7 +4,11 @@ import 'package:mont/src/models.dart';
 void main() {
   group('Exercise', () {
     test('fromJson parses all fields', () {
-      final e = Exercise.fromJson({'id': 1, 'name': 'Bench Press', 'notes': 'Use a spotter'});
+      final e = Exercise.fromJson({
+        'id': 1,
+        'name': 'Bench Press',
+        'notes': 'Use a spotter',
+      });
       expect(e.id, 1);
       expect(e.name, 'Bench Press');
       expect(e.notes, 'Use a spotter');
@@ -37,13 +41,12 @@ void main() {
       int runId = 42,
       String runDate = '2024-03-15T09:00:00Z',
       double estimatedSeconds = 1200.0,
-    }) =>
-        {
-          'distance_label': label,
-          'run_id': runId,
-          'run_date': runDate,
-          'estimated_seconds': estimatedSeconds,
-        };
+    }) => {
+      'distance_label': label,
+      'run_id': runId,
+      'run_date': runDate,
+      'estimated_seconds': estimatedSeconds,
+    };
 
     test('fromJson parses all fields', () {
       final pr = PersonalRecord.fromJson(_prJson());
@@ -79,16 +82,16 @@ void main() {
 
   group('RunSummary', () {
     Map<String, dynamic> _runJson({bool? isInvalid}) => {
-          'id': 1,
-          'started_at': '2024-03-15T09:00:00Z',
-          'duration_s': 1800,
-          'distance_m': 5000.0,
-          'elevation_gain_m': null,
-          'avg_hr': null,
-          'max_hr': null,
-          'notes': null,
-          if (isInvalid != null) 'is_invalid': isInvalid,
-        };
+      'id': 1,
+      'started_at': '2024-03-15T09:00:00Z',
+      'duration_s': 1800,
+      'distance_m': 5000.0,
+      'elevation_gain_m': null,
+      'avg_hr': null,
+      'max_hr': null,
+      'notes': null,
+      if (isInvalid != null) 'is_invalid': isInvalid,
+    };
 
     test('isInvalid defaults to false when field missing', () {
       final r = RunSummary.fromJson(_runJson());
@@ -136,8 +139,11 @@ void main() {
 
     test('isActive is true when finishedAt is null', () {
       final w = WorkoutSummary.fromJson({
-        'id': 1, 'started_at': '2026-01-01T00:00:00Z',
-        'finished_at': null, 'notes': null, 'set_count': 3,
+        'id': 1,
+        'started_at': '2026-01-01T00:00:00Z',
+        'finished_at': null,
+        'notes': null,
+        'set_count': 3,
       });
       expect(w.isActive, isTrue);
     });
@@ -146,8 +152,12 @@ void main() {
   group('WorkoutSet', () {
     test('fromJson parses integer weight', () {
       final s = WorkoutSet.fromJson({
-        'id': 1, 'exercise_id': 2, 'exercise_name': 'Deadlift',
-        'set_number': 1, 'reps': 5, 'weight_kg': 140,
+        'id': 1,
+        'exercise_id': 2,
+        'exercise_name': 'Deadlift',
+        'set_number': 1,
+        'reps': 5,
+        'weight_kg': 140,
         'logged_at': '2024-01-15T10:30:00Z',
       });
       expect(s.weightKg, 140.0);
@@ -157,8 +167,12 @@ void main() {
 
     test('fromJson parses fractional weight', () {
       final s = WorkoutSet.fromJson({
-        'id': 2, 'exercise_id': 3, 'exercise_name': 'Lateral Raise',
-        'set_number': 2, 'reps': 15, 'weight_kg': 7.5,
+        'id': 2,
+        'exercise_id': 3,
+        'exercise_name': 'Lateral Raise',
+        'set_number': 2,
+        'reps': 15,
+        'weight_kg': 7.5,
         'logged_at': '2024-01-15T10:32:00Z',
       });
       expect(s.weightKg, 7.5);
@@ -174,13 +188,21 @@ void main() {
         'notes': null,
         'sets': [
           {
-            'id': 1, 'exercise_id': 1, 'exercise_name': 'Squat',
-            'set_number': 1, 'reps': 8, 'weight_kg': 100.0,
+            'id': 1,
+            'exercise_id': 1,
+            'exercise_name': 'Squat',
+            'set_number': 1,
+            'reps': 8,
+            'weight_kg': 100.0,
             'logged_at': '2026-03-01T09:05:00Z',
           },
           {
-            'id': 2, 'exercise_id': 1, 'exercise_name': 'Squat',
-            'set_number': 2, 'reps': 8, 'weight_kg': 100.0,
+            'id': 2,
+            'exercise_id': 1,
+            'exercise_name': 'Squat',
+            'set_number': 2,
+            'reps': 8,
+            'weight_kg': 100.0,
             'logged_at': '2026-03-01T09:08:00Z',
           },
         ],
@@ -193,8 +215,11 @@ void main() {
 
     test('fromJson parses detail with empty sets', () {
       final d = WorkoutDetail.fromJson({
-        'id': 6, 'started_at': '2026-03-01T09:00:00Z',
-        'finished_at': null, 'notes': null, 'sets': [],
+        'id': 6,
+        'started_at': '2026-03-01T09:00:00Z',
+        'finished_at': null,
+        'notes': null,
+        'sets': [],
       });
       expect(d.sets, isEmpty);
     });
@@ -219,15 +244,14 @@ void main() {
       int totalSets = 3,
       int totalReps = 15,
       double totalVolume = 1500.0,
-    }) =>
-        {
-          'workout_date': date,
-          'max_weight_kg': maxWeight,
-          'reps_at_max': repsAtMax,
-          'total_sets': totalSets,
-          'total_reps': totalReps,
-          'total_volume': totalVolume,
-        };
+    }) => {
+      'workout_date': date,
+      'max_weight_kg': maxWeight,
+      'reps_at_max': repsAtMax,
+      'total_sets': totalSets,
+      'total_reps': totalReps,
+      'total_volume': totalVolume,
+    };
 
     test('fromJson parses all fields', () {
       final p = ExerciseHistoryPoint.fromJson(_json());
@@ -239,24 +263,32 @@ void main() {
     });
 
     test('estimated1RM uses Epley formula: weight * (1 + reps/30)', () {
-      final p = ExerciseHistoryPoint.fromJson(_json(maxWeight: 100.0, repsAtMax: 10));
+      final p = ExerciseHistoryPoint.fromJson(
+        _json(maxWeight: 100.0, repsAtMax: 10),
+      );
       // 100 * (1 + 10/30) = 100 * 1.333... ≈ 133.33
       expect(p.estimated1RM, closeTo(133.33, 0.01));
     });
 
     test('estimated1RM with 1 rep returns raw weight', () {
-      final p = ExerciseHistoryPoint.fromJson(_json(maxWeight: 120.0, repsAtMax: 1));
+      final p = ExerciseHistoryPoint.fromJson(
+        _json(maxWeight: 120.0, repsAtMax: 1),
+      );
       expect(p.estimated1RM, 120.0);
     });
 
     test('estimated1RM with 5 reps', () {
-      final p = ExerciseHistoryPoint.fromJson(_json(maxWeight: 100.0, repsAtMax: 5));
+      final p = ExerciseHistoryPoint.fromJson(
+        _json(maxWeight: 100.0, repsAtMax: 5),
+      );
       // 100 * (1 + 5/30) = 100 * 1.1666... ≈ 116.67
       expect(p.estimated1RM, closeTo(116.67, 0.01));
     });
 
     test('estimated1RM with 30 reps doubles the weight', () {
-      final p = ExerciseHistoryPoint.fromJson(_json(maxWeight: 50.0, repsAtMax: 30));
+      final p = ExerciseHistoryPoint.fromJson(
+        _json(maxWeight: 50.0, repsAtMax: 30),
+      );
       // 50 * (1 + 30/30) = 50 * 2 = 100
       expect(p.estimated1RM, closeTo(100.0, 0.01));
     });

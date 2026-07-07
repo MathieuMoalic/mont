@@ -10,27 +10,27 @@ void main() {
     // Mock PackageInfo platform channel
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('dev.fluttercommunity.plus/package_info'),
-      (MethodCall methodCall) async {
-        if (methodCall.method == 'getAll') {
-          return <String, dynamic>{
-            'appName': 'mont',
-            'packageName': 'eu.matmoa.mont',
-            'version': '0.4.8',
-            'buildNumber': '1',
-          };
-        }
-        return null;
-      },
-    );
+          const MethodChannel('dev.fluttercommunity.plus/package_info'),
+          (MethodCall methodCall) async {
+            if (methodCall.method == 'getAll') {
+              return <String, dynamic>{
+                'appName': 'mont',
+                'packageName': 'eu.matmoa.mont',
+                'version': '0.4.8',
+                'buildNumber': '1',
+              };
+            }
+            return null;
+          },
+        );
   });
 
   tearDown(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('dev.fluttercommunity.plus/package_info'),
-      null,
-    );
+          const MethodChannel('dev.fluttercommunity.plus/package_info'),
+          null,
+        );
   });
 
   group('SettingsScreen', () {

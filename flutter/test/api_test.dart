@@ -7,7 +7,9 @@ void main() {
   group('URL normalization', () {
     String normalizeBase(String url) {
       final trimmed = url.trim();
-      return trimmed.endsWith('/') ? trimmed.substring(0, trimmed.length - 1) : trimmed;
+      return trimmed.endsWith('/')
+          ? trimmed.substring(0, trimmed.length - 1)
+          : trimmed;
     }
 
     test('removes trailing slash', () {
@@ -27,11 +29,17 @@ void main() {
     });
 
     test('handles URL with path', () {
-      expect(normalizeBase('https://example.com/api/'), 'https://example.com/api');
+      expect(
+        normalizeBase('https://example.com/api/'),
+        'https://example.com/api',
+      );
     });
 
     test('handles URL with path without trailing slash', () {
-      expect(normalizeBase('https://example.com/api'), 'https://example.com/api');
+      expect(
+        normalizeBase('https://example.com/api'),
+        'https://example.com/api',
+      );
     });
 
     test('handles localhost with port', () {

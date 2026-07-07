@@ -9,8 +9,7 @@ RunPoint _pt({
   double? ele,
   int? hr,
   int? t,
-}) =>
-    RunPoint(lat: lat, lon: lon, ele: ele, hr: hr, t: t);
+}) => RunPoint(lat: lat, lon: lon, ele: ele, hr: hr, t: t);
 
 void main() {
   group('fmtPaceFromSeconds', () {
@@ -51,7 +50,13 @@ void main() {
     test('returns two splits for ~2 km run', () {
       final pts = List.generate(
         21,
-        (i) => _pt(lat: 0.0, lon: i * 0.001, t: i * 30, hr: 150 + i, ele: 100.0 + i),
+        (i) => _pt(
+          lat: 0.0,
+          lon: i * 0.001,
+          t: i * 30,
+          hr: 150 + i,
+          ele: 100.0 + i,
+        ),
       );
       // Cumulative: 0, 0.1, 0.2, … 2.0 km
       final km = List.generate(21, (i) => i * 0.1);
@@ -74,10 +79,7 @@ void main() {
     });
 
     test('pace is null when t is absent', () {
-      final pts = [
-        _pt(lat: 0.0, lon: 0.0),
-        _pt(lat: 0.0, lon: 0.009),
-      ];
+      final pts = [_pt(lat: 0.0, lon: 0.0), _pt(lat: 0.0, lon: 0.009)];
       final km = [0.0, 1.0];
       final splits = computeLapSplits(pts, km);
       expect(splits[0].paceSeconds, isNull);
@@ -95,10 +97,7 @@ void main() {
     });
 
     test('avg HR is null when no HR data', () {
-      final pts = [
-        _pt(lat: 0.0, lon: 0.000),
-        _pt(lat: 0.0, lon: 0.009),
-      ];
+      final pts = [_pt(lat: 0.0, lon: 0.000), _pt(lat: 0.0, lon: 0.009)];
       final km = [0.0, 1.0];
       final splits = computeLapSplits(pts, km);
       expect(splits[0].avgHr, isNull);

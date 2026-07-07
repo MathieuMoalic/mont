@@ -47,8 +47,7 @@ List<LapSplit> computeLapSplits(List<RunPoint> pts, List<double> cumKm) {
       }
     }
     // Include the boundary point at or just past endKm
-    final boundaryIdx =
-        cumKm.indexWhere((d) => d >= endKm);
+    final boundaryIdx = cumKm.indexWhere((d) => d >= endKm);
     if (boundaryIdx != -1) indices.add(boundaryIdx);
 
     if (indices.isEmpty) continue;
@@ -67,10 +66,7 @@ List<LapSplit> computeLapSplits(List<RunPoint> pts, List<double> cumKm) {
     }
 
     // Avg HR
-    final hrValues = indices
-        .map((i) => pts[i].hr)
-        .whereType<int>()
-        .toList();
+    final hrValues = indices.map((i) => pts[i].hr).whereType<int>().toList();
     final double? avgHr = hrValues.isEmpty
         ? null
         : hrValues.reduce((a, b) => a + b) / hrValues.length;
@@ -107,15 +103,17 @@ List<LapSplit> computeLapSplits(List<RunPoint> pts, List<double> cumKm) {
         ? null
         : strideValues.reduce((a, b) => a + b) / strideValues.length;
 
-    splits.add(LapSplit(
-      lapNumber: lap,
-      distanceKm: endKm,
-      paceSeconds: paceSeconds,
-      avgHr: avgHr,
-      elevationDelta: elevationDelta,
-      avgCadence: avgCadence,
-      avgStrideM: avgStrideM,
-    ));
+    splits.add(
+      LapSplit(
+        lapNumber: lap,
+        distanceKm: endKm,
+        paceSeconds: paceSeconds,
+        avgHr: avgHr,
+        elevationDelta: elevationDelta,
+        avgCadence: avgCadence,
+        avgStrideM: avgStrideM,
+      ),
+    );
   }
 
   return splits;
@@ -132,7 +130,8 @@ double _haversine(double lat1, double lon1, double lat2, double lon2) {
   const r = 6371000.0;
   final dlat = (lat2 - lat1) * math.pi / 180;
   final dlon = (lon2 - lon1) * math.pi / 180;
-  final a = math.sin(dlat / 2) * math.sin(dlat / 2) +
+  final a =
+      math.sin(dlat / 2) * math.sin(dlat / 2) +
       math.cos(lat1 * math.pi / 180) *
           math.cos(lat2 * math.pi / 180) *
           math.sin(dlon / 2) *

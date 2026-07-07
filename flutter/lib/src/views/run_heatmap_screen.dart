@@ -54,29 +54,32 @@ class _HeatmapLayerState extends State<HeatmapLayer> {
   @override
   Widget build(BuildContext context) {
     final camera = MapCamera.of(context);
-    return LayoutBuilder(builder: (ctx, constraints) {
-      final size = Size(constraints.maxWidth, constraints.maxHeight);
+    return LayoutBuilder(
+      builder: (ctx, constraints) {
+        final size = Size(constraints.maxWidth, constraints.maxHeight);
 
-      // Reproject if this is the first build or the zoom changed.
-      final rc = _renderCamera;
-      if (rc == null || (camera.zoom - rc.zoom).abs() > 0.15) {
-        _scheduleReproject(camera);
-      }
+        // Reproject if this is the first build or the zoom changed.
+        final rc = _renderCamera;
+        if (rc == null || (camera.zoom - rc.zoom).abs() > 0.15) {
+          _scheduleReproject(camera);
+        }
 
-      // Pan offset: how much every screen-coord has shifted since last render.
-      Offset panOffset = Offset.zero;
-      if (rc != null) {
-        panOffset = camera.latLngToScreenOffset(rc.center) -
-            Offset(size.width / 2, size.height / 2);
-      }
+        // Pan offset: how much every screen-coord has shifted since last render.
+        Offset panOffset = Offset.zero;
+        if (rc != null) {
+          panOffset =
+              camera.latLngToScreenOffset(rc.center) -
+              Offset(size.width / 2, size.height / 2);
+        }
 
-      return CustomPaint(
-        painter: _HeatmapPainter(_screenRoutes, panOffset),
-        size: size,
-        isComplex: true,
-        willChange: false,
-      );
-    });
+        return CustomPaint(
+          painter: _HeatmapPainter(_screenRoutes, panOffset),
+          size: size,
+          isComplex: true,
+          willChange: false,
+        );
+      },
+    );
   }
 }
 
@@ -164,7 +167,9 @@ class _RunHeatmapScreenState extends State<RunHeatmapScreen> {
       final raw = await api.fetchHeatmap();
       if (!mounted) return;
       setState(() {
-        _routes = raw.map((r) => r.map((pt) => LatLng(pt[0], pt[1])).toList()).toList();
+        _routes = raw
+            .map((r) => r.map((pt) => LatLng(pt[0], pt[1])).toList())
+            .toList();
         _loading = false;
       });
     } catch (e) {
@@ -201,27 +206,26 @@ class _RunHeatmapScreenState extends State<RunHeatmapScreen> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
-              ? Center(child: Text(_error!))
-              : _routes!.isEmpty
-                  ? const Center(child: Text('No runs with GPS data yet.'))
-                  : FlutterMap(
-                      options: MapOptions(
-                        initialCameraFit: _bounds() != null
-                            ? CameraFit.bounds(
-                                bounds: _bounds()!,
-                                padding: const EdgeInsets.all(32),
-                              )
-                            : null,
-                      ),
-                      children: [
-                        TileLayer(
-                          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                          userAgentPackageName: 'eu.matmoa.mont',
-                        ),
-                        HeatmapLayer(routes: _routes!),
-                      ],
-                    ),
+          ? Center(child: Text(_error!))
+          : _routes!.isEmpty
+          ? const Center(child: Text('No runs with GPS data yet.'))
+          : FlutterMap(
+              options: MapOptions(
+                initialCameraFit: _bounds() != null
+                    ? CameraFit.bounds(
+                        bounds: _bounds()!,
+                        padding: const EdgeInsets.all(32),
+                      )
+                    : null,
+              ),
+              children: [
+                TileLayer(
+                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  userAgentPackageName: 'eu.matmoa.mont',
+                ),
+                HeatmapLayer(routes: _routes!),
+              ],
+            ),
     );
   }
 }
-

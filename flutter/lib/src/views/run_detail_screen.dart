@@ -55,26 +55,27 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
     final h = seconds ~/ 3600;
     final m = (seconds % 3600) ~/ 60;
     final s = seconds % 60;
-    if (h > 0) return '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+    if (h > 0)
+      return '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
     return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
 
   Widget _statCard(String label, String value) => Card(
-        margin: const EdgeInsets.all(4),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(value,
-                  style: const TextStyle(
-                      fontSize: 18, fontWeight: FontWeight.bold)),
-              Text(label,
-                  style: const TextStyle(fontSize: 11, color: Colors.grey)),
-            ],
+    margin: const EdgeInsets.all(4),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            value,
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
-        ),
-      );
+          Text(label, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+        ],
+      ),
+    ),
+  );
 
   Widget _statsWrap(RunDetail run) {
     final pace = run.distanceM > 0
@@ -90,20 +91,32 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
       child: Wrap(
         alignment: WrapAlignment.center,
         children: [
-          _statCard('Distance', '${(run.distanceM / 1000).toStringAsFixed(2)} km'),
+          _statCard(
+            'Distance',
+            '${(run.distanceM / 1000).toStringAsFixed(2)} km',
+          ),
           _statCard('Duration', _formatDuration(run.durationS)),
           _statCard('Pace', pace),
           if (run.elevationGainM != null)
             _statCard('Elevation', '+${run.elevationGainM!.round()} m'),
           if (run.avgHr != null) _statCard('Avg HR', '${run.avgHr} bpm'),
-          if (run.calories != null) _statCard('Calories', '${run.calories} kcal'),
-          if (run.avgCadence != null) _statCard('Avg Cadence', '${run.avgCadence} spm'),
-          if (run.avgStrideM != null) _statCard('Avg Step', '${run.avgStrideM!.toStringAsFixed(2)} m'),
-          if (run.weatherTempC != null) _statCard('Temp', '${run.weatherTempC!.round()}°C'),
-          if (run.weatherCode != null) _statCard('Weather', _wmoDescription(run.weatherCode!)),
-          if (run.weatherWindKph != null) _statCard('Wind', '${run.weatherWindKph!.round()} km/h'),
+          if (run.calories != null)
+            _statCard('Calories', '${run.calories} kcal'),
+          if (run.avgCadence != null)
+            _statCard('Avg Cadence', '${run.avgCadence} spm'),
+          if (run.avgStrideM != null)
+            _statCard('Avg Step', '${run.avgStrideM!.toStringAsFixed(2)} m'),
+          if (run.weatherTempC != null)
+            _statCard('Temp', '${run.weatherTempC!.round()}°C'),
+          if (run.weatherCode != null)
+            _statCard('Weather', _wmoDescription(run.weatherCode!)),
+          if (run.weatherWindKph != null)
+            _statCard('Wind', '${run.weatherWindKph!.round()} km/h'),
           if (run.weatherPrecipMm != null && run.weatherPrecipMm! > 0)
-            _statCard('Precip.', '${run.weatherPrecipMm!.toStringAsFixed(1)} mm'),
+            _statCard(
+              'Precip.',
+              '${run.weatherPrecipMm!.toStringAsFixed(1)} mm',
+            ),
         ],
       ),
     );
@@ -117,10 +130,14 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
     final bounds = points.isEmpty
         ? null
         : LatLngBounds(
-            LatLng(lats.reduce((a, b) => a < b ? a : b),
-                lons.reduce((a, b) => a < b ? a : b)),
-            LatLng(lats.reduce((a, b) => a > b ? a : b),
-                lons.reduce((a, b) => a > b ? a : b)),
+            LatLng(
+              lats.reduce((a, b) => a < b ? a : b),
+              lons.reduce((a, b) => a < b ? a : b),
+            ),
+            LatLng(
+              lats.reduce((a, b) => a > b ? a : b),
+              lons.reduce((a, b) => a > b ? a : b),
+            ),
           );
     return points.isEmpty
         ? const Center(child: Text('No route data'))
@@ -128,26 +145,24 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
             options: MapOptions(
               initialCameraFit: bounds != null
                   ? CameraFit.bounds(
-                      bounds: bounds, padding: const EdgeInsets.all(24))
+                      bounds: bounds,
+                      padding: const EdgeInsets.all(24),
+                    )
                   : null,
               interactionOptions: InteractionOptions(
-                flags: interactive
-                    ? InteractiveFlag.all
-                    : InteractiveFlag.none,
+                flags: interactive ? InteractiveFlag.all : InteractiveFlag.none,
               ),
             ),
             children: [
               TileLayer(
-                urlTemplate:
-                    'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                 userAgentPackageName: 'eu.matmoa.mont',
               ),
-              PolylineLayer(polylines: [
-                Polyline(
-                    points: points,
-                    strokeWidth: 4,
-                    color: Colors.blue),
-              ]),
+              PolylineLayer(
+                polylines: [
+                  Polyline(points: points, strokeWidth: 4, color: Colors.blue),
+                ],
+              ),
             ],
           );
   }
@@ -239,10 +254,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
             children: [
               _statsWrap(run),
               const Divider(height: 8),
-              SizedBox(
-                height: 240,
-                child: _mapWidget(interactive: false),
-              ),
+              SizedBox(height: 240, child: _mapWidget(interactive: false)),
               if (_hasHr(run)) _hrChart(context, run),
               if (_hasPace(run)) _paceChart(context, run),
               if (_hasEle(run)) _eleChart(context, run),
@@ -257,14 +269,11 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
     );
   }
 
-  static bool _hasHr(RunDetail run) =>
-      run.route.any((p) => p.hr != null);
+  static bool _hasHr(RunDetail run) => run.route.any((p) => p.hr != null);
   static bool _hasPace(RunDetail run) =>
       run.route.length >= 2 && run.route.any((p) => p.t != null);
-  static bool _hasEle(RunDetail run) =>
-      run.route.any((p) => p.ele != null);
-  static bool _hasCad(RunDetail run) =>
-      run.route.any((p) => p.cad != null);
+  static bool _hasEle(RunDetail run) => run.route.any((p) => p.ele != null);
+  static bool _hasCad(RunDetail run) => run.route.any((p) => p.cad != null);
   static bool _hasStride(RunDetail run) =>
       run.route.length >= 2 &&
       run.route.any((p) => p.cad != null && p.t != null);
@@ -273,9 +282,11 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
   static List<double> _cumKm(List<RunPoint> pts) {
     final out = <double>[0.0];
     for (int i = 1; i < pts.length; i++) {
-      out.add(out.last +
-          _haversine(pts[i - 1].lat, pts[i - 1].lon, pts[i].lat, pts[i].lon) /
-              1000.0);
+      out.add(
+        out.last +
+            _haversine(pts[i - 1].lat, pts[i - 1].lon, pts[i].lat, pts[i].lon) /
+                1000.0,
+      );
     }
     return out;
   }
@@ -284,27 +295,53 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
 
   static String _wmoDescription(int code) {
     switch (code) {
-      case 0: return 'Clear sky';
-      case 1: return 'Mainly clear';
-      case 2: return 'Partly cloudy';
-      case 3: return 'Overcast';
-      case 45: case 48: return 'Fog';
-      case 51: case 53: case 55: return 'Drizzle';
-      case 61: case 63: case 65: return 'Rain';
-      case 71: case 73: case 75: return 'Snow';
-      case 80: case 81: case 82: return 'Rain showers';
-      case 85: case 86: return 'Snow showers';
-      case 95: return 'Thunderstorm';
-      case 96: case 99: return 'Thunderstorm+hail';
-      default: return 'code $code';
+      case 0:
+        return 'Clear sky';
+      case 1:
+        return 'Mainly clear';
+      case 2:
+        return 'Partly cloudy';
+      case 3:
+        return 'Overcast';
+      case 45:
+      case 48:
+        return 'Fog';
+      case 51:
+      case 53:
+      case 55:
+        return 'Drizzle';
+      case 61:
+      case 63:
+      case 65:
+        return 'Rain';
+      case 71:
+      case 73:
+      case 75:
+        return 'Snow';
+      case 80:
+      case 81:
+      case 82:
+        return 'Rain showers';
+      case 85:
+      case 86:
+        return 'Snow showers';
+      case 95:
+        return 'Thunderstorm';
+      case 96:
+      case 99:
+        return 'Thunderstorm+hail';
+      default:
+        return 'code $code';
     }
   }
 
   Widget _hrChart(BuildContext context, RunDetail run) {
     final pts = run.route.where((p) => p.hr != null).toList();
     final km = _cumKm(pts);
-    final spots = List.generate(pts.length,
-        (i) => FlSpot(km[i], pts[i].hr!.toDouble()));
+    final spots = List.generate(
+      pts.length,
+      (i) => FlSpot(km[i], pts[i].hr!.toDouble()),
+    );
     return _chartCard(
       title: 'Heart rate (bpm)',
       color: Colors.red,
@@ -323,14 +360,20 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
     const windowSecs = 30;
     for (int i = 0; i < pts.length; i++) {
       int j = i;
-      while (j > 0 && (pts[i].t! - pts[j].t!) < windowSecs) { j--; }
+      while (j > 0 && (pts[i].t! - pts[j].t!) < windowSecs) {
+        j--;
+      }
       if (j == i) continue;
       final dt = (pts[i].t! - pts[j].t!).toDouble();
       if (dt <= 0) continue;
       double dm = 0;
       for (int k = j; k < i; k++) {
         dm += _haversine(
-          pts[k].lat, pts[k].lon, pts[k + 1].lat, pts[k + 1].lon);
+          pts[k].lat,
+          pts[k].lon,
+          pts[k + 1].lat,
+          pts[k + 1].lon,
+        );
       }
       if (dm < 1) continue;
       final paceMinKm = (dt / dm) * (1000 / 60);
@@ -356,8 +399,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
   Widget _eleChart(BuildContext context, RunDetail run) {
     final pts = run.route.where((p) => p.ele != null).toList();
     final km = _cumKm(pts);
-    final spots = List.generate(pts.length,
-        (i) => FlSpot(km[i], pts[i].ele!));
+    final spots = List.generate(pts.length, (i) => FlSpot(km[i], pts[i].ele!));
     return _chartCard(
       title: 'Elevation (m)',
       color: Colors.green,
@@ -370,8 +412,10 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
   Widget _cadChart(BuildContext context, RunDetail run) {
     final pts = run.route.where((p) => p.cad != null).toList();
     final km = _cumKm(pts);
-    final spots = List.generate(pts.length,
-        (i) => FlSpot(km[i], pts[i].cad!.toDouble()));
+    final spots = List.generate(
+      pts.length,
+      (i) => FlSpot(km[i], pts[i].cad!.toDouble()),
+    );
     return _chartCard(
       title: 'Cadence (spm)',
       color: Colors.orange,
@@ -393,7 +437,11 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
       final dt = (tb - ta).toDouble();
       if (dt <= 0) continue;
       final dm = _haversine(
-          pts[i - 1].lat, pts[i - 1].lon, pts[i].lat, pts[i].lon);
+        pts[i - 1].lat,
+        pts[i - 1].lon,
+        pts[i].lat,
+        pts[i].lon,
+      );
       if (dm < 0.1) continue;
       final stride = (dm / dt) * 60.0 / ca;
       if (stride < 0.25 || stride > 1.75) continue;
@@ -409,12 +457,12 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
     );
   }
 
-
   static double _haversine(double lat1, double lon1, double lat2, double lon2) {
     const r = 6371000.0;
     final dlat = (lat2 - lat1) * math.pi / 180;
     final dlon = (lon2 - lon1) * math.pi / 180;
-    final a = math.sin(dlat / 2) * math.sin(dlat / 2) +
+    final a =
+        math.sin(dlat / 2) * math.sin(dlat / 2) +
         math.cos(lat1 * math.pi / 180) *
             math.cos(lat2 * math.pi / 180) *
             math.sin(dlon / 2) *
@@ -430,7 +478,9 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
     for (int i = 0; i < spots.length; i++) {
       final lo = math.max(0, i - half);
       final hi = math.min(spots.length - 1, i + half);
-      final avg = spots.sublist(lo, hi + 1).map((s) => s.y).reduce((a, b) => a + b) / (hi - lo + 1);
+      final avg =
+          spots.sublist(lo, hi + 1).map((s) => s.y).reduce((a, b) => a + b) /
+          (hi - lo + 1);
       out.add(FlSpot(spots[i].x, avg));
     }
     return out;
@@ -452,10 +502,14 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
     final maxX = xs.fold(0.0, math.max);
     // Pick a round interval so we get ~5 ticks
     final rawInterval = maxX / 5;
-    final interval = rawInterval <= 0.5 ? 0.5
-        : rawInterval <= 1.0 ? 1.0
-        : rawInterval <= 2.0 ? 2.0
-        : rawInterval <= 5.0 ? 5.0
+    final interval = rawInterval <= 0.5
+        ? 0.5
+        : rawInterval <= 1.0
+        ? 1.0
+        : rawInterval <= 2.0
+        ? 2.0
+        : rawInterval <= 5.0
+        ? 5.0
         : 10.0;
 
     return Padding(
@@ -468,64 +522,78 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
             children: [
               Padding(
                 padding: const EdgeInsets.only(left: 8, bottom: 8),
-                child: Text(title,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 13)),
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                ),
               ),
               SizedBox(
                 height: 160,
-                child: LineChart(LineChartData(
-                  minY: flipY ? minY - pad : minY - pad,
-                  maxY: flipY ? maxY + pad : maxY + pad,
-                  lineTouchData: LineTouchData(
-                    touchTooltipData: LineTouchTooltipData(
-                      getTooltipItems: (spots) => spots
-                          .map((s) => LineTooltipItem(
+                child: LineChart(
+                  LineChartData(
+                    minY: flipY ? minY - pad : minY - pad,
+                    maxY: flipY ? maxY + pad : maxY + pad,
+                    lineTouchData: LineTouchData(
+                      touchTooltipData: LineTouchTooltipData(
+                        getTooltipItems: (spots) => spots
+                            .map(
+                              (s) => LineTooltipItem(
                                 leftLabel(s.y),
                                 const TextStyle(fontSize: 12),
-                              ))
-                          .toList(),
+                              ),
+                            )
+                            .toList(),
+                      ),
                     ),
+                    lineBarsData: [
+                      LineChartBarData(
+                        spots: spots,
+                        isCurved: true,
+                        color: color,
+                        dotData: const FlDotData(show: false),
+                        barWidth: 2,
+                        belowBarData: BarAreaData(
+                          show: true,
+                          color: color.withValues(alpha: 0.12),
+                        ),
+                      ),
+                    ],
+                    titlesData: FlTitlesData(
+                      leftTitles: AxisTitles(
+                        sideTitles: SideTitles(
+                          showTitles: true,
+                          reservedSize: 44,
+                          getTitlesWidget: (v, _) => Text(
+                            leftLabel(v),
+                            style: const TextStyle(fontSize: 9),
+                          ),
+                        ),
+                      ),
+                      bottomTitles: AxisTitles(
+                        sideTitles: SideTitles(
+                          showTitles: true,
+                          reservedSize: 20,
+                          interval: interval,
+                          getTitlesWidget: (v, _) => Text(
+                            bottomLabel(v),
+                            style: const TextStyle(fontSize: 9),
+                          ),
+                        ),
+                      ),
+                      topTitles: const AxisTitles(
+                        sideTitles: SideTitles(showTitles: false),
+                      ),
+                      rightTitles: const AxisTitles(
+                        sideTitles: SideTitles(showTitles: false),
+                      ),
+                    ),
+                    gridData: const FlGridData(show: true),
+                    borderData: FlBorderData(show: false),
                   ),
-                  lineBarsData: [
-                    LineChartBarData(
-                      spots: spots,
-                      isCurved: true,
-                      color: color,
-                      dotData: const FlDotData(show: false),
-                      barWidth: 2,
-                      belowBarData: BarAreaData(
-                        show: true,
-                        color: color.withValues(alpha: 0.12),
-                      ),
-                    ),
-                  ],
-                  titlesData: FlTitlesData(
-                    leftTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        reservedSize: 44,
-                        getTitlesWidget: (v, _) => Text(leftLabel(v),
-                            style: const TextStyle(fontSize: 9)),
-                      ),
-                    ),
-                    bottomTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        reservedSize: 20,
-                        interval: interval,
-                        getTitlesWidget: (v, _) => Text(bottomLabel(v),
-                            style: const TextStyle(fontSize: 9)),
-                      ),
-                    ),
-                    topTitles: const AxisTitles(
-                        sideTitles: SideTitles(showTitles: false)),
-                    rightTitles: const AxisTitles(
-                        sideTitles: SideTitles(showTitles: false)),
-                  ),
-                  gridData: const FlGridData(show: true),
-                  borderData: FlBorderData(show: false),
-                )),
+                ),
               ),
             ],
           ),
@@ -554,8 +622,10 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Lap splits',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+              const Text(
+                'Lap splits',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+              ),
               const SizedBox(height: 8),
               Table(
                 columnWidths: const {
@@ -570,8 +640,10 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                   TableRow(
                     decoration: BoxDecoration(
                       border: Border(
-                          bottom: BorderSide(
-                              color: Colors.grey.withValues(alpha: 0.3))),
+                        bottom: BorderSide(
+                          color: Colors.grey.withValues(alpha: 0.3),
+                        ),
+                      ),
                     ),
                     children: [
                       _th('Km'),
@@ -582,24 +654,40 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                       if (hasStride) _th('Step'),
                     ],
                   ),
-                  ...splits.map((s) => TableRow(
-                        children: [
-                          _td('${s.lapNumber}'),
-                          _td(s.paceSeconds != null
+                  ...splits.map(
+                    (s) => TableRow(
+                      children: [
+                        _td('${s.lapNumber}'),
+                        _td(
+                          s.paceSeconds != null
                               ? '${fmtPaceFromSeconds(s.paceSeconds!)}/km'
-                              : '—'),
-                          if (hasHr)
-                            _td(s.avgHr != null ? '${s.avgHr!.round()} bpm' : '—'),
-                          if (hasEle)
-                            _td(s.elevationDelta != null
+                              : '—',
+                        ),
+                        if (hasHr)
+                          _td(
+                            s.avgHr != null ? '${s.avgHr!.round()} bpm' : '—',
+                          ),
+                        if (hasEle)
+                          _td(
+                            s.elevationDelta != null
                                 ? '${s.elevationDelta! >= 0 ? '+' : ''}${s.elevationDelta!.round()} m'
-                                : '—'),
-                          if (hasCad)
-                            _td(s.avgCadence != null ? '${s.avgCadence!.round()} spm' : '—'),
-                          if (hasStride)
-                            _td(s.avgStrideM != null ? '${s.avgStrideM!.toStringAsFixed(2)} m' : '—'),
-                        ],
-                      )),
+                                : '—',
+                          ),
+                        if (hasCad)
+                          _td(
+                            s.avgCadence != null
+                                ? '${s.avgCadence!.round()} spm'
+                                : '—',
+                          ),
+                        if (hasStride)
+                          _td(
+                            s.avgStrideM != null
+                                ? '${s.avgStrideM!.toStringAsFixed(2)} m'
+                                : '—',
+                          ),
+                      ],
+                    ),
+                  ),
                 ],
               ),
             ],
@@ -610,14 +698,19 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
   }
 
   Widget _th(String text) => Padding(
-        padding: const EdgeInsets.only(bottom: 4),
-        child: Text(text,
-            style: const TextStyle(
-                fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey)),
-      );
+    padding: const EdgeInsets.only(bottom: 4),
+    child: Text(
+      text,
+      style: const TextStyle(
+        fontSize: 11,
+        fontWeight: FontWeight.bold,
+        color: Colors.grey,
+      ),
+    ),
+  );
 
   Widget _td(String text) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Text(text, style: const TextStyle(fontSize: 12)),
-      );
+    padding: const EdgeInsets.symmetric(vertical: 4),
+    child: Text(text, style: const TextStyle(fontSize: 12)),
+  );
 }

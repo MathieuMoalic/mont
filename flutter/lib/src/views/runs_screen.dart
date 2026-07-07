@@ -51,7 +51,8 @@ class _RunsScreenState extends State<RunsScreen> {
     final h = seconds ~/ 3600;
     final m = (seconds % 3600) ~/ 60;
     final s = seconds % 60;
-    if (h > 0) return '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+    if (h > 0)
+      return '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
     return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
 
@@ -76,9 +77,9 @@ class _RunsScreenState extends State<RunsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Sync failed: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Sync failed: $e')));
     }
   }
 
@@ -88,9 +89,13 @@ class _RunsScreenState extends State<RunsScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text('Reset all runs?'),
         content: const Text(
-            'This will delete every run and reimport them from Gadgetbridge. Continue?'),
+          'This will delete every run and reimport them from Gadgetbridge. Continue?',
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: TextButton.styleFrom(foregroundColor: Colors.red),
@@ -105,9 +110,9 @@ class _RunsScreenState extends State<RunsScreen> {
       await _syncGadgetbridge();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Reset failed: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Reset failed: $e')));
     }
   }
 
@@ -184,7 +189,10 @@ class _RunsScreenState extends State<RunsScreen> {
             children: [
               const Padding(
                 padding: EdgeInsets.all(16),
-                child: Text('Sort by', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                child: Text(
+                  'Sort by',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                ),
               ),
               Expanded(
                 child: ListView(
@@ -211,9 +219,13 @@ class _RunsScreenState extends State<RunsScreen> {
                     return ListTile(
                       leading: Icon(
                         isSelected
-                            ? (_sortAscending ? Icons.arrow_upward : Icons.arrow_downward)
+                            ? (_sortAscending
+                                  ? Icons.arrow_upward
+                                  : Icons.arrow_downward)
                             : Icons.sort,
-                        color: isSelected ? Theme.of(context).colorScheme.primary : null,
+                        color: isSelected
+                            ? Theme.of(context).colorScheme.primary
+                            : null,
                       ),
                       title: Text(label),
                       selected: isSelected,
@@ -225,7 +237,9 @@ class _RunsScreenState extends State<RunsScreen> {
                           } else {
                             _sortField = field;
                             // Default directions that make sense
-                            _sortAscending = field == RunSortField.pace; // fastest first for pace
+                            _sortAscending =
+                                field ==
+                                RunSortField.pace; // fastest first for pace
                           }
                         });
                       },
@@ -257,11 +271,9 @@ class _RunsScreenState extends State<RunsScreen> {
             onPressed: _runs.isEmpty
                 ? null
                 : () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const RunHeatmapScreen(),
-                      ),
-                    ),
+                    context,
+                    MaterialPageRoute(builder: (_) => const RunHeatmapScreen()),
+                  ),
           ),
           IconButton(
             icon: const Icon(Icons.calendar_month),
@@ -269,21 +281,19 @@ class _RunsScreenState extends State<RunsScreen> {
             onPressed: _runs.isEmpty
                 ? null
                 : () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => RunCalendarScreen(runs: _runs),
-                      ),
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => RunCalendarScreen(runs: _runs),
                     ),
+                  ),
           ),
           IconButton(
             icon: const Icon(Icons.bar_chart),
             tooltip: 'Stats',
             onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const RunStatsScreen(),
-                  ),
-                ),
+              context,
+              MaterialPageRoute(builder: (_) => const RunStatsScreen()),
+            ),
           ),
           IconButton(
             icon: const Icon(Icons.sync),
@@ -300,38 +310,40 @@ class _RunsScreenState extends State<RunsScreen> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _runs.isEmpty
-              ? const Center(child: Text('No runs yet. Tap ↻ to sync from Gadgetbridge.'))
-              : RefreshIndicator(
-                  onRefresh: _load,
-                  child: ListView.builder(
-                    itemCount: _sortedRuns.length,
-                    itemBuilder: (context, i) {
-                      final run = _sortedRuns[i];
-                      final isPr = _prRunIds.contains(run.id);
-                      return ListTile(
-                        leading: isPr
-                            ? const Icon(Icons.emoji_events, color: Colors.amber)
-                            : const Icon(Icons.directions_run),
-                        title: Text(
-                          '${(run.distanceM / 1000).toStringAsFixed(2)} km  ·  ${_formatDuration(run.durationS)}',
-                        ),
-                        subtitle: Text(
-                          '${run.startedAt.toLocal().toString().substring(0, 16)}  ·  ${_formatPace(run)}',
-                        ),
-                        trailing: Text(
-                          run.avgHr != null ? '♥ ${run.avgHr}' : '',
-                          style: const TextStyle(color: Colors.red),
-                        ),
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => RunDetailScreen(runId: run.id),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
+          ? const Center(
+              child: Text('No runs yet. Tap ↻ to sync from Gadgetbridge.'),
+            )
+          : RefreshIndicator(
+              onRefresh: _load,
+              child: ListView.builder(
+                itemCount: _sortedRuns.length,
+                itemBuilder: (context, i) {
+                  final run = _sortedRuns[i];
+                  final isPr = _prRunIds.contains(run.id);
+                  return ListTile(
+                    leading: isPr
+                        ? const Icon(Icons.emoji_events, color: Colors.amber)
+                        : const Icon(Icons.directions_run),
+                    title: Text(
+                      '${(run.distanceM / 1000).toStringAsFixed(2)} km  ·  ${_formatDuration(run.durationS)}',
+                    ),
+                    subtitle: Text(
+                      '${run.startedAt.toLocal().toString().substring(0, 16)}  ·  ${_formatPace(run)}',
+                    ),
+                    trailing: Text(
+                      run.avgHr != null ? '♥ ${run.avgHr}' : '',
+                      style: const TextStyle(color: Colors.red),
+                    ),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => RunDetailScreen(runId: run.id),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
     );
   }
 }

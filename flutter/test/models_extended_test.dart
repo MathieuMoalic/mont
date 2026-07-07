@@ -21,10 +21,7 @@ void main() {
     });
 
     test('fromJson handles null optional fields', () {
-      final p = RunPoint.fromJson({
-        'lat': 40.7128,
-        'lon': -74.0060,
-      });
+      final p = RunPoint.fromJson({'lat': 40.7128, 'lon': -74.0060});
       expect(p.lat, 40.7128);
       expect(p.lon, -74.0060);
       expect(p.ele, isNull);
@@ -34,10 +31,7 @@ void main() {
     });
 
     test('fromJson handles integer coordinates', () {
-      final p = RunPoint.fromJson({
-        'lat': 51,
-        'lon': -1,
-      });
+      final p = RunPoint.fromJson({'lat': 51, 'lon': -1});
       expect(p.lat, 51.0);
       expect(p.lon, -1.0);
     });
@@ -79,18 +73,20 @@ void main() {
     };
 
     test('fromJson parses all fields', () {
-      final r = RunSummary.fromJson(_runJson(
-        elevationGainM: 150.5,
-        avgHr: 155,
-        maxHr: 175,
-        notes: 'Great run!',
-        avgCadence: 170,
-        avgStrideM: 1.1,
-        weatherTempC: 15.5,
-        weatherWindKph: 10.0,
-        weatherPrecipMm: 0.0,
-        weatherCode: 1,
-      ));
+      final r = RunSummary.fromJson(
+        _runJson(
+          elevationGainM: 150.5,
+          avgHr: 155,
+          maxHr: 175,
+          notes: 'Great run!',
+          avgCadence: 170,
+          avgStrideM: 1.1,
+          weatherTempC: 15.5,
+          weatherWindKph: 10.0,
+          weatherPrecipMm: 0.0,
+          weatherCode: 1,
+        ),
+      );
       expect(r.id, 1);
       expect(r.durationS, 1800);
       expect(r.distanceM, 5000.0);
@@ -107,7 +103,9 @@ void main() {
     });
 
     test('fromJson parses DateTime correctly', () {
-      final r = RunSummary.fromJson(_runJson(startedAt: '2024-06-15T14:30:00Z'));
+      final r = RunSummary.fromJson(
+        _runJson(startedAt: '2024-06-15T14:30:00Z'),
+      );
       expect(r.startedAt.year, 2024);
       expect(r.startedAt.month, 6);
       expect(r.startedAt.day, 15);
@@ -200,9 +198,7 @@ void main() {
     });
 
     test('fromJson handles null optional fields', () {
-      final h = DailyHealth.fromJson({
-        'date': '2024-03-15',
-      });
+      final h = DailyHealth.fromJson({'date': '2024-03-15'});
       expect(h.date, '2024-03-15');
       expect(h.avgHr, isNull);
       expect(h.minHr, isNull);
@@ -214,11 +210,7 @@ void main() {
 
   group('Exercise', () {
     test('displayName returns name when no equipment', () {
-      final e = Exercise.fromJson({
-        'id': 1,
-        'name': 'Squat',
-        'notes': null,
-      });
+      final e = Exercise.fromJson({'id': 1, 'name': 'Squat', 'notes': null});
       expect(e.displayName, 'Squat');
     });
 
@@ -338,19 +330,25 @@ void main() {
     };
 
     test('estimated1RM with 0 reps returns weight', () {
-      final p = ExerciseHistoryPoint.fromJson(_json(maxWeight: 100.0, repsAtMax: 0));
+      final p = ExerciseHistoryPoint.fromJson(
+        _json(maxWeight: 100.0, repsAtMax: 0),
+      );
       // 0 reps is <= 1, so returns raw weight
       expect(p.estimated1RM, 100.0);
     });
 
     test('estimated1RM with negative reps returns weight', () {
       // Edge case - shouldn't happen in practice
-      final p = ExerciseHistoryPoint.fromJson(_json(maxWeight: 100.0, repsAtMax: -1));
+      final p = ExerciseHistoryPoint.fromJson(
+        _json(maxWeight: 100.0, repsAtMax: -1),
+      );
       expect(p.estimated1RM, 100.0);
     });
 
     test('estimated1RM with high reps', () {
-      final p = ExerciseHistoryPoint.fromJson(_json(maxWeight: 50.0, repsAtMax: 50));
+      final p = ExerciseHistoryPoint.fromJson(
+        _json(maxWeight: 50.0, repsAtMax: 50),
+      );
       // 50 * (1 + 50/30) = 50 * 2.666... = 133.33...
       expect(p.estimated1RM, closeTo(133.33, 0.01));
     });

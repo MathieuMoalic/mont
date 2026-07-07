@@ -20,8 +20,7 @@ class _RunStatsScreenState extends State<RunStatsScreen> {
   bool _loading = true;
 
   // Only include valid runs in stats computations
-  List<RunSummary> get _validRuns =>
-      _runs.where((r) => !r.isInvalid).toList();
+  List<RunSummary> get _validRuns => _runs.where((r) => !r.isInvalid).toList();
 
   @override
   void initState() {
@@ -38,7 +37,9 @@ class _RunStatsScreenState extends State<RunStatsScreen> {
       if (!mounted) return;
       final runs = results[0] as List<RunSummary>;
       final withCad = runs.where((r) => r.avgCadence != null).length;
-      debugPrint('[RunStats] loaded ${runs.length} runs, $withCad with cadence');
+      debugPrint(
+        '[RunStats] loaded ${runs.length} runs, $withCad with cadence',
+      );
       setState(() {
         _runs = runs;
         _prs = results[1] as List<PersonalRecord>;
@@ -106,8 +107,10 @@ class _RunStatsScreenState extends State<RunStatsScreen> {
           barTouchData: BarTouchData(
             touchTooltipData: BarTouchTooltipData(
               getTooltipItem: (group, groupIndex, rod, rodIndex) =>
-                  BarTooltipItem('${rod.toY.toStringAsFixed(1)} km',
-                      const TextStyle(fontSize: 11)),
+                  BarTooltipItem(
+                    '${rod.toY.toStringAsFixed(1)} km',
+                    const TextStyle(fontSize: 11),
+                  ),
             ),
           ),
           barGroups: List.generate(
@@ -119,7 +122,9 @@ class _RunStatsScreenState extends State<RunStatsScreen> {
                   toY: values[i],
                   color: Theme.of(context).colorScheme.primary,
                   width: 14,
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(4),
+                  ),
                 ),
               ],
             ),
@@ -129,8 +134,10 @@ class _RunStatsScreenState extends State<RunStatsScreen> {
               sideTitles: SideTitles(
                 showTitles: true,
                 reservedSize: 36,
-                getTitlesWidget: (v, _) =>
-                    Text(v.toStringAsFixed(0), style: const TextStyle(fontSize: 10)),
+                getTitlesWidget: (v, _) => Text(
+                  v.toStringAsFixed(0),
+                  style: const TextStyle(fontSize: 10),
+                ),
               ),
             ),
             bottomTitles: AxisTitles(
@@ -146,8 +153,12 @@ class _RunStatsScreenState extends State<RunStatsScreen> {
                 },
               ),
             ),
-            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            topTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
+            rightTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
           ),
           gridData: const FlGridData(show: true),
           borderData: FlBorderData(show: false),
@@ -158,9 +169,7 @@ class _RunStatsScreenState extends State<RunStatsScreen> {
 
   // ── Pace trend line ──────────────────────────────────────────────────────────
   Widget _paceTrend(BuildContext context) {
-    final sorted = _validRuns
-        .where((r) => r.distanceM > 100)
-        .toList()
+    final sorted = _validRuns.where((r) => r.distanceM > 100).toList()
       ..sort((a, b) => a.startedAt.compareTo(b.startedAt));
     if (sorted.length < 2) return const SizedBox.shrink();
 
@@ -182,10 +191,12 @@ class _RunStatsScreenState extends State<RunStatsScreen> {
           lineTouchData: LineTouchData(
             touchTooltipData: LineTouchTooltipData(
               getTooltipItems: (spots) => spots
-                  .map((s) => LineTooltipItem(
-                        '${_fmtPace(s.y)}/km',
-                        const TextStyle(fontSize: 11),
-                      ))
+                  .map(
+                    (s) => LineTooltipItem(
+                      '${_fmtPace(s.y)}/km',
+                      const TextStyle(fontSize: 11),
+                    ),
+                  )
                   .toList(),
             ),
           ),
@@ -198,7 +209,9 @@ class _RunStatsScreenState extends State<RunStatsScreen> {
               barWidth: 2,
               belowBarData: BarAreaData(
                 show: true,
-                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
+                color: Theme.of(
+                  context,
+                ).colorScheme.primary.withValues(alpha: 0.1),
               ),
             ),
           ],
@@ -226,8 +239,12 @@ class _RunStatsScreenState extends State<RunStatsScreen> {
                 },
               ),
             ),
-            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            topTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
+            rightTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
           ),
           gridData: const FlGridData(show: true),
           borderData: FlBorderData(show: false),
@@ -238,13 +255,13 @@ class _RunStatsScreenState extends State<RunStatsScreen> {
 
   // ── Cadence trend ────────────────────────────────────────────────────────────
   Widget _cadenceTrend(BuildContext context) {
-    final sorted = _validRuns
-        .where((r) => r.avgCadence != null)
-        .toList()
+    final sorted = _validRuns.where((r) => r.avgCadence != null).toList()
       ..sort((a, b) => a.startedAt.compareTo(b.startedAt));
     if (sorted.length < 2) return const SizedBox.shrink();
 
-    final spots = sorted.asMap().entries
+    final spots = sorted
+        .asMap()
+        .entries
         .map((e) => FlSpot(e.key.toDouble(), e.value.avgCadence!.toDouble()))
         .toList();
     final minY = spots.map((s) => s.y).fold(double.infinity, math.min);
@@ -253,74 +270,90 @@ class _RunStatsScreenState extends State<RunStatsScreen> {
 
     return _Card(
       title: 'Cadence trend (spm)',
-      child: LineChart(LineChartData(
-        minY: minY - pad,
-        maxY: maxY + pad,
-        lineTouchData: LineTouchData(
-          touchTooltipData: LineTouchTooltipData(
-            getTooltipItems: (spots) => spots.map((s) => LineTooltipItem(
-              '${s.y.round()} spm',
-              const TextStyle(fontSize: 11),
-            )).toList(),
+      child: LineChart(
+        LineChartData(
+          minY: minY - pad,
+          maxY: maxY + pad,
+          lineTouchData: LineTouchData(
+            touchTooltipData: LineTouchTooltipData(
+              getTooltipItems: (spots) => spots
+                  .map(
+                    (s) => LineTooltipItem(
+                      '${s.y.round()} spm',
+                      const TextStyle(fontSize: 11),
+                    ),
+                  )
+                  .toList(),
+            ),
           ),
+          lineBarsData: [
+            LineChartBarData(
+              spots: spots,
+              isCurved: true,
+              color: Theme.of(context).colorScheme.tertiary,
+              dotData: FlDotData(show: spots.length <= 30),
+              barWidth: 2,
+              belowBarData: BarAreaData(
+                show: true,
+                color: Theme.of(
+                  context,
+                ).colorScheme.tertiary.withValues(alpha: 0.1),
+              ),
+            ),
+          ],
+          titlesData: FlTitlesData(
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 40,
+                getTitlesWidget: (v, meta) {
+                  if (v == meta.min || v == meta.max)
+                    return const SizedBox.shrink();
+                  return Text(
+                    v.round().toString(),
+                    style: const TextStyle(fontSize: 9),
+                  );
+                },
+              ),
+            ),
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 20,
+                interval: math.max(1, (sorted.length / 5).ceilToDouble()),
+                getTitlesWidget: (v, _) {
+                  final idx = v.toInt();
+                  if (idx >= sorted.length) return const SizedBox.shrink();
+                  return Text(
+                    sorted[idx].startedAt.toLocal().toString().substring(5, 10),
+                    style: const TextStyle(fontSize: 8),
+                  );
+                },
+              ),
+            ),
+            topTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
+            rightTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
+          ),
+          gridData: const FlGridData(show: true),
+          borderData: FlBorderData(show: false),
         ),
-        lineBarsData: [
-          LineChartBarData(
-            spots: spots,
-            isCurved: true,
-            color: Theme.of(context).colorScheme.tertiary,
-            dotData: FlDotData(show: spots.length <= 30),
-            barWidth: 2,
-            belowBarData: BarAreaData(
-              show: true,
-              color: Theme.of(context).colorScheme.tertiary.withValues(alpha: 0.1),
-            ),
-          ),
-        ],
-        titlesData: FlTitlesData(
-          leftTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              reservedSize: 40,
-              getTitlesWidget: (v, meta) {
-                if (v == meta.min || v == meta.max) return const SizedBox.shrink();
-                return Text(v.round().toString(), style: const TextStyle(fontSize: 9));
-              },
-            ),
-          ),
-          bottomTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              reservedSize: 20,
-              interval: math.max(1, (sorted.length / 5).ceilToDouble()),
-              getTitlesWidget: (v, _) {
-                final idx = v.toInt();
-                if (idx >= sorted.length) return const SizedBox.shrink();
-                return Text(
-                  sorted[idx].startedAt.toLocal().toString().substring(5, 10),
-                  style: const TextStyle(fontSize: 8),
-                );
-              },
-            ),
-          ),
-          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-        ),
-        gridData: const FlGridData(show: true),
-        borderData: FlBorderData(show: false),
-      )),
+      ),
     );
   }
 
   // ── Stride length trend ───────────────────────────────────────────────────────
   Widget _strideTrend(BuildContext context) {
-    final sorted = _validRuns
-        .where((r) => r.avgStrideM != null)
-        .toList()
+    final sorted = _validRuns.where((r) => r.avgStrideM != null).toList()
       ..sort((a, b) => a.startedAt.compareTo(b.startedAt));
     if (sorted.length < 2) return const SizedBox.shrink();
 
-    final spots = sorted.asMap().entries
+    final spots = sorted
+        .asMap()
+        .entries
         .map((e) => FlSpot(e.key.toDouble(), e.value.avgStrideM!))
         .toList();
     final minY = spots.map((s) => s.y).fold(double.infinity, math.min);
@@ -329,62 +362,78 @@ class _RunStatsScreenState extends State<RunStatsScreen> {
 
     return _Card(
       title: 'Step length trend (m)',
-      child: LineChart(LineChartData(
-        minY: minY - pad,
-        maxY: maxY + pad,
-        lineTouchData: LineTouchData(
-          touchTooltipData: LineTouchTooltipData(
-            getTooltipItems: (spots) => spots.map((s) => LineTooltipItem(
-              '${s.y.toStringAsFixed(2)} m',
-              const TextStyle(fontSize: 11),
-            )).toList(),
+      child: LineChart(
+        LineChartData(
+          minY: minY - pad,
+          maxY: maxY + pad,
+          lineTouchData: LineTouchData(
+            touchTooltipData: LineTouchTooltipData(
+              getTooltipItems: (spots) => spots
+                  .map(
+                    (s) => LineTooltipItem(
+                      '${s.y.toStringAsFixed(2)} m',
+                      const TextStyle(fontSize: 11),
+                    ),
+                  )
+                  .toList(),
+            ),
           ),
+          lineBarsData: [
+            LineChartBarData(
+              spots: spots,
+              isCurved: true,
+              color: Theme.of(context).colorScheme.secondary,
+              dotData: FlDotData(show: spots.length <= 30),
+              barWidth: 2,
+              belowBarData: BarAreaData(
+                show: true,
+                color: Theme.of(
+                  context,
+                ).colorScheme.secondary.withValues(alpha: 0.1),
+              ),
+            ),
+          ],
+          titlesData: FlTitlesData(
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 40,
+                getTitlesWidget: (v, meta) {
+                  if (v == meta.min || v == meta.max)
+                    return const SizedBox.shrink();
+                  return Text(
+                    v.toStringAsFixed(2),
+                    style: const TextStyle(fontSize: 9),
+                  );
+                },
+              ),
+            ),
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 20,
+                interval: math.max(1, (sorted.length / 5).ceilToDouble()),
+                getTitlesWidget: (v, _) {
+                  final idx = v.toInt();
+                  if (idx >= sorted.length) return const SizedBox.shrink();
+                  return Text(
+                    sorted[idx].startedAt.toLocal().toString().substring(5, 10),
+                    style: const TextStyle(fontSize: 8),
+                  );
+                },
+              ),
+            ),
+            topTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
+            rightTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
+          ),
+          gridData: const FlGridData(show: true),
+          borderData: FlBorderData(show: false),
         ),
-        lineBarsData: [
-          LineChartBarData(
-            spots: spots,
-            isCurved: true,
-            color: Theme.of(context).colorScheme.secondary,
-            dotData: FlDotData(show: spots.length <= 30),
-            barWidth: 2,
-            belowBarData: BarAreaData(
-              show: true,
-              color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.1),
-            ),
-          ),
-        ],
-        titlesData: FlTitlesData(
-          leftTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              reservedSize: 40,
-              getTitlesWidget: (v, meta) {
-                if (v == meta.min || v == meta.max) return const SizedBox.shrink();
-                return Text(v.toStringAsFixed(2), style: const TextStyle(fontSize: 9));
-              },
-            ),
-          ),
-          bottomTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              reservedSize: 20,
-              interval: math.max(1, (sorted.length / 5).ceilToDouble()),
-              getTitlesWidget: (v, _) {
-                final idx = v.toInt();
-                if (idx >= sorted.length) return const SizedBox.shrink();
-                return Text(
-                  sorted[idx].startedAt.toLocal().toString().substring(5, 10),
-                  style: const TextStyle(fontSize: 8),
-                );
-              },
-            ),
-          ),
-          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-        ),
-        gridData: const FlGridData(show: true),
-        borderData: FlBorderData(show: false),
-      )),
+      ),
     );
   }
 
@@ -423,7 +472,9 @@ class _RunStatsScreenState extends State<RunStatsScreen> {
     final pts = _vo2maxPoints;
     if (pts.length < 2) return const SizedBox.shrink();
 
-    final spots = pts.asMap().entries
+    final spots = pts
+        .asMap()
+        .entries
         .map((e) => FlSpot(e.key.toDouble(), e.value.$2))
         .toList();
     final minY = spots.map((s) => s.y).fold(double.infinity, math.min);
@@ -432,82 +483,100 @@ class _RunStatsScreenState extends State<RunStatsScreen> {
 
     return _Card(
       title: 'VO₂max estimate trend (ml/kg/min)',
-      child: LineChart(LineChartData(
-        minY: minY - pad,
-        maxY: maxY + pad,
-        lineTouchData: LineTouchData(
-          touchTooltipData: LineTouchTooltipData(
-            getTooltipItems: (spots) => spots.map((s) => LineTooltipItem(
-              '${s.y.toStringAsFixed(1)} ml/kg/min',
-              const TextStyle(fontSize: 11),
-            )).toList(),
+      child: LineChart(
+        LineChartData(
+          minY: minY - pad,
+          maxY: maxY + pad,
+          lineTouchData: LineTouchData(
+            touchTooltipData: LineTouchTooltipData(
+              getTooltipItems: (spots) => spots
+                  .map(
+                    (s) => LineTooltipItem(
+                      '${s.y.toStringAsFixed(1)} ml/kg/min',
+                      const TextStyle(fontSize: 11),
+                    ),
+                  )
+                  .toList(),
+            ),
           ),
+          lineBarsData: [
+            LineChartBarData(
+              spots: spots,
+              isCurved: true,
+              color: Colors.teal,
+              dotData: FlDotData(show: spots.length <= 30),
+              barWidth: 2,
+              belowBarData: BarAreaData(
+                show: true,
+                color: Colors.teal.withValues(alpha: 0.1),
+              ),
+            ),
+          ],
+          titlesData: FlTitlesData(
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 40,
+                getTitlesWidget: (v, meta) {
+                  if (v == meta.min || v == meta.max)
+                    return const SizedBox.shrink();
+                  return Text(
+                    v.toStringAsFixed(0),
+                    style: const TextStyle(fontSize: 9),
+                  );
+                },
+              ),
+            ),
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 20,
+                interval: math.max(1, (pts.length / 5).ceilToDouble()),
+                getTitlesWidget: (v, _) {
+                  final idx = v.toInt();
+                  if (idx >= pts.length) return const SizedBox.shrink();
+                  return Text(
+                    _fmtDate(pts[idx].$1.startedAt.toLocal()),
+                    style: const TextStyle(fontSize: 8),
+                  );
+                },
+              ),
+            ),
+            topTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
+            rightTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
+          ),
+          gridData: const FlGridData(show: true),
+          borderData: FlBorderData(show: false),
         ),
-        lineBarsData: [
-          LineChartBarData(
-            spots: spots,
-            isCurved: true,
-            color: Colors.teal,
-            dotData: FlDotData(show: spots.length <= 30),
-            barWidth: 2,
-            belowBarData: BarAreaData(
-              show: true,
-              color: Colors.teal.withValues(alpha: 0.1),
-            ),
-          ),
-        ],
-        titlesData: FlTitlesData(
-          leftTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              reservedSize: 40,
-              getTitlesWidget: (v, meta) {
-                if (v == meta.min || v == meta.max) return const SizedBox.shrink();
-                return Text(v.toStringAsFixed(0), style: const TextStyle(fontSize: 9));
-              },
-            ),
-          ),
-          bottomTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              reservedSize: 20,
-              interval: math.max(1, (pts.length / 5).ceilToDouble()),
-              getTitlesWidget: (v, _) {
-                final idx = v.toInt();
-                if (idx >= pts.length) return const SizedBox.shrink();
-                return Text(
-                  _fmtDate(pts[idx].$1.startedAt.toLocal()),
-                  style: const TextStyle(fontSize: 8),
-                );
-              },
-            ),
-          ),
-          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-        ),
-        gridData: const FlGridData(show: true),
-        borderData: FlBorderData(show: false),
-      )),
+      ),
     );
   }
 
-
   Widget _hrVsPace(BuildContext context) {
-    final valid = _validRuns
-        .where((r) => r.avgHr != null && r.distanceM > 100)
-        .toList()
-      ..sort((a, b) => a.startedAt.compareTo(b.startedAt));
+    final valid =
+        _validRuns.where((r) => r.avgHr != null && r.distanceM > 100).toList()
+          ..sort((a, b) => a.startedAt.compareTo(b.startedAt));
     if (valid.length < 3) return const SizedBox.shrink();
 
     // Colour dots from old (faded) to new (vivid) to show fitness trend
     final spots = valid.asMap().entries.map((e) {
-      final pace = e.value.durationS / (e.value.distanceM / 1000) / 60; // min/km
+      final pace =
+          e.value.durationS / (e.value.distanceM / 1000) / 60; // min/km
       final hr = e.value.avgHr!.toDouble();
       final frac = valid.length == 1 ? 1.0 : e.key / (valid.length - 1);
       final dotColor = Color.lerp(Colors.blue.withAlpha(80), Colors.red, frac)!;
       return ScatterSpot(
-        pace, hr,
-        dotPainter: FlDotCirclePainter(radius: 5, color: dotColor, strokeWidth: 0),
+        pace,
+        hr,
+        dotPainter: FlDotCirclePainter(
+          radius: 5,
+          color: dotColor,
+          strokeWidth: 0,
+        ),
       );
     }).toList();
 
@@ -539,7 +608,10 @@ class _RunStatsScreenState extends State<RunStatsScreen> {
           ),
           titlesData: FlTitlesData(
             bottomTitles: AxisTitles(
-              axisNameWidget: const Text('Pace (min/km)', style: TextStyle(fontSize: 10)),
+              axisNameWidget: const Text(
+                'Pace (min/km)',
+                style: TextStyle(fontSize: 10),
+              ),
               sideTitles: SideTitles(
                 showTitles: true,
                 reservedSize: 24,
@@ -548,16 +620,25 @@ class _RunStatsScreenState extends State<RunStatsScreen> {
               ),
             ),
             leftTitles: AxisTitles(
-              axisNameWidget: const Text('Avg HR', style: TextStyle(fontSize: 10)),
+              axisNameWidget: const Text(
+                'Avg HR',
+                style: TextStyle(fontSize: 10),
+              ),
               sideTitles: SideTitles(
                 showTitles: true,
                 reservedSize: 36,
-                getTitlesWidget: (v, _) =>
-                    Text(v.round().toString(), style: const TextStyle(fontSize: 9)),
+                getTitlesWidget: (v, _) => Text(
+                  v.round().toString(),
+                  style: const TextStyle(fontSize: 9),
+                ),
               ),
             ),
-            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            topTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
+            rightTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
           ),
           gridData: const FlGridData(show: true),
           borderData: FlBorderData(show: false),
@@ -570,19 +651,25 @@ class _RunStatsScreenState extends State<RunStatsScreen> {
   Widget _personalRecords(BuildContext context) {
     if (_validRuns.isEmpty) return const SizedBox.shrink();
 
-    final longest = _validRuns.reduce((a, b) => a.distanceM > b.distanceM ? a : b);
+    final longest = _validRuns.reduce(
+      (a, b) => a.distanceM > b.distanceM ? a : b,
+    );
 
     final fastRuns = _validRuns.where((r) => r.distanceM > 3000).toList();
     final bestPaceRun = fastRuns.isEmpty
         ? null
-        : fastRuns.reduce((a, b) =>
-            (a.durationS / a.distanceM) < (b.durationS / b.distanceM) ? a : b);
+        : fastRuns.reduce(
+            (a, b) => (a.durationS / a.distanceM) < (b.durationS / b.distanceM)
+                ? a
+                : b,
+          );
 
     final eleRuns = _validRuns.where((r) => r.elevationGainM != null).toList();
     final mostEle = eleRuns.isEmpty
         ? null
         : eleRuns.reduce(
-            (a, b) => a.elevationGainM! > b.elevationGainM! ? a : b);
+            (a, b) => a.elevationGainM! > b.elevationGainM! ? a : b,
+          );
 
     // Best week km
     final kmMap = <String, double>{};
@@ -590,8 +677,7 @@ class _RunStatsScreenState extends State<RunStatsScreen> {
       final k = _weekKey(r.startedAt.toLocal());
       kmMap[k] = (kmMap[k] ?? 0) + r.distanceM / 1000;
     }
-    final bestWeekKm =
-        kmMap.isEmpty ? 0.0 : kmMap.values.fold(0.0, math.max);
+    final bestWeekKm = kmMap.isEmpty ? 0.0 : kmMap.values.fold(0.0, math.max);
 
     String fmtDist(double m) => '${(m / 1000).toStringAsFixed(2)} km';
     String fmtDate(DateTime d) => d.toLocal().toString().substring(0, 10);
@@ -599,9 +685,23 @@ class _RunStatsScreenState extends State<RunStatsScreen> {
     // (icon, label, value, dateStr or null, runId or null)
     final records = <(String, String, String, String?, int?)>[
       // Distance PRs from API
-      ..._prs.map((pr) => ('🏆', pr.distanceLabel, pr.formattedTime, fmtDate(pr.runDate), pr.runId)),
+      ..._prs.map(
+        (pr) => (
+          '🏆',
+          pr.distanceLabel,
+          pr.formattedTime,
+          fmtDate(pr.runDate),
+          pr.runId,
+        ),
+      ),
       // Local record stats
-      ('🏅', 'Longest run', fmtDist(longest.distanceM), fmtDate(longest.startedAt), longest.id),
+      (
+        '🏅',
+        'Longest run',
+        fmtDist(longest.distanceM),
+        fmtDate(longest.startedAt),
+        longest.id,
+      ),
       if (bestPaceRun != null)
         (
           '⚡',
@@ -642,51 +742,66 @@ class _RunStatsScreenState extends State<RunStatsScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Personal records',
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleSmall
-                      ?.copyWith(fontWeight: FontWeight.bold)),
+              Text(
+                'Personal records',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+              ),
               const SizedBox(height: 8),
-              ...records.map((r) => InkWell(
-                    onTap: r.$5 != null
-                        ? () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) =>
-                                    RunDetailScreen(runId: r.$5!),
-                              ),
-                            )
-                        : null,
-                    borderRadius: BorderRadius.circular(6),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Row(
-                        children: [
-                          Text(r.$1, style: const TextStyle(fontSize: 18)),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(r.$2,
-                                style: const TextStyle(color: Colors.grey)),
+              ...records.map(
+                (r) => InkWell(
+                  onTap: r.$5 != null
+                      ? () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => RunDetailScreen(runId: r.$5!),
                           ),
-                          Text(r.$3,
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.bold, fontSize: 15)),
-                          if (r.$4 != null) ...[
-                            const SizedBox(width: 8),
-                            Text(r.$4!,
-                                style: const TextStyle(
-                                    fontSize: 11, color: Colors.grey)),
-                          ],
-                          if (r.$5 != null) ...[
-                            const SizedBox(width: 4),
-                            const Icon(Icons.chevron_right,
-                                size: 16, color: Colors.grey),
-                          ],
+                        )
+                      : null,
+                  borderRadius: BorderRadius.circular(6),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
+                      children: [
+                        Text(r.$1, style: const TextStyle(fontSize: 18)),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            r.$2,
+                            style: const TextStyle(color: Colors.grey),
+                          ),
+                        ),
+                        Text(
+                          r.$3,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                          ),
+                        ),
+                        if (r.$4 != null) ...[
+                          const SizedBox(width: 8),
+                          Text(
+                            r.$4!,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey,
+                            ),
+                          ),
                         ],
-                      ),
+                        if (r.$5 != null) ...[
+                          const SizedBox(width: 4),
+                          const Icon(
+                            Icons.chevron_right,
+                            size: 16,
+                            color: Colors.grey,
+                          ),
+                        ],
+                      ],
                     ),
-                  )),
+                  ),
+                ),
+              ),
             ],
           ),
         ),
@@ -719,7 +834,11 @@ class _RunStatsScreenState extends State<RunStatsScreen> {
           _StatChip(label: 'Total hours', value: totalH.toStringAsFixed(1)),
           if (avgHr != null) _StatChip(label: 'Avg HR', value: '$avgHr bpm'),
           if (bestVo2 != null)
-            _StatChip(label: 'Best VO₂max', value: bestVo2.toStringAsFixed(1), unit: 'ml/kg/min'),
+            _StatChip(
+              label: 'Best VO₂max',
+              value: bestVo2.toStringAsFixed(1),
+              unit: 'ml/kg/min',
+            ),
         ],
       ),
     );
@@ -771,11 +890,12 @@ class _Card extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(title,
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleSmall
-                      ?.copyWith(fontWeight: FontWeight.bold)),
+              Text(
+                title,
+                style: Theme.of(
+                  context,
+                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+              ),
               const SizedBox(height: 12),
               SizedBox(height: 200, child: child),
             ],
@@ -799,10 +919,15 @@ class _StatChip extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 8),
       child: Column(
         children: [
-          Text(value,
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          Text(
+            value,
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
           if (unit != null)
-            Text(unit!, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+            Text(
+              unit!,
+              style: const TextStyle(fontSize: 10, color: Colors.grey),
+            ),
           Text(label, style: const TextStyle(fontSize: 11, color: Colors.grey)),
         ],
       ),

@@ -25,11 +25,7 @@ class CaffeineDose {
   final int mg;
   final DateTime timestamp;
 
-  CaffeineDose({
-    required this.id,
-    required this.mg,
-    required this.timestamp,
-  });
+  CaffeineDose({required this.id, required this.mg, required this.timestamp});
 }
 
 class AlcoholDrink {
@@ -64,7 +60,6 @@ class _AlcoholInput {
     required this.time,
   });
 }
-
 
 enum _Range {
   twoWeeks('2W', 14),
@@ -487,11 +482,10 @@ class _HealthScreenState extends State<HealthScreen> {
                       icon: const Icon(Icons.close, size: 18),
                       onPressed: () {
                         setState(() {
-                          _journalEntries.values
-                              .toList()
-                              .forEach((entries) => entries.removeWhere(
-                                    (e) => e.id == entry.id,
-                                  ));
+                          _journalEntries.values.toList().forEach(
+                            (entries) =>
+                                entries.removeWhere((e) => e.id == entry.id),
+                          );
                         });
                       },
                       tooltip: 'Delete',
@@ -556,11 +550,11 @@ class _HealthScreenState extends State<HealthScreen> {
     } else if (entryDate == yesterday) {
       dateStr = 'Yesterday';
     } else {
-      dateStr =
-          '${entryDate.day}/${entryDate.month}/${entryDate.year}';
+      dateStr = '${entryDate.day}/${entryDate.month}/${entryDate.year}';
     }
 
-    final time = '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+    final time =
+        '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
     return '$dateStr at $time';
   }
 
@@ -636,7 +630,8 @@ class _HealthScreenState extends State<HealthScreen> {
               itemCount: doses.length,
               itemBuilder: (ctx, i) {
                 final dose = doses[i];
-                final doseTime = '${dose.timestamp.hour.toString().padLeft(2, '0')}:${dose.timestamp.minute.toString().padLeft(2, '0')}';
+                final doseTime =
+                    '${dose.timestamp.hour.toString().padLeft(2, '0')}:${dose.timestamp.minute.toString().padLeft(2, '0')}';
                 return Card(
                   margin: const EdgeInsets.only(bottom: 8),
                   child: ListTile(
@@ -650,7 +645,9 @@ class _HealthScreenState extends State<HealthScreen> {
                       icon: const Icon(Icons.close, size: 18),
                       onPressed: () {
                         setState(() {
-                          _caffeineDoses[today]?.removeWhere((d) => d.id == dose.id);
+                          _caffeineDoses[today]?.removeWhere(
+                            (d) => d.id == dose.id,
+                          );
                         });
                       },
                       tooltip: 'Delete',
@@ -757,8 +754,9 @@ class _HealthScreenState extends State<HealthScreen> {
                       icon: const Icon(Icons.close, size: 18),
                       onPressed: () {
                         setState(() {
-                          _alcoholDrinks[today]
-                              ?.removeWhere((d) => d.id == drink.id);
+                          _alcoholDrinks[today]?.removeWhere(
+                            (d) => d.id == drink.id,
+                          );
                         });
                       },
                       tooltip: 'Delete',
@@ -1477,10 +1475,7 @@ class _CaffeineDialogState extends State<_CaffeineDialog> {
   }
 
   Future<void> _pickTime() async {
-    final picked = await showTimePicker(
-      context: context,
-      initialTime: _time,
-    );
+    final picked = await showTimePicker(context: context, initialTime: _time);
     if (picked != null) {
       setState(() => _time = picked);
     }
@@ -1492,10 +1487,7 @@ class _CaffeineDialogState extends State<_CaffeineDialog> {
       setState(() => _error = 'Enter a valid caffeine dose');
       return;
     }
-    Navigator.pop(
-      context,
-      _CaffeineInput(mg: parsed, time: _time),
-    );
+    Navigator.pop(context, _CaffeineInput(mg: parsed, time: _time));
   }
 
   @override
@@ -1550,10 +1542,7 @@ class _CaffeineDialogState extends State<_CaffeineDialog> {
           onPressed: () => Navigator.pop(context),
           child: const Text('Cancel'),
         ),
-        FilledButton(
-          onPressed: _save,
-          child: const Text('Add'),
-        ),
+        FilledButton(onPressed: _save, child: const Text('Add')),
       ],
       actionsPadding: EdgeInsets.zero,
     );
@@ -1588,10 +1577,7 @@ class _AlcoholDialogState extends State<_AlcoholDialog> {
   }
 
   Future<void> _pickTime() async {
-    final picked = await showTimePicker(
-      context: context,
-      initialTime: _time,
-    );
+    final picked = await showTimePicker(context: context, initialTime: _time);
     if (picked != null) {
       setState(() => _time = picked);
     }
@@ -1606,11 +1592,7 @@ class _AlcoholDialogState extends State<_AlcoholDialog> {
     }
     Navigator.pop(
       context,
-      _AlcoholInput(
-        amountMl: amount,
-        ethanolPercent: percent,
-        time: _time,
-      ),
+      _AlcoholInput(amountMl: amount, ethanolPercent: percent, time: _time),
     );
   }
 
@@ -1679,10 +1661,7 @@ class _AlcoholDialogState extends State<_AlcoholDialog> {
           onPressed: () => Navigator.pop(context),
           child: const Text('Cancel'),
         ),
-        FilledButton(
-          onPressed: _save,
-          child: const Text('Add'),
-        ),
+        FilledButton(onPressed: _save, child: const Text('Add')),
       ],
       actionsPadding: EdgeInsets.zero,
     );

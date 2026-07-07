@@ -15,7 +15,9 @@ void main() {
       expect(find.text('Sign in'), findsAtLeastNWidgets(1));
     });
 
-    testWidgets('shows error when logging in with empty password', (tester) async {
+    testWidgets('shows error when logging in with empty password', (
+      tester,
+    ) async {
       await tester.pumpWidget(const MaterialApp(home: LoginPage()));
       await tester.tap(find.byType(FilledButton));
       await tester.pump();
@@ -24,4 +26,3 @@ void main() {
     });
   });
 }
-

@@ -31,7 +31,9 @@ void main() {
       expect(find.text('mypassword123'), findsOneWidget);
     });
 
-    testWidgets('shows error when logging in with empty password', (tester) async {
+    testWidgets('shows error when logging in with empty password', (
+      tester,
+    ) async {
       await tester.pumpWidget(const MaterialApp(home: LoginPage()));
 
       // Tap login without entering password

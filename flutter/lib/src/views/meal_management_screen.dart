@@ -48,9 +48,11 @@ class _MealManagementScreenState extends State<MealManagementScreen> {
       final filtered = query == null || query.trim().isEmpty
           ? result
           : result
-              .where((m) =>
-                  m.name.toLowerCase().contains(query.trim().toLowerCase()))
-              .toList();
+                .where(
+                  (m) =>
+                      m.name.toLowerCase().contains(query.trim().toLowerCase()),
+                )
+                .toList();
       setState(() {
         meals = filtered;
         isLoading = false;
@@ -90,7 +92,10 @@ class _MealManagementScreenState extends State<MealManagementScreen> {
                       decoration: const InputDecoration(labelText: 'Meal name'),
                     ),
                     const SizedBox(height: 12),
-                    const Text('Ingredients:', style: TextStyle(fontWeight: FontWeight.w600)),
+                    const Text(
+                      'Ingredients:',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
                     const SizedBox(height: 8),
                     for (final ing in detail.ingredients)
                       ListTile(
@@ -152,9 +157,7 @@ class _MealManagementScreenState extends State<MealManagementScreen> {
                         : () async {
                             final name = nameController.text.trim();
                             if (name.isEmpty) {
-                              setLocalState(
-                                () => error = 'Enter a meal name',
-                              );
+                              setLocalState(() => error = 'Enter a meal name');
                               return;
                             }
 
@@ -167,10 +170,12 @@ class _MealManagementScreenState extends State<MealManagementScreen> {
                                 detail.id,
                                 name: name,
                                 ingredients: detail.ingredients
-                                    .map((ing) => {
-                                          'food_id': ing.foodId,
-                                          'grams': ing.grams,
-                                        })
+                                    .map(
+                                      (ing) => {
+                                        'food_id': ing.foodId,
+                                        'grams': ing.grams,
+                                      },
+                                    )
                                     .toList(),
                               );
                               if (ctx.mounted) Navigator.of(ctx).pop(true);
@@ -194,9 +199,9 @@ class _MealManagementScreenState extends State<MealManagementScreen> {
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error: $e')));
     }
   }
 

@@ -72,8 +72,10 @@ class _BodyPicturesSectionState extends State<BodyPicturesSection> {
       return Padding(
         padding: const EdgeInsets.all(16),
         child: Center(
-          child: Text('Error: $_error',
-              style: TextStyle(color: Colors.red.shade700)),
+          child: Text(
+            'Error: $_error',
+            style: TextStyle(color: Colors.red.shade700),
+          ),
         ),
       );
     }
@@ -117,10 +119,7 @@ class _BodyPicturesSectionState extends State<BodyPicturesSection> {
             ),
           )
         else
-          PictureCalendar(
-            pictures: pictures,
-            onDayTap: _showPictureViewer,
-          ),
+          PictureCalendar(pictures: pictures, onDayTap: _showPictureViewer),
       ],
     );
   }
@@ -186,11 +185,13 @@ class _PictureCalendarState extends State<PictureCalendar> {
     return '${months[m.month - 1]} ${m.year}';
   }
 
-  void _prevMonth() =>
-      setState(() => _focusMonth = DateTime(_focusMonth.year, _focusMonth.month - 1));
+  void _prevMonth() => setState(
+    () => _focusMonth = DateTime(_focusMonth.year, _focusMonth.month - 1),
+  );
 
-  void _nextMonth() =>
-      setState(() => _focusMonth = DateTime(_focusMonth.year, _focusMonth.month + 1));
+  void _nextMonth() => setState(
+    () => _focusMonth = DateTime(_focusMonth.year, _focusMonth.month + 1),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -208,12 +209,21 @@ class _PictureCalendarState extends State<PictureCalendar> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              IconButton(icon: const Icon(Icons.chevron_left), onPressed: _prevMonth),
+              IconButton(
+                icon: const Icon(Icons.chevron_left),
+                onPressed: _prevMonth,
+              ),
               Text(
                 _monthLabel(_focusMonth),
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
               ),
-              IconButton(icon: const Icon(Icons.chevron_right), onPressed: _nextMonth),
+              IconButton(
+                icon: const Icon(Icons.chevron_right),
+                onPressed: _nextMonth,
+              ),
             ],
           ),
         ),
@@ -222,16 +232,20 @@ class _PictureCalendarState extends State<PictureCalendar> {
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Row(
             children: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-                .map((d) => Expanded(
-                      child: Center(
-                        child: Text(d,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey.shade600,
-                              fontWeight: FontWeight.w600,
-                            )),
+                .map(
+                  (d) => Expanded(
+                    child: Center(
+                      child: Text(
+                        d,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade600,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                    ))
+                    ),
+                  ),
+                )
                 .toList(),
           ),
         ),
@@ -246,43 +260,38 @@ class _PictureCalendarState extends State<PictureCalendar> {
             crossAxisSpacing: 4,
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            children: List.generate(
-              startWeekday - 1 + daysInMonth,
-              (i) {
-                if (i < startWeekday - 1) {
-                  // Empty cell for days before month starts
-                  return const SizedBox();
-                }
-                final day = i - startWeekday + 2;
-                final date = DateTime(_focusMonth.year, _focusMonth.month, day);
-                final key = _dayKey(date);
-                final picture = _byDay[key];
-                final hasPicture = picture != null;
+            children: List.generate(startWeekday - 1 + daysInMonth, (i) {
+              if (i < startWeekday - 1) {
+                // Empty cell for days before month starts
+                return const SizedBox();
+              }
+              final day = i - startWeekday + 2;
+              final date = DateTime(_focusMonth.year, _focusMonth.month, day);
+              final key = _dayKey(date);
+              final picture = _byDay[key];
+              final hasPicture = picture != null;
 
-                return GestureDetector(
-                  onTap: hasPicture ? () => widget.onDayTap(picture) : null,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: hasPicture
-                          ? colorScheme.primary
-                          : Colors.grey.shade300,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Center(
-                      child: Text(
-                        day.toString(),
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: hasPicture
-                              ? Colors.white
-                              : Colors.grey.shade600,
-                        ),
+              return GestureDetector(
+                onTap: hasPicture ? () => widget.onDayTap(picture) : null,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: hasPicture
+                        ? colorScheme.primary
+                        : Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Center(
+                    child: Text(
+                      day.toString(),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: hasPicture ? Colors.white : Colors.grey.shade600,
                       ),
                     ),
                   ),
-                );
-              },
-            ),
+                ),
+              );
+            }),
           ),
         ),
         const SizedBox(height: 16),
@@ -316,14 +325,18 @@ class _PictureViewerDialogState extends State<PictureViewerDialog> {
   @override
   void initState() {
     super.initState();
-    _currentIndex = widget.allPictures.indexWhere((p) => p.pictureDate == widget.picture.pictureDate);
+    _currentIndex = widget.allPictures.indexWhere(
+      (p) => p.pictureDate == widget.picture.pictureDate,
+    );
     if (_currentIndex == -1) _currentIndex = 0;
     _loadImage();
   }
 
   Future<void> _loadImage() async {
     try {
-      final data = await api.getBodyPictureData(widget.allPictures[_currentIndex].pictureDate);
+      final data = await api.getBodyPictureData(
+        widget.allPictures[_currentIndex].pictureDate,
+      );
       if (mounted) {
         setState(() {
           _imageData = data;
@@ -362,7 +375,10 @@ class _PictureViewerDialogState extends State<PictureViewerDialog> {
         title: const Text('Delete picture?'),
         content: const Text('This cannot be undone.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Delete', style: TextStyle(color: Colors.red)),
@@ -374,14 +390,18 @@ class _PictureViewerDialogState extends State<PictureViewerDialog> {
     if (confirmed != true || !mounted) return;
 
     try {
-      await api.deleteBodyPicture(widget.allPictures[_currentIndex].pictureDate);
+      await api.deleteBodyPicture(
+        widget.allPictures[_currentIndex].pictureDate,
+      );
       if (mounted) {
         Navigator.pop(context);
         widget.onDelete();
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Delete failed: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Delete failed: $e')));
       }
     }
   }
@@ -404,7 +424,10 @@ class _PictureViewerDialogState extends State<PictureViewerDialog> {
               children: [
                 Text(
                   currentPicture.pictureDate,
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
                 ),
                 IconButton(
                   icon: const Icon(Icons.close),
@@ -415,13 +438,18 @@ class _PictureViewerDialogState extends State<PictureViewerDialog> {
           ),
           // Image viewer with swipe
           if (_loading)
-            const SizedBox(height: 300, child: Center(child: CircularProgressIndicator()))
+            const SizedBox(
+              height: 300,
+              child: Center(child: CircularProgressIndicator()),
+            )
           else if (_error != null)
             SizedBox(
               height: 300,
               child: Center(
-                child: Text('Error: $_error',
-                    style: TextStyle(color: Colors.red.shade700)),
+                child: Text(
+                  'Error: $_error',
+                  style: TextStyle(color: Colors.red.shade700),
+                ),
               ),
             )
           else if (_imageData != null)
@@ -460,7 +488,9 @@ class _PictureViewerDialogState extends State<PictureViewerDialog> {
                 ),
                 Expanded(
                   child: Center(
-                    child: Text('${_currentIndex + 1} / ${widget.allPictures.length}'),
+                    child: Text(
+                      '${_currentIndex + 1} / ${widget.allPictures.length}',
+                    ),
                   ),
                 ),
                 IconButton(

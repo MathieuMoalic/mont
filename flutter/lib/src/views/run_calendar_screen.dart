@@ -34,7 +34,8 @@ class _RunCalendarScreenState extends State<RunCalendarScreen> {
     _byDay = {};
     for (final r in widget.runs) {
       final d = r.startedAt.toLocal();
-      final key = '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+      final key =
+          '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
       _byDay.putIfAbsent(key, () => []).add(r);
     }
   }
@@ -44,17 +45,29 @@ class _RunCalendarScreenState extends State<RunCalendarScreen> {
 
   String _monthLabel(DateTime m) {
     const months = [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December',
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
     ];
     return '${months[m.month - 1]} ${m.year}';
   }
 
-  void _prevMonth() =>
-      setState(() => _focusMonth = DateTime(_focusMonth.year, _focusMonth.month - 1));
+  void _prevMonth() => setState(
+    () => _focusMonth = DateTime(_focusMonth.year, _focusMonth.month - 1),
+  );
 
-  void _nextMonth() =>
-      setState(() => _focusMonth = DateTime(_focusMonth.year, _focusMonth.month + 1));
+  void _nextMonth() => setState(
+    () => _focusMonth = DateTime(_focusMonth.year, _focusMonth.month + 1),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -69,10 +82,21 @@ class _RunCalendarScreenState extends State<RunCalendarScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    IconButton(icon: const Icon(Icons.chevron_left), onPressed: _prevMonth),
-                    Text(_monthLabel(_focusMonth),
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                    IconButton(icon: const Icon(Icons.chevron_right), onPressed: _nextMonth),
+                    IconButton(
+                      icon: const Icon(Icons.chevron_left),
+                      onPressed: _prevMonth,
+                    ),
+                    Text(
+                      _monthLabel(_focusMonth),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.chevron_right),
+                      onPressed: _nextMonth,
+                    ),
                   ],
                 ),
                 // Day-of-week header
@@ -80,15 +104,20 @@ class _RunCalendarScreenState extends State<RunCalendarScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 8),
                   child: Row(
                     children: const ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su']
-                        .map((d) => Expanded(
-                              child: Center(
-                                child: Text(d,
-                                    style: const TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.grey)),
+                        .map(
+                          (d) => Expanded(
+                            child: Center(
+                              child: Text(
+                                d,
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.grey,
+                                ),
                               ),
-                            ))
+                            ),
+                          ),
+                        )
                         .toList(),
                   ),
                 ),
@@ -113,8 +142,11 @@ class _RunCalendarScreenState extends State<RunCalendarScreen> {
     final firstDay = DateTime(_focusMonth.year, _focusMonth.month, 1);
     // weekday: 1=Mon … 7=Sun; offset to grid column 0=Mon
     final startOffset = firstDay.weekday - 1;
-    final daysInMonth =
-        DateTime(_focusMonth.year, _focusMonth.month + 1, 0).day;
+    final daysInMonth = DateTime(
+      _focusMonth.year,
+      _focusMonth.month + 1,
+      0,
+    ).day;
 
     final cells = <Widget>[];
     // Leading empty cells
@@ -142,9 +174,7 @@ class _RunCalendarScreenState extends State<RunCalendarScreen> {
 
       cells.add(
         GestureDetector(
-          onTap: hasRun
-              ? () => _onDayTap(context, date, runs!)
-              : null,
+          onTap: hasRun ? () => _onDayTap(context, date, runs!) : null,
           child: Container(
             margin: const EdgeInsets.all(2),
             decoration: BoxDecoration(
@@ -152,7 +182,9 @@ class _RunCalendarScreenState extends State<RunCalendarScreen> {
               shape: BoxShape.circle,
               border: isToday
                   ? Border.all(
-                      color: Theme.of(context).colorScheme.primary, width: 2)
+                      color: Theme.of(context).colorScheme.primary,
+                      width: 2,
+                    )
                   : null,
             ),
             child: AspectRatio(
@@ -164,10 +196,12 @@ class _RunCalendarScreenState extends State<RunCalendarScreen> {
                     Text(
                       '$day',
                       style: TextStyle(
-                          fontSize: 12,
-                          fontWeight:
-                              hasRun ? FontWeight.bold : FontWeight.normal,
-                          color: textColor),
+                        fontSize: 12,
+                        fontWeight: hasRun
+                            ? FontWeight.bold
+                            : FontWeight.normal,
+                        color: textColor,
+                      ),
                     ),
                     if (hasRun)
                       Text(
@@ -201,7 +235,9 @@ class _RunCalendarScreenState extends State<RunCalendarScreen> {
     if (runs.length == 1) {
       Navigator.push<void>(
         context,
-        MaterialPageRoute(builder: (_) => RunDetailScreen(runId: runs.first.id)),
+        MaterialPageRoute(
+          builder: (_) => RunDetailScreen(runId: runs.first.id),
+        ),
       );
     } else {
       // Multiple runs on same day — show a bottom sheet to pick
@@ -220,7 +256,9 @@ class _RunCalendarScreenState extends State<RunCalendarScreen> {
                 Navigator.pop(ctx);
                 Navigator.push<void>(
                   context,
-                  MaterialPageRoute(builder: (_) => RunDetailScreen(runId: r.id)),
+                  MaterialPageRoute(
+                    builder: (_) => RunDetailScreen(runId: r.id),
+                  ),
                 );
               },
             );
@@ -231,12 +269,10 @@ class _RunCalendarScreenState extends State<RunCalendarScreen> {
   }
 
   Widget _buildMonthSliver(BuildContext context) {
-    final monthRuns = widget.runs
-        .where((r) {
-          final d = r.startedAt.toLocal();
-          return d.year == _focusMonth.year && d.month == _focusMonth.month;
-        })
-        .toList();
+    final monthRuns = widget.runs.where((r) {
+      final d = r.startedAt.toLocal();
+      return d.year == _focusMonth.year && d.month == _focusMonth.month;
+    }).toList();
 
     if (monthRuns.isEmpty) {
       return SliverToBoxAdapter(

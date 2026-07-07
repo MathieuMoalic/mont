@@ -106,21 +106,21 @@ class _LoginPageState extends State<LoginPage> {
                   border: OutlineInputBorder(),
                 ),
                 obscureText: true,
-                validator: (v) => (v == null || v.isEmpty) ? 'Enter password' : null,
+                validator: (v) =>
+                    (v == null || v.isEmpty) ? 'Enter password' : null,
                 onFieldSubmitted: (_) => _submit(),
                 autofocus: true,
               ),
               const SizedBox(height: 16),
               FilledButton.icon(
                 onPressed: _busy ? null : _submit,
-                icon:
-                    _busy
-                        ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                        : const Icon(Icons.lock_open),
+                icon: _busy
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.lock_open),
                 label: const Text('Sign in'),
               ),
             ],

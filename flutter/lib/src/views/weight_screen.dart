@@ -24,7 +24,11 @@ class _WeightScreenState extends State<WeightScreen> {
   Future<void> _load() async {
     try {
       final entries = await api.listWeight();
-      if (mounted) setState(() { _entries = entries; _error = null; });
+      if (mounted)
+        setState(() {
+          _entries = entries;
+          _error = null;
+        });
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     }
@@ -39,24 +43,35 @@ class _WeightScreenState extends State<WeightScreen> {
         content: TextFormField(
           autofocus: true,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: const InputDecoration(labelText: 'Weight (kg)', suffixText: 'kg'),
+          decoration: const InputDecoration(
+            labelText: 'Weight (kg)',
+            suffixText: 'kg',
+          ),
           onChanged: (v) => entered = double.tryParse(v),
           onFieldSubmitted: (_) => Navigator.pop(ctx, true),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Save')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Save'),
+          ),
         ],
       ),
     );
-    if (confirmed != true || entered == null || entered! <= 0 || !mounted) return;
+    if (confirmed != true || entered == null || entered! <= 0 || !mounted)
+      return;
     try {
       await api.createWeightEntry(weightKg: entered!);
       _load();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(e.toString())));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.toString())));
       }
     }
   }
@@ -67,8 +82,9 @@ class _WeightScreenState extends State<WeightScreen> {
       _load();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(e.toString())));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.toString())));
       }
     }
   }
@@ -97,7 +113,8 @@ class _WeightScreenState extends State<WeightScreen> {
         ),
       );
     }
-    if (_entries == null) return const Center(child: CircularProgressIndicator());
+    if (_entries == null)
+      return const Center(child: CircularProgressIndicator());
     if (_entries!.isEmpty) {
       return const Center(
         child: Text(
@@ -111,8 +128,7 @@ class _WeightScreenState extends State<WeightScreen> {
       onRefresh: _load,
       child: CustomScrollView(
         slivers: [
-          if (_entries!.length >= 2)
-            SliverToBoxAdapter(child: _buildChart()),
+          if (_entries!.length >= 2) SliverToBoxAdapter(child: _buildChart()),
           SliverPadding(
             padding: const EdgeInsets.only(bottom: 80),
             sliver: SliverList.builder(
@@ -193,8 +209,12 @@ class _WeightScreenState extends State<WeightScreen> {
                   },
                 ),
               ),
-              topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-              rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+              topTitles: const AxisTitles(
+                sideTitles: SideTitles(showTitles: false),
+              ),
+              rightTitles: const AxisTitles(
+                sideTitles: SideTitles(showTitles: false),
+              ),
             ),
             lineBarsData: [
               LineChartBarData(
