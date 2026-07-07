@@ -112,17 +112,17 @@
 
     prebuilt = pkgs.stdenvNoCC.mkDerivation {
       pname = "mont";
-      version = "0.6.5";
+      version = "0.7.0";
 
       src = pkgs.fetchurl {
-        url = "https://github.com/MathieuMoalic/mont/releases/download/v0.6.5/mont-v0.6.5-x86_64-linux.tar.gz";
-        hash = "sha256-fZuQspMnWzxhglDA0v3RpmJ24/kHJ2Hx6ByVvV/WcOQ=";
+        url = "https://github.com/MathieuMoalic/mont/releases/download/v0.7.0/mont-v0.7.0-x86_64-linux.tar.gz";
+        hash = "sha256-mxjwNgX7Mr710NMTo39goQd324jQPHHLZzbOfGID/bs=";
       };
 
       sourceRoot = ".";
 
       installPhase = ''
-        install -Dm755 mont-v0.6.5-x86_64-linux $out/bin/mont
+        install -Dm755 mont-v0.7.0-x86_64-linux $out/bin/mont
       '';
 
       meta = with lib; {
