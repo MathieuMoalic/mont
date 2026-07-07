@@ -4,6 +4,7 @@ import '../api.dart' as api;
 import '../models.dart';
 import '../theme.dart';
 import 'exercise_picker_screen.dart';
+import 'exercise_history_screen.dart';
 
 class ActiveWorkoutScreen extends StatefulWidget {
   final int workoutId;
@@ -110,6 +111,121 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     }
   }
 
+  Future<void> _showExerciseDetails(int exerciseId) async {
+    if (!mounted) return;
+    try {
+      final exercise = await api.listExercises().then(
+        (list) => list.firstWhere((e) => e.id == exerciseId),
+      );
+      if (!mounted) return;
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ExerciseHistoryScreen(exercise: exercise),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to load exercise details: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _editSet(WorkoutSet set) async {
+    if (!mounted) return;
+    final result = await _showEditSetDialog(
+      set.setNumber,
+      set.weightKg,
+      set.reps,
+    );
+    if (result == null || !mounted) return;
+
+    try {
+      await api.updateSet(
+        workoutId: widget.workoutId,
+        setId: set.id,
+        weightKg: result.$2,
+        reps: result.$1,
+      );
+      _load();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.toString())));
+      }
+    }
+  }
+
+  Future<(int, double)?> _showEditSetDialog(
+    int setNum,
+    double defaultWeight,
+    int defaultReps,
+  ) {
+    String _fmt(double v) =>
+        v % 1 == 0 ? v.toInt().toString() : v.toStringAsFixed(1);
+    final repsCtrl = TextEditingController(text: defaultReps.toString());
+    final weightCtrl = TextEditingController(text: _fmt(defaultWeight));
+
+    void bump(TextEditingController ctrl, double delta) {
+      final v = (double.tryParse(ctrl.text) ?? 0) + delta;
+      final clamped = v.clamp(0.0, 9999.0);
+      ctrl.text = clamped % 1 == 0
+          ? clamped.toInt().toString()
+          : clamped.toStringAsFixed(1);
+      ctrl.selection = TextSelection.collapsed(offset: ctrl.text.length);
+    }
+
+    return showDialog<(int, double)>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Edit Set'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Set $setNum', style: Theme.of(ctx).textTheme.titleSmall),
+            const SizedBox(height: 16),
+            _counterRow(
+              'Weight (kg)',
+              weightCtrl,
+              onDec: () => bump(weightCtrl, -1),
+              onInc: () => bump(weightCtrl, 1),
+              decimal: true,
+            ),
+            const SizedBox(height: 8),
+            _counterRow(
+              'Reps',
+              repsCtrl,
+              onDec: () => bump(repsCtrl, -1),
+              onInc: () => bump(repsCtrl, 1),
+              decimal: false,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final reps = (int.tryParse(repsCtrl.text) ?? 1).clamp(1, 9999);
+              final weight = (double.tryParse(weightCtrl.text) ?? 0).clamp(
+                0.0,
+                9999.0,
+              );
+              Navigator.pop(ctx, (reps, weight));
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<(int, double)?> _showAddSetDialog(
     String exerciseName,
     int setNum, {
@@ -175,10 +291,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           ),
         ],
       ),
-    ).whenComplete(() {
-      repsCtrl.dispose();
-      weightCtrl.dispose();
-    });
+    );
   }
 
   Widget _counterRow(
@@ -219,6 +332,32 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     }
   }
 
+  String _getSessionTitle() {
+    if (_workout == null || _workout!.sets.isEmpty) return 'Workout';
+
+    final setCount = _workout!.sets.length;
+    final sortedSets = List<WorkoutSet>.from(_workout!.sets)
+      ..sort((a, b) => a.loggedAt.compareTo(b.loggedAt));
+
+    if (sortedSets.length >= 2) {
+      final duration = sortedSets.last.loggedAt.difference(
+        sortedSets.first.loggedAt,
+      );
+      final hours = duration.inHours;
+      final minutes = duration.inMinutes % 60;
+
+      if (hours > 0) {
+        return '$setCount sets (${hours}h ${minutes}m)';
+      }
+      return '$setCount sets (${minutes}m)';
+    }
+
+    final mins = sortedSets.first.loggedAt
+        .difference(_workout!.startedAt)
+        .inMinutes;
+    return '$setCount set${setCount > 1 ? "s" : ""} (${mins}m)';
+  }
+
   String _formatDate(DateTime utc) {
     final d = utc.toLocal();
     final h = d.hour.toString().padLeft(2, '0');
@@ -235,11 +374,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          _workout == null ? 'Workout' : _formatDate(_workout!.startedAt),
-        ),
-      ),
+      appBar: AppBar(title: Text(_getSessionTitle())),
       body: Column(children: [Expanded(child: _buildBody())]),
       floatingActionButton: FloatingActionButton(
         onPressed: _addSet,
@@ -299,25 +434,29 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 8, 12, 2),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        sets.first.exerciseName,
-                        style: theme.textTheme.titleSmall,
-                      ),
-                    ),
-                    if (muscleGroup != null)
-                      Text(
-                        muscleGroup,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: MontColors.textSecondary.withValues(
-                            alpha: 0.7,
-                          ),
-                          fontSize: 11,
+                child: InkWell(
+                  onTap: () => _showExerciseDetails(sets.first.exerciseId),
+                  borderRadius: BorderRadius.circular(12),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          sets.first.exerciseName,
+                          style: theme.textTheme.titleSmall,
                         ),
                       ),
-                  ],
+                      if (muscleGroup != null)
+                        Text(
+                          muscleGroup,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: MontColors.textSecondary.withValues(
+                              alpha: 0.7,
+                            ),
+                            fontSize: 11,
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ),
               ...sets.map(
@@ -326,43 +465,47 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                     horizontal: 12,
                     vertical: 1,
                   ),
-                  child: Row(
-                    children: [
-                      SizedBox(
-                        width: 44,
-                        child: Text(
-                          'S${s.setNumber}',
+                  child: InkWell(
+                    onTap: () => _editSet(s),
+                    borderRadius: BorderRadius.circular(12),
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 44,
+                          child: Text(
+                            'S${s.setNumber}',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: Text(
+                            _setDisplay(s.weightKg, s.reps),
+                            style: theme.textTheme.bodyMedium,
+                          ),
+                        ),
+                        Text(
+                          '${s.loggedAt.toLocal().hour.toString().padLeft(2, '0')}:${s.loggedAt.toLocal().minute.toString().padLeft(2, '0')}',
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: theme.colorScheme.onSurfaceVariant,
                           ),
                         ),
-                      ),
-                      Expanded(
-                        child: Text(
-                          _setDisplay(s.weightKg, s.reps),
-                          style: theme.textTheme.bodyMedium,
-                        ),
-                      ),
-                      Text(
-                        '${s.loggedAt.toLocal().hour.toString().padLeft(2, '0')}:${s.loggedAt.toLocal().minute.toString().padLeft(2, '0')}',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      InkWell(
-                        onTap: () => _deleteSet(s.id),
-                        borderRadius: BorderRadius.circular(12),
-                        child: Padding(
-                          padding: const EdgeInsets.all(6),
-                          child: Icon(
-                            Icons.close,
-                            size: 14,
-                            color: theme.colorScheme.onSurfaceVariant,
+                        const SizedBox(width: 8),
+                        InkWell(
+                          onTap: () => _deleteSet(s.id),
+                          borderRadius: BorderRadius.circular(12),
+                          child: Padding(
+                            padding: const EdgeInsets.all(6),
+                            child: Icon(
+                              Icons.close,
+                              size: 14,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
