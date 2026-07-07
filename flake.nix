@@ -44,7 +44,22 @@
         sqlite
         sqlx-cli
         watchexec
-        github-copilot-cli
+        tmux
+        git
+        bashInteractive
+        coreutils
+        gnugrep
+        gnused
+        gawk
+        findutils
+        which
+        curl
+        jq
+        procps
+        lsof
+        ripgrep
+        fd
+        netcat-openbsd
       ];
 
       RUSTFLAGS = "-C link-arg=-fuse-ld=mold";

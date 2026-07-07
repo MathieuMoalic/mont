@@ -14,3 +14,5 @@ target/rust-analyzer/
 backend/mont.log
 gadgetbridge_export/
 .logs/
+/.cache/codebase-memory-mcp
+/.agent/logs
