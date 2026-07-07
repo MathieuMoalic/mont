@@ -215,73 +215,138 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
     final ctrl = TextEditingController(text: initialName);
     String? selectedMuscleGroup = initialMuscleGroup;
     String? selectedEquipment = initialEquipment;
+    bool addingNewEquipment = false;
     final muscleGroups = _distinctMuscleGroups();
     final equipment = _distinctEquipment();
+    // Ensure the exercise's current values are always present in the dropdown
+    // lists, even if they were added after the exercises were loaded.
+    final allMuscleGroups =
+        (muscleGroups.toSet()..addAll([initialMuscleGroup].whereType<String>()))
+            .toList()
+          ..sort();
+    final allEquipment =
+        (equipment.toSet()..addAll([initialEquipment].whereType<String>()))
+            .toList()
+          ..sort();
+    final TextEditingController equipmentCtrl = TextEditingController();
+
     return showDialog<(String, String?, String?)>(
       context: context,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setSt) {
-            return AlertDialog(
-              title: Text(title),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextField(
-                      controller: ctrl,
-                      autofocus: true,
-                      textCapitalization: TextCapitalization.words,
-                      decoration: const InputDecoration(labelText: 'Name'),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSt) {
+          return AlertDialog(
+            title: Text(title),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: ctrl,
+                    autofocus: true,
+                    textCapitalization: TextCapitalization.words,
+                    decoration: const InputDecoration(labelText: 'Name'),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: selectedMuscleGroup,
+                    hint: const Text('Muscle group (optional)'),
+                    decoration: const InputDecoration(
+                      labelText: 'Muscle group',
                     ),
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      initialValue: selectedMuscleGroup,
-                      hint: const Text('Muscle group (optional)'),
-                      decoration: const InputDecoration(
-                        labelText: 'Muscle group',
+                    isExpanded: true,
+                    items: allMuscleGroups
+                        .map(
+                          (g) => DropdownMenuItem<String>(
+                            value: g,
+                            child: Text(g),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (v) => setSt(() => selectedMuscleGroup = v),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String?>(
+                    value: selectedEquipment,
+                    hint: const Text('Equipment (optional)'),
+                    decoration: const InputDecoration(labelText: 'Equipment'),
+                    isExpanded: true,
+                    items: [
+                      DropdownMenuItem<String?>(
+                        value: null,
+                        child: const Text('No equipment'),
                       ),
-                      items: muscleGroups
-                          .map(
-                            (g) => DropdownMenuItem(value: g, child: Text(g)),
-                          )
-                          .toList(),
-                      onChanged: (v) => setSt(() => selectedMuscleGroup = v),
+                      ...allEquipment.map(
+                        (e) =>
+                            DropdownMenuItem<String?>(value: e, child: Text(e)),
+                      ),
+                      DropdownMenuItem<String?>(
+                        value: '___NEW___',
+                        child: Row(
+                          children: [
+                            const Icon(Icons.add, size: 16),
+                            const SizedBox(width: 4),
+                            const Text('Add new equipment'),
+                          ],
+                        ),
+                      ),
+                    ].toList(),
+                    onChanged: (v) {
+                      if (v == '___NEW___') {
+                        setSt(() {
+                          selectedEquipment = '___NEW___';
+                          addingNewEquipment = true;
+                        });
+                      } else {
+                        setSt(() {
+                          selectedEquipment = v;
+                          addingNewEquipment = false;
+                        });
+                      }
+                    },
+                  ),
+                  if (addingNewEquipment)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: TextField(
+                        controller: equipmentCtrl,
+                        autofocus: true,
+                        textCapitalization: TextCapitalization.words,
+                        decoration: const InputDecoration(
+                          labelText: 'Enter new equipment',
+                          border: OutlineInputBorder(),
+                          helperText:
+                              'This will be added to your equipment list',
+                        ),
+                      ),
                     ),
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      initialValue: selectedEquipment,
-                      hint: const Text('Equipment (optional)'),
-                      decoration: const InputDecoration(labelText: 'Equipment'),
-                      items: equipment
-                          .map(
-                            (e) => DropdownMenuItem(value: e, child: Text(e)),
-                          )
-                          .toList(),
-                      onChanged: (v) => setSt(() => selectedEquipment = v),
-                    ),
-                  ],
-                ),
+                ],
               ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Cancel'),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.pop(ctx, (
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  final equipmentResult = addingNewEquipment
+                      ? (equipmentCtrl.text.trim().isEmpty
+                            ? null
+                            : equipmentCtrl.text.trim())
+                      : selectedEquipment;
+                  Navigator.pop(ctx, (
                     ctrl.text.trim(),
                     selectedMuscleGroup,
-                    selectedEquipment,
-                  )),
-                  child: const Text('Save'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    ).whenComplete(() => ctrl.dispose());
+                    equipmentResult,
+                  ));
+                },
+                child: const Text('Save'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
   }
 
   Future<void> _loadCategoryOptions() async {
@@ -724,10 +789,7 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
         controller: _listScrollCtrl,
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         slivers: [
-          if (hasFilters)
-            SliverToBoxAdapter(
-              child: _buildFilterHeader(),
-            ),
+          if (hasFilters) SliverToBoxAdapter(child: _buildFilterHeader()),
           if (hasFilters && _showFilters)
             SliverToBoxAdapter(
               child: _buildFilters(muscleGroups, equipmentList),
@@ -754,15 +816,10 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
       controller: _listScrollCtrl,
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       slivers: [
-        if (hasFilters)
-          SliverToBoxAdapter(
-            child: _buildFilterHeader(),
-          ),
+        if (hasFilters) SliverToBoxAdapter(child: _buildFilterHeader()),
         if (hasFilters && _showFilters)
-          SliverToBoxAdapter(
-            child: _buildFilters(muscleGroups, equipmentList),
-          ),
-                SliverList.builder(
+          SliverToBoxAdapter(child: _buildFilters(muscleGroups, equipmentList)),
+        SliverList.builder(
           itemCount: _filtered.length,
           itemBuilder: (ctx, i) {
             final e = _filtered[i];
@@ -799,15 +856,10 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       child: Row(
         children: [
-          Text(
-            'Filters',
-            style: Theme.of(context).textTheme.labelMedium,
-          ),
+          Text('Filters', style: Theme.of(context).textTheme.labelMedium),
           const Spacer(),
           IconButton(
-            icon: Icon(
-              _showFilters ? Icons.expand_less : Icons.expand_more,
-            ),
+            icon: Icon(_showFilters ? Icons.expand_less : Icons.expand_more),
             onPressed: () => setState(() => _showFilters = !_showFilters),
             tooltip: _showFilters ? 'Hide filters' : 'Show filters',
           ),

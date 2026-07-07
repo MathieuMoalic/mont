@@ -3,9 +3,11 @@ import 'package:flutter/material.dart';
 
 import '../api.dart' as api;
 import '../models.dart';
+import 'exercise_picker_screen.dart';
 
 class ExerciseHistoryScreen extends StatefulWidget {
-  const ExerciseHistoryScreen({super.key});
+  final Exercise? exercise;
+  const ExerciseHistoryScreen({super.key, this.exercise});
 
   @override
   State<ExerciseHistoryScreen> createState() => _ExerciseHistoryScreenState();
@@ -25,7 +27,13 @@ class _ExerciseHistoryScreenState extends State<ExerciseHistoryScreen> {
   @override
   void initState() {
     super.initState();
-    _loadExercises();
+    _selected = widget.exercise;
+    if (_selected != null) {
+      _loadExercises();
+      _selectExercise(_selected!);
+    } else {
+      _loadExercises();
+    }
   }
 
   Future<void> _loadExercises() async {
@@ -47,8 +55,10 @@ class _ExerciseHistoryScreenState extends State<ExerciseHistoryScreen> {
     if (_exercises == null) return;
     setState(() {
       _filtered = _exercises!.where((e) {
-        final matchesMuscle = _muscleFilter == null || e.muscleGroup == _muscleFilter;
-        final matchesEquipment = _equipmentFilter == null || e.equipment == _equipmentFilter;
+        final matchesMuscle =
+            _muscleFilter == null || e.muscleGroup == _muscleFilter;
+        final matchesEquipment =
+            _equipmentFilter == null || e.equipment == _equipmentFilter;
         return matchesMuscle && matchesEquipment;
       }).toList();
     });
@@ -77,11 +87,19 @@ class _ExerciseHistoryScreenState extends State<ExerciseHistoryScreen> {
   }
 
   Future<void> _selectExercise(Exercise ex) async {
-    setState(() { _selected = ex; _history = null; _pr = null; });
+    setState(() {
+      _selected = ex;
+      _history = null;
+      _pr = null;
+    });
     try {
       final h = await api.getExerciseHistory(ex.id);
       final pr = await api.getExercisePersonalRecords(ex.id);
-      if (mounted) setState(() { _history = h; _pr = pr; });
+      if (mounted)
+        setState(() {
+          _history = h;
+          _pr = pr;
+        });
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     }
@@ -90,6 +108,224 @@ class _ExerciseHistoryScreenState extends State<ExerciseHistoryScreen> {
   String _fmtDate(DateTime d) {
     final l = d.toLocal();
     return '${l.day}/${l.month}/${l.year.toString().substring(2)}';
+  }
+
+  Future<void> _editExercise() async {
+    if (_selected == null || !mounted) return;
+    final result = await _showExerciseDialog(_selected!);
+    if (result == null || !mounted) return;
+
+    try {
+      final equipment = result.$3;
+      await api.updateExercise(
+        _selected!.id,
+        name: result.$1 == null || result.$1!.isEmpty ? null : result.$1,
+        muscleGroup: result.$2,
+        equipment: equipment,
+      );
+      setState(() {
+        final newName = result.$1 == null || result.$1!.isEmpty
+            ? _selected!.name
+            : result.$1!;
+        _selected = Exercise(
+          id: _selected!.id,
+          name: newName,
+          notes: _selected!.notes,
+          muscleGroup: result.$2,
+          equipment: equipment,
+        );
+      });
+      _selectExercise(_selected!);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.toString())));
+      }
+    }
+  }
+
+  Future<(String?, String?, String?, String?)?> _showExerciseDialog(
+    Exercise exercise,
+  ) {
+    final ctrl = TextEditingController(text: exercise.name);
+    String? selectedMuscleGroup = exercise.muscleGroup;
+    String? selectedEquipment = exercise.equipment;
+    bool addingNewMuscle = false;
+    bool addingNewEquipment = false;
+    // Ensure the exercise's current values are always present in the dropdown
+    // lists, even if they were added after the exercises were loaded.
+    final muscleGroups = _distinctMuscleGroups();
+    final equipment = _distinctEquipment();
+    final allMuscleGroups =
+        (muscleGroups.toSet()
+              ..addAll([exercise.muscleGroup].whereType<String>()))
+            .toList()
+          ..sort();
+    final allEquipment =
+        (equipment.toSet()..addAll([exercise.equipment].whereType<String>()))
+            .toList()
+          ..sort();
+    final TextEditingController equipmentCtrl = TextEditingController();
+    final TextEditingController muscleCtrl = TextEditingController();
+
+    return showDialog<(String?, String?, String?, String?)>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSt) {
+          return AlertDialog(
+            title: const Text('Edit exercise'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: ctrl,
+                    autofocus: true,
+                    textCapitalization: TextCapitalization.words,
+                    decoration: const InputDecoration(labelText: 'Name'),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String?>(
+                    value: selectedMuscleGroup,
+                    hint: const Text('Muscle group (optional)'),
+                    decoration: const InputDecoration(
+                      labelText: 'Muscle group',
+                    ),
+                    isExpanded: true,
+                    items: [
+                      DropdownMenuItem(value: null, child: const Text('None')),
+                      ...allMuscleGroups.map(
+                        (g) =>
+                            DropdownMenuItem<String?>(value: g, child: Text(g)),
+                      ),
+                      DropdownMenuItem<String?>(
+                        value: '___NEW_MUSCLE___',
+                        child: Row(
+                          children: [
+                            const Icon(Icons.add, size: 16),
+                            const SizedBox(width: 4),
+                            const Text('Add new muscle'),
+                          ],
+                        ),
+                      ),
+                    ].toList(),
+                    onChanged: (v) {
+                      if (v == '___NEW_MUSCLE___') {
+                        setSt(() {
+                          selectedMuscleGroup = '___NEW_MUSCLE___';
+                          addingNewMuscle = true;
+                        });
+                      } else {
+                        setSt(() {
+                          selectedMuscleGroup = v;
+                          addingNewMuscle = false;
+                        });
+                      }
+                    },
+                  ),
+                  if (addingNewMuscle)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: TextField(
+                        controller: muscleCtrl,
+                        autofocus: true,
+                        textCapitalization: TextCapitalization.words,
+                        decoration: const InputDecoration(
+                          labelText: 'Enter new muscle group',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String?>(
+                    value: selectedEquipment,
+                    hint: const Text('Equipment (optional)'),
+                    decoration: const InputDecoration(labelText: 'Equipment'),
+                    isExpanded: true,
+                    items: [
+                      DropdownMenuItem(
+                        value: null,
+                        child: const Text('No equipment'),
+                      ),
+                      ...allEquipment.map(
+                        (e) =>
+                            DropdownMenuItem<String?>(value: e, child: Text(e)),
+                      ),
+                      DropdownMenuItem<String?>(
+                        value: '___NEW___',
+                        child: Row(
+                          children: [
+                            const Icon(Icons.add, size: 16),
+                            const SizedBox(width: 4),
+                            const Text('Add new equipment'),
+                          ],
+                        ),
+                      ),
+                    ].toList(),
+                    onChanged: (v) {
+                      if (v == '___NEW___') {
+                        setSt(() {
+                          selectedEquipment = '___NEW___';
+                          addingNewEquipment = true;
+                        });
+                      } else {
+                        setSt(() {
+                          selectedEquipment = v;
+                          addingNewEquipment = false;
+                        });
+                      }
+                    },
+                  ),
+                  if (addingNewEquipment)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: TextField(
+                        controller: equipmentCtrl,
+                        autofocus: true,
+                        textCapitalization: TextCapitalization.words,
+                        decoration: const InputDecoration(
+                          labelText: 'Enter new equipment',
+                          border: OutlineInputBorder(),
+                          helperText:
+                              'This will be added to your equipment list',
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  final muscleResult = addingNewMuscle
+                      ? (muscleCtrl.text.trim().isEmpty
+                            ? null
+                            : muscleCtrl.text.trim())
+                      : selectedMuscleGroup;
+                  final equipmentResult = addingNewEquipment
+                      ? (equipmentCtrl.text.trim().isEmpty
+                            ? null
+                            : equipmentCtrl.text.trim())
+                      : selectedEquipment;
+                  Navigator.pop(ctx, (
+                    ctrl.text.trim(),
+                    muscleResult,
+                    equipmentResult,
+                    null,
+                  ));
+                },
+                child: const Text('Save'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
   }
 
   Widget _buildPRCard(ExercisePersonalRecord pr) {
@@ -103,8 +339,10 @@ class _ExerciseHistoryScreenState extends State<ExerciseHistoryScreen> {
               children: [
                 const Icon(Icons.emoji_events, color: Color(0xFFC4B5FD)),
                 const SizedBox(width: 8),
-                Text('Personal Records',
-                    style: Theme.of(context).textTheme.titleMedium),
+                Text(
+                  'Personal Records',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
               ],
             ),
             const SizedBox(height: 16),
@@ -169,13 +407,17 @@ class _ExerciseHistoryScreenState extends State<ExerciseHistoryScreen> {
           ],
         ),
         const SizedBox(height: 4),
-        Text(value, style: Theme.of(context).textTheme.titleSmall?.copyWith(
-          color: const Color(0xFFC4B5FD),
-          fontWeight: FontWeight.bold,
-        )),
-        Text(detail, style: Theme.of(context).textTheme.bodySmall?.copyWith(
-          fontSize: 11,
-        )),
+        Text(
+          value,
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+            color: const Color(0xFFC4B5FD),
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        Text(
+          detail,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 11),
+        ),
       ],
     );
   }
@@ -188,9 +430,9 @@ class _ExerciseHistoryScreenState extends State<ExerciseHistoryScreen> {
         actions: [
           if (_selected != null)
             IconButton(
-              icon: const Icon(Icons.arrow_back_ios),
-              tooltip: 'Pick another exercise',
-              onPressed: () => setState(() { _selected = null; _history = null; }),
+              icon: const Icon(Icons.edit),
+              tooltip: 'Edit exercise',
+              onPressed: () => _editExercise(),
             ),
         ],
       ),
@@ -209,13 +451,16 @@ class _ExerciseHistoryScreenState extends State<ExerciseHistoryScreen> {
       return const Center(child: CircularProgressIndicator());
     }
     if (_history!.isEmpty) {
-      return const Center(child: Text('No workout sets recorded for this exercise yet.'));
+      return const Center(
+        child: Text('No workout sets recorded for this exercise yet.'),
+      );
     }
     return _buildHistoryView();
   }
 
   Widget _buildExercisePicker() {
-    if (_exercises == null) return const Center(child: CircularProgressIndicator());
+    if (_exercises == null)
+      return const Center(child: CircularProgressIndicator());
 
     final muscleGroups = _distinctMuscleGroups();
     final equipmentList = _distinctEquipment();
@@ -239,17 +484,19 @@ class _ExerciseHistoryScreenState extends State<ExerciseHistoryScreen> {
                       _applyFilters();
                     },
                   ),
-                  ...muscleGroups.map((g) => Padding(
-                        padding: const EdgeInsets.only(left: 6),
-                        child: FilterChip(
-                          label: Text(g),
-                          selected: _muscleFilter == g,
-                          onSelected: (_) {
-                            setState(() => _muscleFilter = g);
-                            _applyFilters();
-                          },
-                        ),
-                      )),
+                  ...muscleGroups.map(
+                    (g) => Padding(
+                      padding: const EdgeInsets.only(left: 6),
+                      child: FilterChip(
+                        label: Text(g),
+                        selected: _muscleFilter == g,
+                        onSelected: (_) {
+                          setState(() => _muscleFilter = g);
+                          _applyFilters();
+                        },
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -270,17 +517,19 @@ class _ExerciseHistoryScreenState extends State<ExerciseHistoryScreen> {
                       _applyFilters();
                     },
                   ),
-                  ...equipmentList.map((e) => Padding(
-                        padding: const EdgeInsets.only(left: 6),
-                        child: FilterChip(
-                          label: Text(e),
-                          selected: _equipmentFilter == e,
-                          onSelected: (_) {
-                            setState(() => _equipmentFilter = e);
-                            _applyFilters();
-                          },
-                        ),
-                      )),
+                  ...equipmentList.map(
+                    (e) => Padding(
+                      padding: const EdgeInsets.only(left: 6),
+                      child: FilterChip(
+                        label: Text(e),
+                        selected: _equipmentFilter == e,
+                        onSelected: (_) {
+                          setState(() => _equipmentFilter = e);
+                          _applyFilters();
+                        },
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -288,26 +537,25 @@ class _ExerciseHistoryScreenState extends State<ExerciseHistoryScreen> {
         // Exercise list
         if (filtered.isEmpty)
           const SliverFillRemaining(
-            child: Center(child: Text('No exercises match the selected filters.')),
+            child: Center(
+              child: Text('No exercises match the selected filters.'),
+            ),
           )
         else
           SliverList(
-            delegate: SliverChildBuilderDelegate(
-              (ctx, i) {
-                final ex = filtered[i];
-                final subtitle = [
-                  if (ex.muscleGroup != null) ex.muscleGroup!,
-                  if (ex.equipment != null) ex.equipment!,
-                ].join(' • ');
-                return ListTile(
-                  title: Text(ex.name),
-                  subtitle: subtitle.isNotEmpty ? Text(subtitle) : null,
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => _selectExercise(ex),
-                );
-              },
-              childCount: filtered.length,
-            ),
+            delegate: SliverChildBuilderDelegate((ctx, i) {
+              final ex = filtered[i];
+              final subtitle = [
+                if (ex.muscleGroup != null) ex.muscleGroup!,
+                if (ex.equipment != null) ex.equipment!,
+              ].join(' • ');
+              return ListTile(
+                title: Text(ex.name),
+                subtitle: subtitle.isNotEmpty ? Text(subtitle) : null,
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => _selectExercise(ex),
+              );
+            }, childCount: filtered.length),
           ),
       ],
     );
@@ -368,8 +616,10 @@ class _ExerciseHistoryScreenState extends State<ExerciseHistoryScreen> {
                 maxY: effectiveMax,
                 gridData: FlGridData(
                   drawVerticalLine: false,
-                  getDrawingHorizontalLine: (_) =>
-                      FlLine(color: Colors.grey.withValues(alpha: 0.2), strokeWidth: 1),
+                  getDrawingHorizontalLine: (_) => FlLine(
+                    color: Colors.grey.withValues(alpha: 0.2),
+                    strokeWidth: 1,
+                  ),
                 ),
                 borderData: FlBorderData(show: false),
                 titlesData: FlTitlesData(
@@ -378,7 +628,9 @@ class _ExerciseHistoryScreenState extends State<ExerciseHistoryScreen> {
                       showTitles: true,
                       reservedSize: 52,
                       getTitlesWidget: (v, _) => Text(
-                        useVolume ? '${v.round()}' : '${v.toStringAsFixed(1)}kg',
+                        useVolume
+                            ? '${v.round()}'
+                            : '${v.toStringAsFixed(1)}kg',
                         style: const TextStyle(fontSize: 10),
                       ),
                     ),
@@ -390,14 +642,21 @@ class _ExerciseHistoryScreenState extends State<ExerciseHistoryScreen> {
                       interval: _xInterval(history.length),
                       getTitlesWidget: (v, _) {
                         final i = v.round();
-                        if (i < 0 || i >= history.length) return const SizedBox.shrink();
-                        return Text(_fmtDate(history[i].workoutDate),
-                            style: const TextStyle(fontSize: 9));
+                        if (i < 0 || i >= history.length)
+                          return const SizedBox.shrink();
+                        return Text(
+                          _fmtDate(history[i].workoutDate),
+                          style: const TextStyle(fontSize: 9),
+                        );
                       },
                     ),
                   ),
-                  topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                  rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  topTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
+                  rightTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
                 ),
                 lineTouchData: LineTouchData(
                   touchTooltipData: LineTouchTooltipData(
@@ -435,16 +694,28 @@ class _ExerciseHistoryScreenState extends State<ExerciseHistoryScreen> {
             spacing: 12,
             runSpacing: 12,
             children: [
-              _statCard('🏋️ Current max', '${lastMaxWeight.toStringAsFixed(1)} kg'),
-              _statCard('🏅 All-time PR', '${pr.maxWeightKg.toStringAsFixed(1)} kg\n${_fmtDate(pr.workoutDate)}'),
+              _statCard(
+                '🏋️ Current max',
+                '${lastMaxWeight.toStringAsFixed(1)} kg',
+              ),
+              _statCard(
+                '🏅 All-time PR',
+                '${pr.maxWeightKg.toStringAsFixed(1)} kg\n${_fmtDate(pr.workoutDate)}',
+              ),
               _statCard('💪 Est. 1RM', _fmt1RM(history)),
               _statCard('📅 Sessions', '${history.length}'),
-              _statCard('🔁 Total sets', '${history.fold(0, (s, p) => s + p.totalSets)}'),
+              _statCard(
+                '🔁 Total sets',
+                '${history.fold(0, (s, p) => s + p.totalSets)}',
+              ),
             ],
           ),
           const SizedBox(height: 24),
           // Recent sessions table
-          Text('Recent sessions', style: Theme.of(context).textTheme.titleMedium),
+          Text(
+            'Recent sessions',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
           const SizedBox(height: 8),
           _buildTable(history),
         ],
@@ -453,7 +724,9 @@ class _ExerciseHistoryScreenState extends State<ExerciseHistoryScreen> {
   }
 
   String _fmt1RM(List<ExerciseHistoryPoint> history) {
-    final best = history.map((p) => p.estimated1RM).reduce((a, b) => a > b ? a : b);
+    final best = history
+        .map((p) => p.estimated1RM)
+        .reduce((a, b) => a > b ? a : b);
     return '${best.toStringAsFixed(1)} kg';
   }
 
@@ -471,9 +744,15 @@ class _ExerciseHistoryScreenState extends State<ExerciseHistoryScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+            Text(
+              label,
+              style: const TextStyle(fontSize: 12, color: Colors.grey),
+            ),
             const SizedBox(height: 4),
-            Text(value, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+            Text(
+              value,
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+            ),
           ],
         ),
       ),
@@ -492,7 +771,9 @@ class _ExerciseHistoryScreenState extends State<ExerciseHistoryScreen> {
       children: [
         TableRow(
           decoration: BoxDecoration(
-            border: Border(bottom: BorderSide(color: Colors.grey.withValues(alpha: 0.3))),
+            border: Border(
+              bottom: BorderSide(color: Colors.grey.withValues(alpha: 0.3)),
+            ),
           ),
           children: const [
             _HeaderCell('Date'),
@@ -522,10 +803,16 @@ class _HeaderCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(bottom: 6),
-        child: Text(text,
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey)),
-      );
+    padding: const EdgeInsets.only(bottom: 6),
+    child: Text(
+      text,
+      style: const TextStyle(
+        fontSize: 12,
+        fontWeight: FontWeight.bold,
+        color: Colors.grey,
+      ),
+    ),
+  );
 }
 
 class _Cell extends StatelessWidget {
@@ -534,7 +821,7 @@ class _Cell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6),
-        child: Text(text, style: const TextStyle(fontSize: 13)),
-      );
+    padding: const EdgeInsets.symmetric(vertical: 6),
+    child: Text(text, style: const TextStyle(fontSize: 13)),
+  );
 }
