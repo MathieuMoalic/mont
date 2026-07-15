@@ -121,8 +121,14 @@
 
       sourceRoot = ".";
 
+      nativeBuildInputs = [pkgs.patchelf];
+
       installPhase = ''
         install -Dm755 mont-v0.8.1-x86_64-linux $out/bin/mont
+        patchelf \
+          --set-interpreter ${pkgs.stdenv.cc.bintools.dynamicLinker} \
+          --set-rpath ${lib.makeLibraryPath [pkgs.stdenv.cc.cc.lib pkgs.glibc]} \
+          $out/bin/mont
       '';
 
       meta = with lib; {
