@@ -16,3 +16,5 @@ gadgetbridge_export/
 .logs/
 /.cache/codebase-memory-mcp
 /.agent/logs
+/backend/web_build
+/release/artifacts
