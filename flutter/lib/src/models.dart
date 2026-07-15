@@ -622,6 +622,15 @@ class WorkoutDetail {
   }
 }
 
+class HyroxDay {
+  final String day; // YYYY-MM-DD
+
+  HyroxDay({required this.day});
+
+  factory HyroxDay.fromJson(Map<String, dynamic> j) =>
+      HyroxDay(day: j['day'] as String);
+}
+
 class DailyHealth {
   final String date;
   final int? avgHr;

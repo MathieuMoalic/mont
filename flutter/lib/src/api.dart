@@ -317,6 +317,32 @@ Future<List<WorkoutSummary>> listWorkouts() async {
       .toList();
 }
 
+Future<List<HyroxDay>> listHyroxDays() async {
+  final res = await _handleUnauthorized(
+    () => http.get(_u('/hyrox-days'), headers: _headers()),
+  );
+  if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
+  return (jsonDecode(res.body) as List)
+      .map((e) => HyroxDay.fromJson(e as Map<String, dynamic>))
+      .toList();
+}
+
+Future<void> upsertHyroxDay(String day) async {
+  final encodedDay = Uri.encodeComponent(day);
+  final res = await _handleUnauthorized(
+    () => http.put(_u('/hyrox-days/$encodedDay'), headers: _headers()),
+  );
+  if (res.statusCode != 204) throw Exception('HTTP ${res.statusCode}');
+}
+
+Future<void> deleteHyroxDay(String day) async {
+  final encodedDay = Uri.encodeComponent(day);
+  final res = await _handleUnauthorized(
+    () => http.delete(_u('/hyrox-days/$encodedDay'), headers: _headers()),
+  );
+  if (res.statusCode != 204) throw Exception('HTTP ${res.statusCode}');
+}
+
 Future<WorkoutSummary> createWorkout() async {
   final res = await _handleUnauthorized(
     () => http.post(_u('/workouts'), headers: _headers()),

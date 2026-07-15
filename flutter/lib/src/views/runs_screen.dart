@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../api.dart' as api;
 import '../models.dart';
 import 'run_heatmap_screen.dart';
-import 'run_calendar_screen.dart';
 import 'run_detail_screen.dart';
 import 'run_stats_screen.dart';
 
@@ -51,8 +50,9 @@ class _RunsScreenState extends State<RunsScreen> {
     final h = seconds ~/ 3600;
     final m = (seconds % 3600) ~/ 60;
     final s = seconds % 60;
-    if (h > 0)
+    if (h > 0) {
       return '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+    }
     return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
 
@@ -273,18 +273,6 @@ class _RunsScreenState extends State<RunsScreen> {
                 : () => Navigator.push(
                     context,
                     MaterialPageRoute(builder: (_) => const RunHeatmapScreen()),
-                  ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.calendar_month),
-            tooltip: 'Calendar',
-            onPressed: _runs.isEmpty
-                ? null
-                : () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => RunCalendarScreen(runs: _runs),
-                    ),
                   ),
           ),
           IconButton(
