@@ -2,6 +2,7 @@ pub mod auth;
 pub mod calories;
 pub mod exercises;
 pub mod health;
+pub mod hyrox;
 pub mod issues;
 pub mod meals;
 pub mod runs;

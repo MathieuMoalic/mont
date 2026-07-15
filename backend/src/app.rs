@@ -1,5 +1,7 @@
 use crate::rate_limit::{RateLimitState, rate_limit_middleware};
-use crate::routes::{auth, calories, exercises, health, issues, meals, runs, weight, workouts};
+use crate::routes::{
+    auth, calories, exercises, health, hyrox, issues, meals, runs, weight, workouts,
+};
 use crate::{
     auth_middleware::require_auth,
     config::Config,
@@ -10,7 +12,7 @@ use crate::{
 
 use axum::extract::DefaultBodyLimit;
 use axum::middleware::{from_fn, from_fn_with_state};
-use axum::routing::{delete, get, patch, post};
+use axum::routing::{delete, get, patch, post, put};
 use axum::{Json, Router};
 use serde::Serialize;
 
@@ -88,6 +90,11 @@ pub fn build_app(state: AppState) -> Router {
         .route(
             "/workouts",
             get(workouts::list_workouts).post(workouts::create_workout),
+        )
+        .route("/hyrox-days", get(hyrox::list_hyrox_days))
+        .route(
+            "/hyrox-days/{day}",
+            put(hyrox::upsert_hyrox_day).delete(hyrox::delete_hyrox_day),
         )
         .route(
             "/workouts/{id}",

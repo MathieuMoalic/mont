@@ -1,0 +1,5 @@
+CREATE TABLE hyrox_days (
+    day TEXT PRIMARY KEY,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+

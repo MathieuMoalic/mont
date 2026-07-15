@@ -165,6 +165,16 @@ impl TestApp {
             .unwrap()
     }
 
+    pub async fn put_empty(&self, path: &str) -> reqwest::Response {
+        self.client
+            .put(self.url(path))
+            .bearer_auth(&self.token)
+            .header(reqwest::header::CONTENT_LENGTH, "0")
+            .send()
+            .await
+            .unwrap()
+    }
+
     pub async fn delete(&self, path: &str) -> reqwest::Response {
         self.client
             .delete(self.url(path))

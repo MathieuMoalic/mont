@@ -1553,11 +1553,10 @@ async fn perform_sync_with_limit(
         let elevation_gain_m = parsed_details.as_ref().and_then(|p| p.elevation_gain_m);
         let avg_hr = parsed_details.as_ref().and_then(|p| p.avg_hr);
         let max_hr = parsed_details.as_ref().and_then(|p| p.max_hr);
-        let weather = if let Some(first) = parsed_details
-            .as_ref()
-            .and_then(|p| p.route.first())
+        let weather = if let Some(first) = parsed_details.as_ref().and_then(|p| p.route.first())
             && let Ok(ts) = parse_timestamp(&row.started_at)
-            && let Some(w) = crate::weather::fetch_weather(&state.http, first.lat, first.lon, ts).await
+            && let Some(w) =
+                crate::weather::fetch_weather(&state.http, first.lat, first.lon, ts).await
         {
             Some((w.temp_c, w.wind_kph, w.precip_mm, w.code))
         } else {
