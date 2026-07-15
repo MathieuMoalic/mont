@@ -194,10 +194,10 @@ def build_backend_archive(version: str) -> Path:
     archive_name = f"{binary_name}.tar.gz"
     binary_path = RELEASE_DIR / binary_name
     archive_path = RELEASE_DIR / archive_name
+    out_link = ROOT / ".release-backend"
 
-    run("cargo", "build", "--release", "--locked", cwd=BACKEND)
-
-    source = BACKEND / "target" / "release" / APP
+    run("nix", "build", ".#backend", "--out-link", str(out_link))
+    source = out_link / "bin" / APP
     shutil.copy2(source, binary_path)
     binary_path.chmod(0o755)
 
@@ -205,6 +205,8 @@ def build_backend_archive(version: str) -> Path:
         tar.add(binary_path, arcname=binary_name)
 
     binary_path.unlink()
+    if out_link.exists() or out_link.is_symlink():
+        out_link.unlink()
     return archive_path
 
 
@@ -361,4 +363,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
