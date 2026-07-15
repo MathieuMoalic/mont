@@ -71,7 +71,7 @@
 
     webBuild = pkgs.flutter.buildFlutterApplication {
       pname = "mont-web";
-      version = "0.8.0";
+      version = "0.8.1";
       src = pkgs.lib.cleanSource ./flutter;
       autoPubspecLock = ./flutter/pubspec.lock;
       targetFlutterPlatform = "web";
@@ -79,7 +79,7 @@
 
     package = pkgs.rustPlatform.buildRustPackage {
       pname = "mont";
-      version = "0.8.0";
+      version = "0.8.1";
       src = ./backend;
 
       cargoLock = {
@@ -112,17 +112,17 @@
 
     prebuilt = pkgs.stdenvNoCC.mkDerivation {
       pname = "mont";
-      version = "0.8.0";
+      version = "0.8.1";
 
       src = pkgs.fetchurl {
-        url = "https://github.com/MathieuMoalic/mont/releases/download/v0.8.0/mont-v0.8.0-x86_64-linux.tar.gz";
-        hash = "sha256-A5gUmY0zWHUMx1hPrQDQozLYLt8+kSc0gmItzGFFZm8=";
+        url = "https://github.com/MathieuMoalic/mont/releases/download/v0.8.1/mont-v0.8.1-x86_64-linux.tar.gz";
+        hash = "sha256-FpRK2QeyWckJxUR+TvYvpK1mVTMS/AKbHFLbrK3okBs=";
       };
 
       sourceRoot = ".";
 
       installPhase = ''
-        install -Dm755 mont-v0.8.0-x86_64-linux $out/bin/mont
+        install -Dm755 mont-v0.8.1-x86_64-linux $out/bin/mont
       '';
 
       meta = with lib; {
