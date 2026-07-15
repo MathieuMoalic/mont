@@ -402,6 +402,345 @@ async fn sync_from_zip_imports_running_activities() {
     assert_eq!(body["errors"], serde_json::json!([]));
 }
 
+#[tokio::test]
+async fn sync_from_prefixed_zip_with_sqlite_db_name_and_uppercase_type_imports() {
+    use std::io::Write;
+
+    let zip_bytes = {
+        let mut buf = std::io::Cursor::new(Vec::new());
+        let mut zip = zip::ZipWriter::new(&mut buf);
+        let options = zip::write::FileOptions::<()>::default()
+            .compression_method(zip::CompressionMethod::Stored);
+
+        // DB exists but has no BASE_ACTIVITY_SUMMARY table.
+        let db_bytes = {
+            let tmp = tempfile::NamedTempFile::new().unwrap();
+            let conn = rusqlite::Connection::open(tmp.path()).unwrap();
+            conn.execute_batch("CREATE TABLE DUMMY (ID INTEGER);")
+                .unwrap();
+            drop(conn);
+            std::fs::read(tmp.path()).unwrap()
+        };
+
+        zip.start_file("backup-2026-07-15/database/Gadgetbridge.sqlite", options)
+            .unwrap();
+        zip.write_all(&db_bytes).unwrap();
+
+        zip.start_file("backup-2026-07-15/files/run.gpx", options)
+            .unwrap();
+        zip.write_all(make_gpx_with_type("Running").as_slice())
+            .unwrap();
+
+        zip.finish().unwrap();
+        buf.into_inner()
+    };
+
+    let zip_file = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(zip_file.path(), &zip_bytes).unwrap();
+
+    let app = common::TestApp::spawn_with_zip(zip_file.path().to_path_buf()).await;
+
+    let res = app.post_empty("/runs/sync").await;
+    assert_eq!(res.status(), 200);
+    let body: serde_json::Value = res.json().await.unwrap();
+    assert_eq!(body["imported"], 1);
+    assert_eq!(body["errors"], serde_json::json!([]));
+}
+
+#[tokio::test]
+async fn sync_second_run_skips_already_imported_files() {
+    use std::io::Write;
+
+    let zip_bytes = {
+        let mut buf = std::io::Cursor::new(Vec::new());
+        let mut zip = zip::ZipWriter::new(&mut buf);
+        let options = zip::write::FileOptions::<()>::default()
+            .compression_method(zip::CompressionMethod::Stored);
+
+        let db_bytes = {
+            let tmp = tempfile::NamedTempFile::new().unwrap();
+            let conn = rusqlite::Connection::open(tmp.path()).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE BASE_ACTIVITY_SUMMARY \
+                 (GPX_TRACK TEXT, ACTIVITY_KIND INTEGER, SUMMARY_DATA TEXT); \
+                 INSERT INTO BASE_ACTIVITY_SUMMARY VALUES ('files/run.gpx', 1, '{}');",
+            )
+            .unwrap();
+            drop(conn);
+            std::fs::read(tmp.path()).unwrap()
+        };
+
+        zip.start_file("database/Gadgetbridge", options).unwrap();
+        zip.write_all(&db_bytes).unwrap();
+        zip.start_file("files/run.gpx", options).unwrap();
+        zip.write_all(SAMPLE_GPX.as_bytes()).unwrap();
+        zip.finish().unwrap();
+        buf.into_inner()
+    };
+
+    let zip_file = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(zip_file.path(), &zip_bytes).unwrap();
+    let app = common::TestApp::spawn_with_zip(zip_file.path().to_path_buf()).await;
+
+    let first = app.post_empty("/runs/sync").await;
+    assert_eq!(first.status(), 200);
+    let first_body: serde_json::Value = first.json().await.unwrap();
+    assert_eq!(first_body["imported"], 1);
+
+    let second = app.post_empty("/runs/sync").await;
+    assert_eq!(second.status(), 200);
+    let second_body: serde_json::Value = second.json().await.unwrap();
+    assert_eq!(second_body["imported"], 0);
+}
+
+#[tokio::test]
+async fn sync_ignores_empty_gpx_files_without_errors() {
+    use std::io::Write;
+
+    let zip_bytes = {
+        let mut buf = std::io::Cursor::new(Vec::new());
+        let mut zip = zip::ZipWriter::new(&mut buf);
+        let options = zip::write::FileOptions::<()>::default()
+            .compression_method(zip::CompressionMethod::Stored);
+
+        let db_bytes = {
+            let tmp = tempfile::NamedTempFile::new().unwrap();
+            let conn = rusqlite::Connection::open(tmp.path()).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE BASE_ACTIVITY_SUMMARY \
+                 (GPX_TRACK TEXT, ACTIVITY_KIND INTEGER, SUMMARY_DATA TEXT); \
+                 INSERT INTO BASE_ACTIVITY_SUMMARY VALUES ('files/empty.gpx', 1, '{}');",
+            )
+            .unwrap();
+            drop(conn);
+            std::fs::read(tmp.path()).unwrap()
+        };
+
+        zip.start_file("database/Gadgetbridge", options).unwrap();
+        zip.write_all(&db_bytes).unwrap();
+        zip.start_file("files/empty.gpx", options).unwrap();
+        zip.write_all(&[]).unwrap();
+        zip.finish().unwrap();
+        buf.into_inner()
+    };
+
+    let zip_file = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(zip_file.path(), &zip_bytes).unwrap();
+    let app = common::TestApp::spawn_with_zip(zip_file.path().to_path_buf()).await;
+
+    let res = app.post_empty("/runs/sync").await;
+    assert_eq!(res.status(), 200);
+    let body: serde_json::Value = res.json().await.unwrap();
+    assert_eq!(body["imported"], 0);
+    assert_eq!(body["errors"], serde_json::json!([]));
+}
+
+#[tokio::test]
+async fn sync_imports_summary_only_running_rows_without_gpx() {
+    use std::io::Write;
+
+    let zip_bytes = {
+        let mut buf = std::io::Cursor::new(Vec::new());
+        let mut zip = zip::ZipWriter::new(&mut buf);
+        let options = zip::write::FileOptions::<()>::default()
+            .compression_method(zip::CompressionMethod::Stored);
+
+        let db_bytes = {
+            let tmp = tempfile::NamedTempFile::new().unwrap();
+            let conn = rusqlite::Connection::open(tmp.path()).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE BASE_ACTIVITY_SUMMARY (\
+                    START_TIME INTEGER,\
+                    END_TIME INTEGER,\
+                    GPX_TRACK TEXT,\
+                    ACTIVITY_KIND INTEGER,\
+                    SUMMARY_DATA TEXT,\
+                    RAW_DETAILS_PATH TEXT\
+                 );\
+                 INSERT INTO BASE_ACTIVITY_SUMMARY \
+                 (START_TIME, END_TIME, GPX_TRACK, ACTIVITY_KIND, SUMMARY_DATA, RAW_DETAILS_PATH) \
+                 VALUES (1784010932000, 1784014532000, NULL, 67109041, NULL, \
+                 '/storage/emulated/0/Android/data/nodomain.freeyourgadget.gadgetbridge/files/rawDetails/2026-07-14T08_35_32+02_00.bin');",
+            )
+            .unwrap();
+            drop(conn);
+            std::fs::read(tmp.path()).unwrap()
+        };
+
+        zip.start_file("database/Gadgetbridge", options).unwrap();
+        zip.write_all(&db_bytes).unwrap();
+        zip.finish().unwrap();
+        buf.into_inner()
+    };
+
+    let zip_file = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(zip_file.path(), &zip_bytes).unwrap();
+    let app = common::TestApp::spawn_with_zip(zip_file.path().to_path_buf()).await;
+
+    let res = app.post_empty("/runs/sync").await;
+    assert_eq!(res.status(), 200);
+    let body: serde_json::Value = res.json().await.unwrap();
+    assert_eq!(body["imported"], 1);
+    assert_eq!(body["errors"], serde_json::json!([]));
+
+    let runs: Vec<serde_json::Value> = app.get("/runs").await.json().await.unwrap();
+    assert_eq!(runs.len(), 1);
+    assert_eq!(runs[0]["distance_m"], 0.0);
+}
+
+fn make_zeppos_raw_details_bin(start_ms: i64) -> Vec<u8> {
+    let mut bytes = Vec::new();
+
+    // TIMESTAMP (type=1, len=12): 4 bytes unknown + 8 bytes timestamp ms
+    bytes.push(1);
+    bytes.push(12);
+    bytes.extend_from_slice(&0_i32.to_le_bytes());
+    bytes.extend_from_slice(&start_ms.to_le_bytes());
+
+    // GPS_COORDS (type=2, len=20): 6 unknown + lon(i32) + lat(i32) + 6 unknown
+    let lon_raw = 7_000_000_i32; // ~2.333333
+    let lat_raw = 147_000_000_i32; // ~49.0
+    bytes.push(2);
+    bytes.push(20);
+    bytes.extend_from_slice(&[0_u8; 6]);
+    bytes.extend_from_slice(&lon_raw.to_le_bytes());
+    bytes.extend_from_slice(&lat_raw.to_le_bytes());
+    bytes.extend_from_slice(&[0_u8; 6]);
+
+    // GPS_DELTA (type=3, len=8): offset(i16), dlon(i16), dlat(i16), unknown(i16)
+    bytes.push(3);
+    bytes.push(8);
+    bytes.extend_from_slice(&1000_i16.to_le_bytes()); // +1s
+    bytes.extend_from_slice(&500_i16.to_le_bytes()); // small movement east
+    bytes.extend_from_slice(&0_i16.to_le_bytes());
+    bytes.extend_from_slice(&2_i16.to_le_bytes());
+
+    // HEARTRATE (type=8, len=3): offset(i16), hr(u8)
+    bytes.push(8);
+    bytes.push(3);
+    bytes.extend_from_slice(&1000_i16.to_le_bytes());
+    bytes.push(150_u8);
+
+    bytes
+}
+
+#[tokio::test]
+async fn sync_summary_only_uses_rawdetails_bin_for_distance() {
+    use std::io::Write;
+
+    let start_ms = 1_784_010_932_000_i64;
+    let raw_name = "2026-07-14T08_35_32+02_00.bin";
+    let raw_path = format!(
+        "/storage/emulated/0/Android/data/nodomain.freeyourgadget.gadgetbridge/files/C5:4C:46:40:42:01/rawDetails/2026/{raw_name}"
+    );
+
+    let zip_bytes = {
+        let mut buf = std::io::Cursor::new(Vec::new());
+        let mut zip = zip::ZipWriter::new(&mut buf);
+        let options = zip::write::FileOptions::<()>::default()
+            .compression_method(zip::CompressionMethod::Stored);
+
+        let db_bytes = {
+            let tmp = tempfile::NamedTempFile::new().unwrap();
+            let conn = rusqlite::Connection::open(tmp.path()).unwrap();
+            conn.execute_batch(&format!(
+                "CREATE TABLE BASE_ACTIVITY_SUMMARY (\
+                    START_TIME INTEGER,\
+                    END_TIME INTEGER,\
+                    GPX_TRACK TEXT,\
+                    ACTIVITY_KIND INTEGER,\
+                    SUMMARY_DATA TEXT,\
+                    RAW_DETAILS_PATH TEXT\
+                 );\
+                 INSERT INTO BASE_ACTIVITY_SUMMARY \
+                 (START_TIME, END_TIME, GPX_TRACK, ACTIVITY_KIND, SUMMARY_DATA, RAW_DETAILS_PATH) \
+                 VALUES ({start_ms}, {}, NULL, 67109041, NULL, '{raw_path}');",
+                start_ms + 3_600_000
+            ))
+            .unwrap();
+            drop(conn);
+            std::fs::read(tmp.path()).unwrap()
+        };
+
+        zip.start_file("database/Gadgetbridge", options).unwrap();
+        zip.write_all(&db_bytes).unwrap();
+        zip.start_file(
+            format!("files/C5:4C:46:40:42:01/rawDetails/2026/{raw_name}"),
+            options,
+        )
+        .unwrap();
+        zip.write_all(&make_zeppos_raw_details_bin(start_ms))
+            .unwrap();
+        zip.finish().unwrap();
+        buf.into_inner()
+    };
+
+    let zip_file = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(zip_file.path(), &zip_bytes).unwrap();
+    let app = common::TestApp::spawn_with_zip(zip_file.path().to_path_buf()).await;
+
+    let res = app.post_empty("/runs/sync").await;
+    assert_eq!(res.status(), 200);
+    let body: serde_json::Value = res.json().await.unwrap();
+    assert_eq!(body["imported"], 1);
+    assert_eq!(body["errors"], serde_json::json!([]));
+
+    let runs: Vec<serde_json::Value> = app.get("/runs").await.json().await.unwrap();
+    assert_eq!(runs.len(), 1);
+    assert!(runs[0]["distance_m"].as_f64().unwrap_or_default() > 0.0);
+}
+
+#[tokio::test]
+async fn sync_limit_imports_only_most_recent_count() {
+    use std::io::Write;
+
+    let zip_bytes = {
+        let mut buf = std::io::Cursor::new(Vec::new());
+        let mut zip = zip::ZipWriter::new(&mut buf);
+        let options = zip::write::FileOptions::<()>::default()
+            .compression_method(zip::CompressionMethod::Stored);
+
+        let db_bytes = {
+            let tmp = tempfile::NamedTempFile::new().unwrap();
+            let conn = rusqlite::Connection::open(tmp.path()).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE BASE_ACTIVITY_SUMMARY (\
+                    START_TIME INTEGER,\
+                    END_TIME INTEGER,\
+                    GPX_TRACK TEXT,\
+                    ACTIVITY_KIND INTEGER,\
+                    SUMMARY_DATA TEXT,\
+                    RAW_DETAILS_PATH TEXT\
+                 );\
+                 INSERT INTO BASE_ACTIVITY_SUMMARY VALUES \
+                 (1784010932000, 1784014532000, NULL, 67109041, NULL, '/storage/emulated/0/Android/data/nodomain.freeyourgadget.gadgetbridge/files/rawDetails/newest.bin'),\
+                 (1783924532000, 1783928132000, NULL, 67109041, NULL, '/storage/emulated/0/Android/data/nodomain.freeyourgadget.gadgetbridge/files/rawDetails/older.bin');",
+            )
+            .unwrap();
+            drop(conn);
+            std::fs::read(tmp.path()).unwrap()
+        };
+
+        zip.start_file("database/Gadgetbridge", options).unwrap();
+        zip.write_all(&db_bytes).unwrap();
+        zip.finish().unwrap();
+        buf.into_inner()
+    };
+
+    let zip_file = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(zip_file.path(), &zip_bytes).unwrap();
+    let app = common::TestApp::spawn_with_zip(zip_file.path().to_path_buf()).await;
+
+    let res = app.post_empty("/runs/sync?limit=1").await;
+    assert_eq!(res.status(), 200);
+    let body: serde_json::Value = res.json().await.unwrap();
+    assert_eq!(body["imported"], 1);
+
+    let runs: Vec<serde_json::Value> = app.get("/runs").await.json().await.unwrap();
+    assert_eq!(runs.len(), 1);
+    assert_eq!(runs[0]["started_at"], "2026-07-14T06:35:32Z");
+}
+
 fn make_gpx_with_type(activity_type: &str) -> Vec<u8> {
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>

@@ -93,7 +93,13 @@ struct ParsedRun {
 
 fn is_running_activity(activity_type: Option<&str>) -> bool {
     // No type field → assume running (e.g. manually-created GPX files)
-    activity_type.is_none_or(|t| matches!(t, "running" | "trail_running" | "run"))
+    activity_type.is_none_or(|t| {
+        let normalized = t.trim().to_ascii_lowercase();
+        matches!(
+            normalized.as_str(),
+            "running" | "trail_running" | "trail running" | "run" | "jogging" | "jog"
+        )
+    })
 }
 
 fn parse_timestamp(s: &str) -> anyhow::Result<i64> {
@@ -252,6 +258,10 @@ fn compute_elevation_gain(points: &[TrackPoint]) -> Option<f64> {
 }
 
 fn parse_gpx(data: &[u8]) -> anyhow::Result<ParsedRun> {
+    anyhow::ensure!(
+        !data.is_empty() && !data.iter().all(|b| b.is_ascii_whitespace() || *b == 0),
+        "GPX file is empty"
+    );
     let text = std::str::from_utf8(data)?;
     let doc = roxmltree::Document::parse(text)?;
 
@@ -547,6 +557,11 @@ pub struct SyncResult {
     pub errors: Vec<String>,
 }
 
+#[derive(Deserialize, Default)]
+pub struct SyncQuery {
+    pub limit: Option<usize>,
+}
+
 #[derive(Serialize)]
 pub struct SyncDebugFile {
     pub filename: String,
@@ -572,6 +587,61 @@ struct GbHealthRow {
     max_hr: Option<i64>,
     hrv_rmssd: Option<f64>,
     steps: Option<i64>,
+}
+
+fn zip_name_in_dir(name: &str, dir: &str) -> bool {
+    name.starts_with(&format!("{dir}/")) || name.contains(&format!("/{dir}/"))
+}
+
+fn is_gpx_zip_entry(name: &str) -> bool {
+    let lower_name = name.to_ascii_lowercase();
+    std::path::Path::new(&lower_name)
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("gpx"))
+        && zip_name_in_dir(&lower_name, "files")
+}
+
+fn is_gb_db_zip_entry(name: &str) -> bool {
+    let lower_name = name.to_ascii_lowercase();
+    if !zip_name_in_dir(&lower_name, "database") {
+        return false;
+    }
+    let basename = lower_name.rsplit('/').next().unwrap_or(&lower_name);
+    matches!(
+        basename,
+        "gadgetbridge" | "gadgetbridge.sqlite" | "gadgetbridge.db"
+    )
+}
+
+fn read_gb_db_bytes<R: std::io::Read + std::io::Seek>(
+    archive: &mut zip::ZipArchive<R>,
+) -> Result<(Vec<u8>, String), String> {
+    use std::io::Read;
+
+    for exact_name in [
+        "database/Gadgetbridge",
+        "database/Gadgetbridge.sqlite",
+        "database/Gadgetbridge.db",
+    ] {
+        if let Ok(mut entry) = archive.by_name(exact_name) {
+            let mut buf = Vec::new();
+            entry.read_to_end(&mut buf).map_err(|e| e.to_string())?;
+            return Ok((buf, exact_name.to_string()));
+        }
+    }
+
+    for i in 0..archive.len() {
+        let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
+        let name = entry.name().to_owned();
+        if !is_gb_db_zip_entry(&name) {
+            continue;
+        }
+        let mut buf = Vec::new();
+        entry.read_to_end(&mut buf).map_err(|e| e.to_string())?;
+        return Ok((buf, name));
+    }
+
+    Err("Cannot find Gadgetbridge database in zip (expected database/Gadgetbridge or database/Gadgetbridge.sqlite)".to_string())
 }
 
 /// Extract daily HR and HRV data from the Gadgetbridge `SQLite` DB.
@@ -690,15 +760,12 @@ pub async fn gb_debug(State(state): State<AppState>) -> AppResult<Json<serde_jso
         let file = std::fs::File::open(&zip_path).map_err(|e| format!("Cannot open zip: {e}"))?;
         let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("Invalid zip: {e}"))?;
 
-        let db_bytes = {
-            use std::io::Read;
-            let mut entry = archive
-                .by_name("database/Gadgetbridge")
-                .map_err(|e| format!("Cannot find database/Gadgetbridge: {e}"))?;
-            let mut buf = Vec::new();
-            entry.read_to_end(&mut buf).map_err(|e| e.to_string())?;
-            buf
-        };
+        let (db_bytes, db_entry_path) = read_gb_db_bytes(&mut archive)?;
+        tracing::info!(
+            zip_path = %zip_path.display(),
+            db_entry_path,
+            "GB debug: using database entry"
+        );
 
         let tmp = std::env::temp_dir().join(format!("gb_debug_{}.sqlite", uuid::Uuid::new_v4()));
         std::fs::write(&tmp, &db_bytes).map_err(|e| e.to_string())?;
@@ -804,6 +871,21 @@ struct GbActivityMeta {
     calories: Option<i64>,
 }
 
+/// Summary-only run extracted from `BASE_ACTIVITY_SUMMARY` when no GPX track is present.
+struct GbSummaryRun {
+    source_file: String,
+    started_at: String,
+    duration_s: i64,
+}
+
+struct ParsedRawDetailsRun {
+    distance_m: f64,
+    elevation_gain_m: Option<f64>,
+    avg_hr: Option<i64>,
+    max_hr: Option<i64>,
+    route: Vec<RoutePoint>,
+}
+
 /// Categorized activity files from the Gadgetbridge database.
 struct GbActivityFiles {
     /// Metadata for each GPX file (keyed by filename)
@@ -831,14 +913,216 @@ fn parse_summary_data(json: &str) -> (Option<i64>, Option<i64>) {
     })
 }
 
+fn format_unix_ms_as_rfc3339_utc(ms: i64) -> Option<String> {
+    use chrono::{DateTime, Utc};
+    DateTime::<Utc>::from_timestamp_millis(ms).map(|dt| dt.format("%Y-%m-%dT%H:%M:%SZ").to_string())
+}
+
+#[allow(clippy::too_many_lines)]
+fn parse_zeppos_raw_details_bin(data: &[u8]) -> Option<ParsedRawDetailsRun> {
+    #[derive(Clone)]
+    struct RawPoint {
+        at_ms: i64,
+        lat: f64,
+        lon: f64,
+        ele: Option<f64>,
+        hr: Option<i64>,
+    }
+
+    fn huami_to_deg(v: i32) -> f64 {
+        // Same conversion used in Gadgetbridge's AbstractHuamiActivityDetailsParser.
+        f64::from(v) / 3_000_000.0
+    }
+
+    fn push_raw_point(
+        points: &mut Vec<RawPoint>,
+        at_ms: i64,
+        lon_raw: i64,
+        lat_raw: i64,
+        ele: Option<f64>,
+    ) {
+        let p = RawPoint {
+            at_ms,
+            lat: huami_to_deg(i32::try_from(lat_raw).unwrap_or_default()),
+            lon: huami_to_deg(i32::try_from(lon_raw).unwrap_or_default()),
+            ele,
+            hr: None,
+        };
+        if let Some(prev) = points.last()
+            && (prev.lat - p.lat).abs() < f64::EPSILON
+            && (prev.lon - p.lon).abs() < f64::EPSILON
+            && prev.ele == p.ele
+        {
+            return;
+        }
+        points.push(p);
+    }
+
+    let mut points: Vec<RawPoint> = Vec::new();
+    let mut idx = 0usize;
+
+    let mut timestamp_ms = 0i64;
+    let mut offset_ms = 0i64;
+    let mut longitude = 0i64;
+    let mut latitude = 0i64;
+    let mut altitude: Option<f64> = None;
+
+    let mut cadence_values: Vec<i64> = Vec::new();
+    let mut stride_cm_values: Vec<f64> = Vec::new();
+
+    while idx + 2 <= data.len() {
+        let type_code = data[idx];
+        let len = usize::from(data[idx + 1]);
+        idx += 2;
+        if idx + len > data.len() {
+            break;
+        }
+        let slice = &data[idx..idx + len];
+        idx += len;
+
+        match (type_code, len) {
+            (1, 12) => {
+                let ts = i64::from_le_bytes([
+                    slice[4], slice[5], slice[6], slice[7], slice[8], slice[9], slice[10],
+                    slice[11],
+                ]);
+                timestamp_ms = ts;
+                offset_ms = 0;
+            }
+            (2, 20) => {
+                longitude = i64::from(i32::from_le_bytes([slice[6], slice[7], slice[8], slice[9]]));
+                latitude = i64::from(i32::from_le_bytes([
+                    slice[10], slice[11], slice[12], slice[13],
+                ]));
+                push_raw_point(
+                    &mut points,
+                    timestamp_ms + offset_ms,
+                    longitude,
+                    latitude,
+                    altitude,
+                );
+            }
+            (3, 8) => {
+                offset_ms = i64::from(i16::from_le_bytes([slice[0], slice[1]]));
+                let dlon = i64::from(i16::from_le_bytes([slice[2], slice[3]]));
+                let dlat = i64::from(i16::from_le_bytes([slice[4], slice[5]]));
+                longitude += dlon;
+                latitude += dlat;
+                if !points.is_empty() {
+                    push_raw_point(
+                        &mut points,
+                        timestamp_ms + offset_ms,
+                        longitude,
+                        latitude,
+                        altitude,
+                    );
+                }
+            }
+            (4, 4) => {
+                offset_ms = i64::from(i16::from_le_bytes([slice[0], slice[1]]));
+            }
+            (5, 8) => {
+                offset_ms = i64::from(i16::from_le_bytes([slice[0], slice[1]]));
+                let cadence = i64::from(i16::from_le_bytes([slice[2], slice[3]]));
+                let stride_cm = f64::from(i16::from_le_bytes([slice[4], slice[5]]));
+                if cadence > 0 {
+                    cadence_values.push(cadence);
+                }
+                if stride_cm > 0.0 {
+                    stride_cm_values.push(stride_cm);
+                }
+            }
+            (7, 6) => {
+                offset_ms = i64::from(i16::from_le_bytes([slice[0], slice[1]]));
+                altitude = Some(
+                    f64::from(i32::from_le_bytes([slice[2], slice[3], slice[4], slice[5]])) / 100.0,
+                );
+                if let Some(last) = points.last_mut() {
+                    last.ele = altitude;
+                }
+            }
+            (8, 3) => {
+                offset_ms = i64::from(i16::from_le_bytes([slice[0], slice[1]]));
+                let hr = i64::from(slice[2]);
+                if let Some(last) = points.last_mut() {
+                    last.hr = Some(hr);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    if points.len() < 2 {
+        return None;
+    }
+
+    let distance_m: f64 = points
+        .windows(2)
+        .map(|w| haversine_m(w[0].lat, w[0].lon, w[1].lat, w[1].lon))
+        .sum();
+
+    let elevation_gain_m = {
+        let elevations: Vec<f64> = points.iter().filter_map(|p| p.ele).collect();
+        if elevations.len() < 2 {
+            None
+        } else {
+            Some(
+                elevations
+                    .windows(2)
+                    .filter_map(|w| {
+                        let d = w[1] - w[0];
+                        if d > 0.0 { Some(d) } else { None }
+                    })
+                    .sum(),
+            )
+        }
+    };
+
+    let hr_values: Vec<i64> = points.iter().filter_map(|p| p.hr).collect();
+    let avg_hr = if hr_values.is_empty() {
+        None
+    } else {
+        Some(hr_values.iter().sum::<i64>() / i64::try_from(hr_values.len()).unwrap_or(1))
+    };
+    let max_hr = hr_values.into_iter().max();
+
+    let t0 = points.first().map_or(0, |p| p.at_ms);
+    let route = points
+        .into_iter()
+        .map(|p| RoutePoint {
+            lat: p.lat,
+            lon: p.lon,
+            ele: p.ele,
+            hr: p.hr,
+            t: Some((p.at_ms - t0) / 1000),
+            cad: None,
+        })
+        .collect();
+
+    let _ = cadence_values;
+    let _ = stride_cm_values;
+
+    Some(ParsedRawDetailsRun {
+        distance_m,
+        elevation_gain_m,
+        avg_hr,
+        max_hr,
+        route,
+    })
+}
+
 /// Load activity filenames and metadata from the Gadgetbridge database.
 /// Running activities have `ACTIVITY_KIND & 3 == 1` (bit 0 set, bit 1 clear).
 fn load_activity_filenames(db_path: &std::path::Path) -> Result<GbActivityFiles, String> {
     let conn = rusqlite::Connection::open(db_path)
         .map_err(|e| format!("Cannot open Gadgetbridge DB: {e}"))?;
-    let mut stmt = conn.prepare(
+    let Ok(mut stmt) = conn.prepare(
         "SELECT GPX_TRACK, ACTIVITY_KIND, SUMMARY_DATA FROM BASE_ACTIVITY_SUMMARY WHERE GPX_TRACK IS NOT NULL",
-    ).map_err(|e| e.to_string())?;
+    ) else {
+        return Ok(GbActivityFiles {
+            activities: std::collections::HashMap::new(),
+        });
+    };
     let rows = stmt
         .query_map([], |row| {
             Ok((
@@ -865,6 +1149,64 @@ fn load_activity_filenames(db_path: &std::path::Path) -> Result<GbActivityFiles,
         );
     }
     Ok(GbActivityFiles { activities })
+}
+
+/// Load running activities that have no GPX track.
+///
+/// Newer Gadgetbridge exports may store only raw workout details (`RAW_DETAILS_PATH`)
+/// and leave `GPX_TRACK` as `NULL`.
+fn load_summary_only_running_activities(
+    db_path: &std::path::Path,
+) -> Result<Vec<GbSummaryRun>, String> {
+    let conn = rusqlite::Connection::open(db_path)
+        .map_err(|e| format!("Cannot open Gadgetbridge DB: {e}"))?;
+
+    let Ok(mut stmt) = conn.prepare(
+        "SELECT START_TIME, END_TIME, ACTIVITY_KIND, RAW_DETAILS_PATH \
+         FROM BASE_ACTIVITY_SUMMARY \
+         WHERE GPX_TRACK IS NULL",
+    ) else {
+        return Ok(Vec::new());
+    };
+
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, Option<String>>(3)?,
+            ))
+        })
+        .map_err(|e| e.to_string())?;
+
+    let mut out = Vec::new();
+    for r in rows {
+        let (start_ms, end_ms, kind, raw_details_path) = r.map_err(|e| e.to_string())?;
+        // Keep same running classification logic used for GPX-backed imports.
+        if kind & 3 != 1 {
+            continue;
+        }
+        let Some(started_at) = format_unix_ms_as_rfc3339_utc(start_ms) else {
+            continue;
+        };
+        let duration_s = (end_ms - start_ms).max(0) / 1000;
+        let source_file = raw_details_path
+            .as_deref()
+            .and_then(|p| p.rsplit('/').next())
+            .map_or_else(
+                || format!("gadgetbridge-summary-{start_ms}.bin"),
+                std::string::ToString::to_string,
+            );
+
+        out.push(GbSummaryRun {
+            source_file,
+            started_at,
+            duration_s,
+        });
+    }
+
+    Ok(out)
 }
 
 /// Import a single parsed GPX file into the runs table.
@@ -945,61 +1287,105 @@ async fn import_gpx_run(
 /// Returns an error string if the zip cannot be opened or parsed.
 #[allow(clippy::too_many_lines)]
 pub async fn perform_sync(state: &AppState) -> Result<SyncResult, String> {
+    perform_sync_with_limit(state, None).await
+}
+
+/// Core sync logic with optional import limit (most recent runs first).
+///
+/// # Errors
+/// Returns an error string if the zip cannot be opened or parsed.
+#[allow(clippy::too_many_lines)]
+async fn perform_sync_with_limit(
+    state: &AppState,
+    limit: Option<usize>,
+) -> Result<SyncResult, String> {
     let zip_path = state
         .config
         .gadgetbridge_zip
         .clone()
         .ok_or_else(|| "MONT_GADGETBRIDGE_ZIP not configured".to_string())?;
+    let zip_path_for_log = zip_path.clone();
 
-    let (activity_files, gpx_files, health_rows) =
-        tokio::task::spawn_blocking(move || -> Result<_, String> {
-            let file = std::fs::File::open(&zip_path)
-                .map_err(|e| format!("Cannot open zip {}: {e}", zip_path.display()))?;
-            let mut archive =
-                zip::ZipArchive::new(file).map_err(|e| format!("Invalid zip: {e}"))?;
+    let (
+        activity_files,
+        mut gpx_files,
+        health_rows,
+        mut summary_only_runs,
+        raw_details_bins,
+        db_entry_path,
+    ) = tokio::task::spawn_blocking(move || -> Result<_, String> {
+        let file = std::fs::File::open(&zip_path)
+            .map_err(|e| format!("Cannot open zip {}: {e}", zip_path.display()))?;
+        let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("Invalid zip: {e}"))?;
 
-            // Extract the Gadgetbridge SQLite DB bytes from the zip.
-            let db_bytes = {
-                use std::io::Read;
-                let mut entry = archive
-                    .by_name("database/Gadgetbridge")
-                    .map_err(|e| format!("Cannot find database/Gadgetbridge in zip: {e}"))?;
-                let mut buf = Vec::new();
-                entry.read_to_end(&mut buf).map_err(|e| e.to_string())?;
-                buf
-            };
+        // Extract the Gadgetbridge SQLite DB bytes from the zip.
+        let (db_bytes, db_entry_path) = read_gb_db_bytes(&mut archive)?;
 
-            // Write to a temp file so rusqlite can open it.
-            let tmp_path =
-                std::env::temp_dir().join(format!("gadgetbridge_{}.sqlite", uuid::Uuid::new_v4()));
-            std::fs::write(&tmp_path, &db_bytes).map_err(|e| e.to_string())?;
-            let activity_files = load_activity_filenames(&tmp_path);
-            let health_rows = extract_daily_health(&tmp_path);
-            let _ = std::fs::remove_file(&tmp_path);
-            let activity_files = activity_files?;
+        // Write to a temp file so rusqlite can open it.
+        let tmp_path =
+            std::env::temp_dir().join(format!("gadgetbridge_{}.sqlite", uuid::Uuid::new_v4()));
+        std::fs::write(&tmp_path, &db_bytes).map_err(|e| e.to_string())?;
+        let activity_files = load_activity_filenames(&tmp_path);
+        let health_rows = extract_daily_health(&tmp_path);
+        let summary_only_runs = load_summary_only_running_activities(&tmp_path);
+        let _ = std::fs::remove_file(&tmp_path);
+        let activity_files = activity_files?;
+        let summary_only_runs = summary_only_runs?;
 
-            // Extract GPX files from the files/ directory in the zip.
-            let mut gpx_files: Vec<(String, Vec<u8>)> = Vec::new();
-            for i in 0..archive.len() {
-                use std::io::Read;
-                let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
-                let name = entry.name().to_owned();
-                if !name.starts_with("files/") {
-                    continue;
-                }
-                let basename = name.rsplit('/').next().unwrap_or(&name).to_owned();
-                if !basename.to_ascii_lowercase().ends_with(".gpx") {
-                    continue;
-                }
-                let mut buf = Vec::new();
-                entry.read_to_end(&mut buf).map_err(|e| e.to_string())?;
-                gpx_files.push((basename, buf));
+        // Extract GPX files from the files/ directory in the zip.
+        let mut gpx_files: Vec<(String, Vec<u8>)> = Vec::new();
+        let mut raw_details_bins: std::collections::HashMap<String, Vec<u8>> =
+            std::collections::HashMap::new();
+        for i in 0..archive.len() {
+            use std::io::Read;
+            let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
+            let name = entry.name().to_owned();
+            let lower_name = name.to_ascii_lowercase();
+            let is_raw_details_bin = std::path::Path::new(&lower_name)
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("bin"))
+                && zip_name_in_dir(&lower_name, "files")
+                && lower_name.contains("/rawdetails/");
+            if !(is_gpx_zip_entry(&name) || is_raw_details_bin) {
+                continue;
             }
+            let mut buf = Vec::new();
+            entry.read_to_end(&mut buf).map_err(|e| e.to_string())?;
+            let basename = name.rsplit('/').next().unwrap_or(&name).to_owned();
+            if is_gpx_zip_entry(&name) {
+                gpx_files.push((basename, buf));
+            } else {
+                raw_details_bins.insert(basename, buf);
+            }
+        }
 
-            Ok((activity_files, gpx_files, health_rows))
-        })
-        .await
-        .map_err(|e| e.to_string())??;
+        Ok((
+            activity_files,
+            gpx_files,
+            health_rows,
+            summary_only_runs,
+            raw_details_bins,
+            db_entry_path,
+        ))
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+
+    tracing::info!(
+        zip_path = %zip_path_for_log.display(),
+        db_entry_path,
+        total_gpx_files = gpx_files.len(),
+        gb_activity_rows = activity_files.activities.len(),
+        summary_only_runs = summary_only_runs.len(),
+        raw_details_bins = raw_details_bins.len(),
+        health_rows = health_rows.len(),
+        limit,
+        "Gadgetbridge sync: extracted data from zip"
+    );
+
+    // Most recent first for deterministic debugging with ?limit=N.
+    gpx_files.sort_by(|a, b| b.0.cmp(&a.0));
+    summary_only_runs.sort_by(|a, b| b.started_at.cmp(&a.started_at));
 
     // Load blocked source files (runs marked as invalid that should never be re-imported)
     let blocked_files: std::collections::HashSet<String> =
@@ -1009,13 +1395,51 @@ pub async fn perform_sync(state: &AppState) -> Result<SyncResult, String> {
             .unwrap_or_default()
             .into_iter()
             .collect();
+    let mut existing_source_files: std::collections::HashSet<String> =
+        sqlx::query_scalar("SELECT source_file FROM runs WHERE source_file IS NOT NULL")
+            .fetch_all(&state.pool)
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .collect();
+    let mut existing_started_at: std::collections::HashSet<String> =
+        sqlx::query_scalar("SELECT started_at FROM runs")
+            .fetch_all(&state.pool)
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .collect();
+
+    let mut skipped_blocked = 0usize;
+    let mut skipped_existing = 0usize;
+    let mut skipped_non_running_in_db = 0usize;
+    let mut skipped_non_running_by_type = 0usize;
+    let mut skipped_no_track_points = 0usize;
+    let mut skipped_empty_gpx = 0usize;
+    let mut imported_summary_only = 0usize;
+    let mut skipped_summary_existing = 0usize;
+    let mut skipped_summary_blocked = 0usize;
+    let mut skipped_summary_duplicate_started_at = 0usize;
+    let mut parsed_ok = 0usize;
 
     let mut imported = 0usize;
     let mut errors: Vec<String> = Vec::new();
 
     for (name, bytes) in gpx_files {
+        if limit.is_some_and(|n| imported >= n) {
+            break;
+        }
         // Skip files that have been blocked (marked as invalid)
         if blocked_files.contains(&name) {
+            skipped_blocked += 1;
+            tracing::debug!(file = %name, "Gadgetbridge sync: skipping blocked file");
+            continue;
+        }
+
+        // Skip files already imported by source filename.
+        if existing_source_files.contains(&name) {
+            skipped_existing += 1;
+            tracing::debug!(file = %name, "Gadgetbridge sync: skipping already imported file");
             continue;
         }
 
@@ -1026,26 +1450,184 @@ pub async fn perform_sync(state: &AppState) -> Result<SyncResult, String> {
 
         // Skip files that are in the DB but not classified as running (e.g., cycling, walking)
         if is_in_db && !is_running_in_db {
+            skipped_non_running_in_db += 1;
+            tracing::debug!(
+                file = %name,
+                "Gadgetbridge sync: skipping non-running file based on GB activity kind"
+            );
+            continue;
+        }
+
+        if bytes.iter().all(|b| b.is_ascii_whitespace() || *b == 0) {
+            skipped_empty_gpx += 1;
+            tracing::debug!(file = %name, "Gadgetbridge sync: skipping empty GPX file");
             continue;
         }
 
         match parse_gpx(&bytes) {
-            Err(e) if e.to_string().contains("no track points") => {} // not a run, skip silently
+            Err(e) if e.to_string().contains("no track points") => {
+                skipped_no_track_points += 1;
+                tracing::debug!(
+                    file = %name,
+                    "Gadgetbridge sync: skipping GPX with no track points"
+                );
+            } // not a run, skip silently
             Err(e) => {
+                tracing::warn!(file = %name, error = %e, "Gadgetbridge sync: failed to parse GPX");
                 errors.push(format!("{name}: {e}"));
             }
             Ok(mut parsed) => {
+                parsed_ok += 1;
                 // If file is classified as running in DB, import it.
                 // If file is NOT in DB at all, fall back to GPX <type> field.
                 if !is_running_in_db && !is_running_activity(parsed.activity_type.as_deref()) {
+                    skipped_non_running_by_type += 1;
+                    tracing::debug!(
+                        file = %name,
+                        activity_type = ?parsed.activity_type,
+                        "Gadgetbridge sync: skipping non-running GPX by activity type"
+                    );
                     continue;
                 }
                 match import_gpx_run(&name, &mut parsed, gb_meta, &state.pool, &state.http).await {
-                    Ok(()) => imported += 1,
-                    Err(e) => errors.push(e),
+                    Ok(()) => {
+                        imported += 1;
+                        existing_source_files.insert(name.clone());
+                        existing_started_at.insert(parsed.started_at.clone());
+                        tracing::debug!(
+                            file = %name,
+                            started_at = %parsed.started_at,
+                            distance_m = parsed.distance_m,
+                            "Gadgetbridge sync: imported run"
+                        );
+                    }
+                    Err(e) => {
+                        tracing::warn!(file = %name, error = %e, "Gadgetbridge sync: import failed");
+                        errors.push(e);
+                    }
                 }
             }
         }
+    }
+
+    for row in summary_only_runs {
+        if limit.is_some_and(|n| imported >= n) {
+            break;
+        }
+        if blocked_files.contains(&row.source_file) {
+            skipped_summary_blocked += 1;
+            tracing::debug!(
+                file = %row.source_file,
+                "Gadgetbridge sync: skipping summary-only run because source is blocked"
+            );
+            continue;
+        }
+        if existing_source_files.contains(&row.source_file) {
+            skipped_summary_existing += 1;
+            tracing::debug!(
+                file = %row.source_file,
+                "Gadgetbridge sync: skipping summary-only run already imported"
+            );
+            continue;
+        }
+        if existing_started_at.contains(&row.started_at) {
+            skipped_summary_duplicate_started_at += 1;
+            tracing::debug!(
+                started_at = %row.started_at,
+                file = %row.source_file,
+                "Gadgetbridge sync: skipping summary-only run with duplicate start timestamp"
+            );
+            continue;
+        }
+
+        let parsed_details = raw_details_bins
+            .get(&row.source_file)
+            .and_then(|bytes| parse_zeppos_raw_details_bin(bytes));
+        let route_json = serde_json::to_string(
+            &parsed_details
+                .as_ref()
+                .map_or_else(Vec::new, |p| p.route.clone()),
+        )
+        .map_err(|e| e.to_string())?;
+        let distance_m = parsed_details.as_ref().map_or(0.0_f64, |p| p.distance_m);
+        let elevation_gain_m = parsed_details.as_ref().and_then(|p| p.elevation_gain_m);
+        let avg_hr = parsed_details.as_ref().and_then(|p| p.avg_hr);
+        let max_hr = parsed_details.as_ref().and_then(|p| p.max_hr);
+        let weather = if let Some(first) = parsed_details
+            .as_ref()
+            .and_then(|p| p.route.first())
+            && let Ok(ts) = parse_timestamp(&row.started_at)
+            && let Some(w) = crate::weather::fetch_weather(&state.http, first.lat, first.lon, ts).await
+        {
+            Some((w.temp_c, w.wind_kph, w.precip_mm, w.code))
+        } else {
+            None
+        };
+        let (weather_temp_c, weather_wind_kph, weather_precip_mm, weather_code) = weather
+            .map_or((None, None, None, None), |(t, w, p, c)| {
+                (Some(t), Some(w), Some(p), Some(c))
+            });
+
+        match sqlx::query(
+                    "INSERT INTO runs \
+                     (started_at, duration_s, distance_m, elevation_gain_m, avg_hr, max_hr, route_json, source_file, \
+                      avg_cadence, avg_stride_m, weather_temp_c, weather_wind_kph, weather_precip_mm, weather_code, calories) \
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
+                     ON CONFLICT(source_file) WHERE source_file IS NOT NULL DO UPDATE SET \
+                       started_at        = excluded.started_at, \
+                       duration_s        = excluded.duration_s, \
+                       distance_m        = excluded.distance_m, \
+                       elevation_gain_m  = excluded.elevation_gain_m, \
+                       avg_hr            = excluded.avg_hr, \
+                       max_hr            = excluded.max_hr, \
+                       route_json        = excluded.route_json, \
+                       avg_cadence       = excluded.avg_cadence, \
+                       avg_stride_m      = excluded.avg_stride_m, \
+                       weather_temp_c    = COALESCE(runs.weather_temp_c,    excluded.weather_temp_c), \
+                       weather_wind_kph  = COALESCE(runs.weather_wind_kph,  excluded.weather_wind_kph), \
+                       weather_precip_mm = COALESCE(runs.weather_precip_mm, excluded.weather_precip_mm), \
+                       weather_code      = COALESCE(runs.weather_code,      excluded.weather_code), \
+                       calories          = excluded.calories",
+                )
+                .bind(&row.started_at)
+                .bind(row.duration_s)
+                .bind(distance_m)
+                .bind(elevation_gain_m)
+                .bind(avg_hr)
+                .bind(max_hr)
+                .bind(&route_json)
+                .bind(&row.source_file)
+                .bind(None::<i64>)
+                .bind(None::<f64>)
+                .bind(weather_temp_c)
+                .bind(weather_wind_kph)
+                .bind(weather_precip_mm)
+                .bind(weather_code)
+                .bind(None::<i64>)
+                .execute(&state.pool)
+                .await
+                {
+                    Ok(_) => {
+                        imported += 1;
+                        imported_summary_only += 1;
+                        existing_source_files.insert(row.source_file.clone());
+                        existing_started_at.insert(row.started_at.clone());
+                        tracing::debug!(
+                            started_at = %row.started_at,
+                            file = %row.source_file,
+                            "Gadgetbridge sync: imported summary-only run (no GPX track)"
+                        );
+                    }
+                    Err(e) => {
+                        let err = format!("{}: {e}", row.source_file);
+                        tracing::warn!(
+                            file = %row.source_file,
+                            error = %e,
+                            "Gadgetbridge sync: failed to import summary-only run"
+                        );
+                        errors.push(err);
+                    }
+                }
     }
 
     // ── Upsert daily health rows ──────────────────────────────────────────────
@@ -1070,6 +1652,24 @@ pub async fn perform_sync(state: &AppState) -> Result<SyncResult, String> {
         .await;
     }
 
+    tracing::info!(
+        imported,
+        parsed_ok,
+        skipped_existing,
+        skipped_blocked,
+        skipped_non_running_in_db,
+        skipped_non_running_by_type,
+        skipped_no_track_points,
+        skipped_empty_gpx,
+        imported_summary_only,
+        skipped_summary_existing,
+        skipped_summary_blocked,
+        skipped_summary_duplicate_started_at,
+        errors = errors.len(),
+        health_days = health_rows.len(),
+        "Gadgetbridge sync complete"
+    );
+
     Ok(SyncResult {
         imported,
         health_days: health_rows.len(),
@@ -1080,7 +1680,10 @@ pub async fn perform_sync(state: &AppState) -> Result<SyncResult, String> {
 /// # Errors
 /// Returns `SERVICE_UNAVAILABLE` if `MONT_GADGETBRIDGE_ZIP` is not configured,
 /// or a database error.
-pub async fn sync_gadgetbridge(State(state): State<AppState>) -> AppResult<Json<SyncResult>> {
+pub async fn sync_gadgetbridge(
+    State(state): State<AppState>,
+    Query(query): Query<SyncQuery>,
+) -> AppResult<Json<SyncResult>> {
     if state.config.gadgetbridge_zip.is_none() {
         return Err((
             StatusCode::SERVICE_UNAVAILABLE,
@@ -1088,7 +1691,8 @@ pub async fn sync_gadgetbridge(State(state): State<AppState>) -> AppResult<Json<
         )
             .into());
     }
-    perform_sync(&state)
+    let limit = query.limit.filter(|n| *n > 0);
+    perform_sync_with_limit(&state, limit)
         .await
         .map(Json)
         .map_err(|e| (StatusCode::BAD_REQUEST, e).into())
@@ -1111,15 +1715,12 @@ pub async fn sync_debug(State(state): State<AppState>) -> AppResult<Json<SyncDeb
             .map_err(|e| format!("Cannot open zip {}: {e}", zip_path.display()))?;
         let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("Invalid zip: {e}"))?;
 
-        let db_bytes = {
-            use std::io::Read;
-            let mut entry = archive
-                .by_name("database/Gadgetbridge")
-                .map_err(|e| format!("Cannot find database/Gadgetbridge in zip: {e}"))?;
-            let mut buf = Vec::new();
-            entry.read_to_end(&mut buf).map_err(|e| e.to_string())?;
-            buf
-        };
+        let (db_bytes, db_entry_path) = read_gb_db_bytes(&mut archive)?;
+        tracing::info!(
+            zip_path = %zip_path.display(),
+            db_entry_path,
+            "Sync debug: using database entry"
+        );
 
         let tmp_path = std::env::temp_dir().join(format!(
             "gadgetbridge_debug_{}.sqlite",
@@ -1134,13 +1735,10 @@ pub async fn sync_debug(State(state): State<AppState>) -> AppResult<Json<SyncDeb
             use std::io::Read;
             let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
             let name = entry.name().to_owned();
-            if !name.starts_with("files/") {
+            if !is_gpx_zip_entry(&name) {
                 continue;
             }
             let basename = name.rsplit('/').next().unwrap_or(&name).to_owned();
-            if !basename.to_ascii_lowercase().ends_with(".gpx") {
-                continue;
-            }
             let mut buf = Vec::new();
             entry.read_to_end(&mut buf).map_err(|e| e.to_string())?;
             gpx_files.push((basename, buf));
