@@ -266,12 +266,8 @@ pub async fn create_meal(
         .await?;
 
     for (pos, ing) in body.ingredients.iter().enumerate() {
-        let position = i64::try_from(pos).map_err(|_| {
-            (
-                StatusCode::BAD_REQUEST,
-                "too many ingredients".to_string(),
-            )
-        })?;
+        let position = i64::try_from(pos)
+            .map_err(|_| (StatusCode::BAD_REQUEST, "too many ingredients".to_string()))?;
         sqlx::query(
             "INSERT INTO meal_ingredients (meal_id, food_id, grams, position) VALUES (?, ?, ?, ?)",
         )
@@ -340,12 +336,8 @@ pub async fn update_meal(
             .execute(&mut *tx)
             .await?;
         for (pos, ing) in ingredients.iter().enumerate() {
-            let position = i64::try_from(pos).map_err(|_| {
-                (
-                    StatusCode::BAD_REQUEST,
-                    "too many ingredients".to_string(),
-                )
-            })?;
+            let position = i64::try_from(pos)
+                .map_err(|_| (StatusCode::BAD_REQUEST, "too many ingredients".to_string()))?;
             sqlx::query(
                 "INSERT INTO meal_ingredients (meal_id, food_id, grams, position) VALUES (?, ?, ?, ?)",
             )

@@ -1,12 +1,17 @@
 use axum::{
-    Json, http::StatusCode,
+    Json,
     extract::{Path, Query, State},
+    http::StatusCode,
 };
 use base64::Engine;
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 
-use crate::{error::{AppResult, AppError}, models::AppState, pagination::Pagination};
+use crate::{
+    error::{AppError, AppResult},
+    models::AppState,
+    pagination::Pagination,
+};
 
 #[derive(Serialize, sqlx::FromRow)]
 pub struct DailyHealth {
@@ -70,19 +75,31 @@ pub async fn upload_picture(
     Json(req): Json<UploadPictureRequest>,
 ) -> AppResult<(StatusCode, Json<serde_json::Value>)> {
     // Validate date format
-    NaiveDate::parse_from_str(&req.picture_date, "%Y-%m-%d")
-        .map_err(|_| AppError::from((StatusCode::BAD_REQUEST, "Invalid date format. Use YYYY-MM-DD".to_string())))?;
+    NaiveDate::parse_from_str(&req.picture_date, "%Y-%m-%d").map_err(|_| {
+        AppError::from((
+            StatusCode::BAD_REQUEST,
+            "Invalid date format. Use YYYY-MM-DD".to_string(),
+        ))
+    })?;
 
     // Decode base64 to get raw PNG bytes
     let picture_bytes = base64::engine::general_purpose::STANDARD
         .decode(&req.picture_data)
-        .map_err(|_| AppError::from((StatusCode::BAD_REQUEST, "Invalid base64 encoding".to_string())))?;
+        .map_err(|_| {
+            AppError::from((
+                StatusCode::BAD_REQUEST,
+                "Invalid base64 encoding".to_string(),
+            ))
+        })?;
 
     // Verify it's a valid image format (PNG or JPEG)
     let is_png = picture_bytes.len() >= 8 && &picture_bytes[..8] == b"\x89PNG\r\n\x1a\n";
     let is_jpeg = picture_bytes.len() >= 2 && &picture_bytes[..2] == b"\xff\xd8";
     if !is_png && !is_jpeg {
-        return Err(AppError::from((StatusCode::BAD_REQUEST, "Invalid image format. Must be PNG or JPEG".to_string())));
+        return Err(AppError::from((
+            StatusCode::BAD_REQUEST,
+            "Invalid image format. Must be PNG or JPEG".to_string(),
+        )));
     }
 
     // Insert or replace picture
@@ -119,10 +136,18 @@ pub async fn list_pictures(
     let to = query.to.unwrap_or_else(|| "2099-12-31".to_string());
 
     // Validate date formats
-    NaiveDate::parse_from_str(&from, "%Y-%m-%d")
-        .map_err(|_| AppError::from((StatusCode::BAD_REQUEST, "Invalid from date format".to_string())))?;
-    NaiveDate::parse_from_str(&to, "%Y-%m-%d")
-        .map_err(|_| AppError::from((StatusCode::BAD_REQUEST, "Invalid to date format".to_string())))?;
+    NaiveDate::parse_from_str(&from, "%Y-%m-%d").map_err(|_| {
+        AppError::from((
+            StatusCode::BAD_REQUEST,
+            "Invalid from date format".to_string(),
+        ))
+    })?;
+    NaiveDate::parse_from_str(&to, "%Y-%m-%d").map_err(|_| {
+        AppError::from((
+            StatusCode::BAD_REQUEST,
+            "Invalid to date format".to_string(),
+        ))
+    })?;
 
     let rows = sqlx::query_as::<_, BodyPicture>(
         "SELECT id, picture_date, created_at FROM body_pictures
@@ -146,8 +171,12 @@ pub async fn get_picture(
     Path(picture_date): Path<String>,
 ) -> AppResult<Json<PictureResponse>> {
     // Validate date format
-    NaiveDate::parse_from_str(&picture_date, "%Y-%m-%d")
-        .map_err(|_| AppError::from((StatusCode::BAD_REQUEST, "Invalid date format. Use YYYY-MM-DD".to_string())))?;
+    NaiveDate::parse_from_str(&picture_date, "%Y-%m-%d").map_err(|_| {
+        AppError::from((
+            StatusCode::BAD_REQUEST,
+            "Invalid date format. Use YYYY-MM-DD".to_string(),
+        ))
+    })?;
 
     let row = sqlx::query_as::<_, (Vec<u8>, String, String)>(
         "SELECT picture_data, picture_date, created_at FROM body_pictures
@@ -157,7 +186,8 @@ pub async fn get_picture(
     .fetch_optional(&state.pool)
     .await?;
 
-    let (image_bytes, stored_date, created_at) = row.ok_or_else(|| AppError::from((StatusCode::NOT_FOUND, "Picture not found".to_string())))?;
+    let (image_bytes, stored_date, created_at) = row
+        .ok_or_else(|| AppError::from((StatusCode::NOT_FOUND, "Picture not found".to_string())))?;
 
     // Encode picture bytes to base64
     let picture_data_encoded = base64::engine::general_purpose::STANDARD.encode(&image_bytes);
@@ -178,18 +208,23 @@ pub async fn delete_picture(
     Path(picture_date): Path<String>,
 ) -> AppResult<StatusCode> {
     // Validate date format
-    NaiveDate::parse_from_str(&picture_date, "%Y-%m-%d")
-        .map_err(|_| AppError::from((StatusCode::BAD_REQUEST, "Invalid date format. Use YYYY-MM-DD".to_string())))?;
+    NaiveDate::parse_from_str(&picture_date, "%Y-%m-%d").map_err(|_| {
+        AppError::from((
+            StatusCode::BAD_REQUEST,
+            "Invalid date format. Use YYYY-MM-DD".to_string(),
+        ))
+    })?;
 
-    let result = sqlx::query(
-        "DELETE FROM body_pictures WHERE picture_date = ?",
-    )
-    .bind(&picture_date)
-    .execute(&state.pool)
-    .await?;
+    let result = sqlx::query("DELETE FROM body_pictures WHERE picture_date = ?")
+        .bind(&picture_date)
+        .execute(&state.pool)
+        .await?;
 
     if result.rows_affected() == 0 {
-        return Err(AppError::from((StatusCode::NOT_FOUND, "Picture not found".to_string())));
+        return Err(AppError::from((
+            StatusCode::NOT_FOUND,
+            "Picture not found".to_string(),
+        )));
     }
 
     Ok(StatusCode::NO_CONTENT)

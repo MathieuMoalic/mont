@@ -76,4 +76,3 @@ pub async fn list_issue_reports(
 
     Ok(Json(reports))
 }
-
