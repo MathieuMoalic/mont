@@ -1270,7 +1270,7 @@ dependencies = [
 
 [[package]]
 name = "mont"
-version = "0.8.6"
+version = "0.8.7"
 dependencies = [
  "anyhow",
  "argon2",
