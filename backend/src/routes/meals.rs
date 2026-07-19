@@ -112,6 +112,39 @@ fn validate_day(day: &str) -> bool {
             .all(|(i, b)| (i == 4 || i == 7) || b.is_ascii_digit())
 }
 
+async fn meal_name_exists(
+    pool: &sqlx::SqlitePool,
+    name: &str,
+    exclude_meal_id: Option<i64>,
+) -> AppResult<bool> {
+    let normalized = name.trim();
+    let exists: i64 = if let Some(meal_id) = exclude_meal_id {
+        sqlx::query_scalar(
+            "SELECT EXISTS(
+                SELECT 1 FROM meals
+                WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))
+                  AND id != ?
+            )",
+        )
+        .bind(normalized)
+        .bind(meal_id)
+        .fetch_one(pool)
+        .await?
+    } else {
+        sqlx::query_scalar(
+            "SELECT EXISTS(
+                SELECT 1 FROM meals
+                WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))
+            )",
+        )
+        .bind(normalized)
+        .fetch_one(pool)
+        .await?
+    };
+
+    Ok(exists != 0)
+}
+
 #[allow(clippy::cast_possible_truncation)]
 fn kcal_from_macros(protein_g: f64, carbs_g: f64, fats_g: f64) -> i64 {
     fats_g
@@ -241,7 +274,8 @@ pub async fn create_meal(
     State(state): State<AppState>,
     Json(body): Json<CreateMealBody>,
 ) -> AppResult<(StatusCode, Json<MealDetail>)> {
-    if body.name.trim().is_empty() {
+    let meal_name = body.name.trim();
+    if meal_name.is_empty() {
         return Err((StatusCode::BAD_REQUEST, "name is required".to_string()).into());
     }
     if body.ingredients.is_empty() {
@@ -258,10 +292,17 @@ pub async fn create_meal(
         )
             .into());
     }
+    if meal_name_exists(&state.pool, meal_name, None).await? {
+        return Err((
+            StatusCode::CONFLICT,
+            format!("Meal '{meal_name}' already exists"),
+        )
+            .into());
+    }
 
     let mut tx = state.pool.begin().await?;
     let meal_id: i64 = sqlx::query_scalar("INSERT INTO meals (name) VALUES (?) RETURNING id")
-        .bind(body.name.trim())
+        .bind(meal_name)
         .fetch_one(&mut *tx)
         .await?;
 
@@ -316,8 +357,17 @@ pub async fn update_meal(
     }
 
     if let Some(name) = body.name {
+        let normalized_name = name.trim();
+        if meal_name_exists(&state.pool, normalized_name, Some(id)).await? {
+            return Err((
+                StatusCode::CONFLICT,
+                format!("Meal '{normalized_name}' already exists"),
+            )
+                .into());
+        }
+
         sqlx::query("UPDATE meals SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
-            .bind(name.trim())
+            .bind(normalized_name)
             .bind(id)
             .execute(&mut *tx)
             .await?;

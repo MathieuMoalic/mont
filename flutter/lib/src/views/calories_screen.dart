@@ -102,7 +102,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
         ),
         api.getNutritionTargets(),
       ]);
-      if (!mounted) return;
+      if (!mounted) return null;
       setState(() {
         _entries = results[0] as List<CalorieEntry>;
         _exercises = results[1] as List<CalorieExerciseEntry>;
@@ -282,11 +282,12 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
     await _loadMonth();
   }
 
-  Future<void> _showFoodDialog({
+  Future<Food?> _showFoodDialog({
     required String meal,
     CalorieEntry? existing,
+    bool createFoodOnly = false,
   }) async {
-    if (!mounted) return;
+    if (!mounted) return null;
     final nameController = TextEditingController(text: existing?.name ?? '');
     String? scannedBarcode;
     final proteinPer100Controller = TextEditingController(
@@ -316,6 +317,8 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
     bool mealsLoading = false;
     bool mealsLoadAttempted = false;
     var dialogClosed = false;
+    Food? createdFood;
+    Food? selectedMatchedFood;
 
     final saved = await showDialog<bool>(
       context: context,
@@ -357,7 +360,8 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
               }
             }
 
-            if (existing == null &&
+            if (!createFoodOnly &&
+                existing == null &&
                 allMeals.isEmpty &&
                 !mealsLoading &&
                 !mealsLoadAttempted) {
@@ -678,7 +682,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                     },
                   ),
                   if (existing == null &&
-                      (mealMatches.isNotEmpty ||
+                      ((!createFoodOnly && mealMatches.isNotEmpty) ||
                           matches.isNotEmpty ||
                           usda_results.isNotEmpty ||
                           lookupBusy && usda_search_state != null))
@@ -858,6 +862,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                                 onTap: () {
                                   final saved = matches[index];
                                   setLocalState(() {
+                                    selectedMatchedFood = saved;
                                     nameController.text = saved.name;
                                     foodQuery = saved.name;
                                     proteinPer100Controller.text = _fmt(
@@ -1151,7 +1156,30 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                     }
 
                     try {
-                      if (existing == null) {
+                      if (createFoodOnly) {
+                        if (selectedMatchedFood != null) {
+                          createdFood = Food(
+                            id: selectedMatchedFood!.id,
+                            name: name,
+                            brand: selectedMatchedFood!.brand,
+                            proteinPer100G: proteinPer100,
+                            carbsPer100G: carbsPer100,
+                            fatsPer100G: fatsPer100,
+                            lastWeightG: weight,
+                            source: selectedMatchedFood!.source,
+                          );
+                        } else {
+                          createdFood = await api.upsertFoodManual(
+                            name: name,
+                            brand: '',
+                            proteinPer100G: proteinPer100,
+                            carbsPer100G: carbsPer100,
+                            fatsPer100G: fatsPer100,
+                            lastWeightG: weight,
+                            source: 'manual',
+                          );
+                        }
+                      } else if (existing == null) {
                         await api.createCalorieEntry(
                           day: _dayString(_selectedDay),
                           mealPeriod: selectedMeal,
@@ -1192,7 +1220,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                       setLocalState(() => error = e.toString());
                     }
                   },
-                  child: const Text('Save'),
+                  child: Text(createFoodOnly ? 'Create' : 'Save'),
                 ),
               ],
             );
@@ -1202,9 +1230,10 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
     );
 
     dialogClosed = true;
-    if (saved == true) {
+    if (saved == true && !createFoodOnly) {
       await _loadMonth();
     }
+    return createdFood;
   }
 
   Future<void> _showExerciseDialog({CalorieExerciseEntry? existing}) async {
@@ -1397,265 +1426,8 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
     }
   }
 
-  Future<Food?> _showCreateFoodDialog() async {
-    final nameCtrl = TextEditingController();
-    final brandCtrl = TextEditingController();
-    final pCtrl = TextEditingController();
-    final cCtrl = TextEditingController();
-    final fCtrl = TextEditingController();
-    final wCtrl = TextEditingController(text: '100');
-    String? error;
-
-    final created = await showDialog<Food>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setLocalState) => AlertDialog(
-          title: const Text('Create food'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: nameCtrl,
-                  autofocus: true,
-                  decoration: const InputDecoration(labelText: 'Name'),
-                ),
-                TextField(
-                  controller: brandCtrl,
-                  decoration: const InputDecoration(labelText: 'Brand'),
-                ),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: pCtrl,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        decoration: const InputDecoration(labelText: 'P/100g'),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: TextField(
-                        controller: cCtrl,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        decoration: const InputDecoration(labelText: 'C/100g'),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: TextField(
-                        controller: fCtrl,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        decoration: const InputDecoration(labelText: 'F/100g'),
-                      ),
-                    ),
-                  ],
-                ),
-                TextField(
-                  controller: wCtrl,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  decoration: const InputDecoration(labelText: 'Default grams'),
-                ),
-                if (error != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 10),
-                    child: Text(
-                      error!,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.error,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () async {
-                final name = nameCtrl.text.trim();
-                final p = double.tryParse(pCtrl.text.trim());
-                final c = double.tryParse(cCtrl.text.trim());
-                final f = double.tryParse(fCtrl.text.trim());
-                final w = double.tryParse(wCtrl.text.trim());
-                if (name.isEmpty ||
-                    p == null ||
-                    c == null ||
-                    f == null ||
-                    w == null) {
-                  setLocalState(() => error = 'Enter valid values');
-                  return;
-                }
-                try {
-                  final food = await api.upsertFoodManual(
-                    name: name,
-                    brand: brandCtrl.text.trim(),
-                    proteinPer100G: p,
-                    carbsPer100G: c,
-                    fatsPer100G: f,
-                    lastWeightG: w,
-                    source: 'manual',
-                  );
-                  if (ctx.mounted) Navigator.pop(ctx, food);
-                } catch (e) {
-                  setLocalState(() => error = e.toString());
-                }
-              },
-              child: const Text('Create'),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      nameCtrl.dispose();
-      brandCtrl.dispose();
-      pCtrl.dispose();
-      cCtrl.dispose();
-      fCtrl.dispose();
-      wCtrl.dispose();
-    });
-
-    return created;
-  }
-
   Future<Food?> _showPickFoodDialog() async {
-    String query = '';
-    List<Food> foods = const [];
-    bool loading = false;
-    String? error;
-    bool initialLoadQueued = false;
-
-    Future<void> load(StateSetter setLocalState) async {
-      if (loading) return;
-      setLocalState(() {
-        loading = true;
-        error = null;
-      });
-      try {
-        final res = await api.listFoods(query: query);
-        setLocalState(() => foods = res);
-      } catch (e) {
-        setLocalState(() => error = e.toString());
-      } finally {
-        setLocalState(() => loading = false);
-      }
-    }
-
-    return showDialog<Food>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setLocalState) {
-          if (!initialLoadQueued &&
-              !loading &&
-              foods.isEmpty &&
-              error == null) {
-            initialLoadQueued = true;
-            Future.microtask(() => load(setLocalState));
-          }
-          return AlertDialog(
-            title: const Text('Pick food'),
-            content: SizedBox(
-              width: 520,
-              height: 420,
-              child: Column(
-                children: [
-                  TextField(
-                    autofocus: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Search',
-                      prefixIcon: Icon(Icons.search),
-                    ),
-                    onChanged: (v) {
-                      query = v;
-                      load(setLocalState);
-                    },
-                  ),
-                  const SizedBox(height: 8),
-                  Expanded(
-                    child: loading
-                        ? const Center(child: CircularProgressIndicator())
-                        : error != null
-                        ? Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: Text(error!),
-                          )
-                        : ListView.builder(
-                            itemCount: foods.length,
-                            itemBuilder: (_, i) {
-                              final f = foods[i];
-                              return ListTile(
-                                dense: true,
-                                title: Text(f.name),
-                                subtitle: RichText(
-                                  text: TextSpan(
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodySmall,
-                                    children: [
-                                      TextSpan(
-                                        text: 'P ${_fmt(f.proteinPer100G)}',
-                                        style: const TextStyle(
-                                          color: _proteinColor,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                      TextSpan(
-                                        text: ' C ${_fmt(f.carbsPer100G)}',
-                                        style: const TextStyle(
-                                          color: _carbsColor,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                      TextSpan(
-                                        text: ' F ${_fmt(f.fatsPer100G)}',
-                                        style: const TextStyle(
-                                          color: _fatsColor,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                onTap: () => Navigator.pop(ctx, f),
-                              );
-                            },
-                          ),
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('Cancel'),
-              ),
-              FilledButton.icon(
-                onPressed: () async {
-                  final created = await _showCreateFoodDialog();
-                  if (ctx.mounted && created != null)
-                    Navigator.pop(ctx, created);
-                },
-                icon: const Icon(Icons.add),
-                label: const Text('New food'),
-              ),
-            ],
-          );
-        },
-      ),
-    );
+    return _showFoodDialog(meal: 'snack', createFoodOnly: true);
   }
 
   Future<MealDetail?> _showMealEditor({MealDetail? existing}) async {
@@ -1708,7 +1480,12 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
           ingredients: payload,
         );
       } catch (e) {
-        setLocalState(() => error = e.toString());
+        final message = e.toString();
+        setLocalState(
+          () => error = message.contains('HTTP 409')
+              ? 'A meal with this name already exists.'
+              : message,
+        );
         return null;
       } finally {
         setLocalState(() => saving = false);
@@ -1798,44 +1575,10 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                           : () async {
                               final food = await _showPickFoodDialog();
                               if (food == null) return;
-                              final gCtrl = TextEditingController(
-                                text: _fmt(food.lastWeightG),
-                              );
-                              final ok = await showDialog<bool>(
-                                context: context,
-                                builder: (gctx) => AlertDialog(
-                                  title: const Text('Ingredient grams'),
-                                  content: TextField(
-                                    controller: gCtrl,
-                                    keyboardType:
-                                        const TextInputType.numberWithOptions(
-                                          decimal: true,
-                                        ),
-                                  ),
-                                  actions: [
-                                    TextButton(
-                                      onPressed: () =>
-                                          Navigator.pop(gctx, false),
-                                      child: const Text('Cancel'),
-                                    ),
-                                    FilledButton(
-                                      onPressed: () =>
-                                          Navigator.pop(gctx, true),
-                                      child: const Text('Add'),
-                                    ),
-                                  ],
-                                ),
-                              );
-                              final parsed = double.tryParse(gCtrl.text.trim());
-                              WidgetsBinding.instance.addPostFrameCallback((_) {
-                                gCtrl.dispose();
+                              setLocalState(() {
+                                foods.add(food);
+                                grams.add(food.lastWeightG);
                               });
-                              if (ok == true && parsed != null && parsed > 0) {
-                                setLocalState(() {
-                                  foods.add(food);
-                                  grams.add(parsed);
-                                });
-                              }
                             },
                       icon: const Icon(Icons.add),
                       label: const Text('Add ingredient'),
@@ -2542,28 +2285,6 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                   onPressed: () => _showMealLogDialog(meal: meal),
                   icon: const Icon(Icons.add_circle_outline),
                   tooltip: 'Add meal',
-                ),
-                IconButton(
-                  onPressed: () async {
-                    final created = await _showMealEditor();
-                    if (created == null || !mounted) return;
-                    try {
-                      await api.logMeal(
-                        day: _dayString(_selectedDay),
-                        mealPeriod: meal,
-                        mealId: created.id,
-                        percent: 100,
-                      );
-                      await _loadMonth();
-                    } catch (e) {
-                      if (!mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Failed to add meal: $e')),
-                      );
-                    }
-                  },
-                  icon: const Icon(Icons.restaurant_menu),
-                  tooltip: 'Create and add meal',
                 ),
                 IconButton(
                   onPressed: () => _showFoodDialog(meal: meal),

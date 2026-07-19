@@ -157,6 +157,86 @@ async fn meals_crud_and_log_flow_works() {
 }
 
 #[tokio::test]
+async fn meals_name_must_be_unique() {
+    let app = common::TestApp::spawn().await;
+
+    let food_res = app
+        .post_json(
+            "/calories/foods",
+            &serde_json::json!({
+                "name": "Tofu",
+                "brand": "test",
+                "protein_per_100g": 12.0,
+                "carbs_per_100g": 2.0,
+                "fats_per_100g": 6.0,
+                "last_weight_g": 100.0,
+                "source": "manual"
+            }),
+        )
+        .await;
+    assert_eq!(food_res.status(), 201);
+    let food: serde_json::Value = food_res.json().await.unwrap();
+    let food_id = food["id"].as_i64().unwrap();
+
+    let first = app
+        .post_json(
+            "/meals",
+            &serde_json::json!({
+                "name": "Tofu bowl",
+                "ingredients": [{ "food_id": food_id, "grams": 120.0 }]
+            }),
+        )
+        .await;
+    assert_eq!(first.status(), 201);
+    let first_meal: serde_json::Value = first.json().await.unwrap();
+    let first_id = first_meal["id"].as_i64().unwrap();
+
+    let duplicate = app
+        .post_json(
+            "/meals",
+            &serde_json::json!({
+                "name": "  tofu bowl  ",
+                "ingredients": [{ "food_id": food_id, "grams": 120.0 }]
+            }),
+        )
+        .await;
+    assert_eq!(duplicate.status(), 409);
+
+    let second = app
+        .post_json(
+            "/meals",
+            &serde_json::json!({
+                "name": "Tofu dinner",
+                "ingredients": [{ "food_id": food_id, "grams": 90.0 }]
+            }),
+        )
+        .await;
+    assert_eq!(second.status(), 201);
+    let second_meal: serde_json::Value = second.json().await.unwrap();
+    let second_id = second_meal["id"].as_i64().unwrap();
+
+    let rename_conflict = app
+        .patch(
+            &format!("/meals/{second_id}"),
+            serde_json::json!({
+                "name": "TOFU BOWL"
+            }),
+        )
+        .await;
+    assert_eq!(rename_conflict.status(), 409);
+
+    let self_rename_ok = app
+        .patch(
+            &format!("/meals/{first_id}"),
+            serde_json::json!({
+                "name": " tofu bowl "
+            }),
+        )
+        .await;
+    assert_eq!(self_rename_ok.status(), 200);
+}
+
+#[tokio::test]
 async fn barcode_and_lookup_endpoints_are_reachable() {
     let app = common::TestApp::spawn().await;
     let barcode = "1234567890123";
