@@ -103,8 +103,8 @@ adb devices
 Long-running commands must not be run directly in the agent’s main shell unless
 the task explicitly requires an interactive foreground process.
 
-When the agent needs runtime logs, hot reload, hot restart, or repeated server
-restarts, use named `tmux` sessions and log files under `.agent/logs/`.
+When the agent needs runtime logs or repeated server restarts, use named `tmux`
+sessions and log files under `.agent/logs/`.
 
 Create the log directory first:
 
@@ -160,17 +160,8 @@ Read web logs:
 tail -n 200 .agent/logs/web.log
 ```
 
-Send Flutter hot reload:
-
-```bash
-tmux send-keys -t dev-web r
-```
-
-Send Flutter hot restart:
-
-```bash
-tmux send-keys -t dev-web R
-```
+After any Flutter code change, always do a full stop + start of the Flutter
+session. Do not use hot reload or hot restart.
 
 Stop the web session:
 
@@ -246,9 +237,8 @@ When modifying backend code:
 When modifying Flutter code:
 
 1. Run or restart the relevant Flutter target.
-2. Prefer hot reload with `r` after small UI changes.
-3. Use hot restart with `R` after state, initialization, dependency injection,
-   or platform-channel changes.
+2. Fully kill and restart the relevant Flutter session after every Flutter code
+   change.
 4. Inspect the relevant log file under `.agent/logs/`.
 5. Run `flutter analyze` and relevant tests before reporting completion when
    practical.

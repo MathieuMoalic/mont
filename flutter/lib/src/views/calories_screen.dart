@@ -288,7 +288,6 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
   }) async {
     if (!mounted) return;
     final nameController = TextEditingController(text: existing?.name ?? '');
-    final nameFocus = FocusNode();
     String? scannedBarcode;
     final proteinPer100Controller = TextEditingController(
       text: existing != null ? _fmt(existing.proteinPer100G) : '',
@@ -302,7 +301,6 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
     final weightController = TextEditingController(
       text: existing != null ? _fmt(existing.weightG) : '',
     );
-    final weightFocus = FocusNode();
     var selectedMeal = existing?.mealPeriod ?? meal;
     var foodQuery = '';
     var matches = <Food>[];
@@ -316,10 +314,13 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
     List<MealSummary> allMeals = const [];
     List<MealSummary> mealMatches = const [];
     bool mealsLoading = false;
+    bool mealsLoadAttempted = false;
+    var dialogClosed = false;
 
     final saved = await showDialog<bool>(
       context: context,
       builder: (ctx) {
+        bool canUseDialog() => !dialogClosed && ctx.mounted;
         return StatefulBuilder(
           builder: (context, setLocalState) {
             final denseDecoration = (InputDecoration base) => base.copyWith(
@@ -331,11 +332,14 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
             );
 
             Future<void> loadMealsOnce() async {
-              if (mealsLoading || allMeals.isNotEmpty) return;
+              if (mealsLoading || allMeals.isNotEmpty || mealsLoadAttempted) {
+                return;
+              }
+              mealsLoadAttempted = true;
               setLocalState(() => mealsLoading = true);
               try {
                 final res = await api.listMeals(limit: 500, offset: 0);
-                if (!context.mounted) return;
+                if (!canUseDialog()) return;
                 setLocalState(() {
                   allMeals = res;
                   final q = foodQuery.trim().toLowerCase();
@@ -349,11 +353,14 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
               } catch (_) {
                 // Ignore meal suggestions failure; food flow still works.
               } finally {
-                if (context.mounted) setLocalState(() => mealsLoading = false);
+                if (canUseDialog()) setLocalState(() => mealsLoading = false);
               }
             }
 
-            if (existing == null && allMeals.isEmpty && !mealsLoading) {
+            if (existing == null &&
+                allMeals.isEmpty &&
+                !mealsLoading &&
+                !mealsLoadAttempted) {
               Future.microtask(loadMealsOnce);
             }
 
@@ -361,6 +368,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
               final b = rawBarcode.trim();
               if (b.isEmpty) return;
               var filled = false;
+              if (!canUseDialog()) return;
               setLocalState(() {
                 lookupBusy = true;
                 error = null;
@@ -371,6 +379,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
               try {
                 // 1) Try local cache first.
                 final cached = await api.getFoodByBarcode(b);
+                if (!canUseDialog()) return;
                 setLocalState(() {
                   nameController.text = cached.name;
                   foodQuery = cached.name;
@@ -384,6 +393,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                 try {
                   // 2) Fallback to online lookup (Poland-focused).
                   final lookedUp = await api.lookupFoodByBarcode(b);
+                  if (!canUseDialog()) return;
                   setLocalState(() {
                     nameController.text = lookedUp.name;
                     foodQuery = lookedUp.name;
@@ -399,24 +409,22 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                   });
                   filled = true;
                 } catch (e) {
+                  if (!canUseDialog()) return;
                   setLocalState(() {
                     error =
                         'No product found for barcode $b. '
                         'Enter the item manually and press Save to cache it for next time.';
                   });
-                  // Fast path after a miss: put the cursor on Name.
-                  nameFocus.requestFocus();
                 }
               } finally {
-                setLocalState(() => lookupBusy = false);
-                if (!context.mounted) return;
-                if (filled) {
-                  // Fastest flow: after fill, jump straight to weight.
-                  weightFocus.requestFocus();
-                  weightController.selection = TextSelection(
-                    baseOffset: 0,
-                    extentOffset: weightController.text.length,
-                  );
+                if (canUseDialog()) {
+                  setLocalState(() => lookupBusy = false);
+                  if (filled) {
+                    weightController.selection = TextSelection(
+                      baseOffset: 0,
+                      extentOffset: weightController.text.length,
+                    );
+                  }
                 }
               }
             }
@@ -428,6 +436,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
             ) async {
               final name = foodName.trim();
               if (name.isEmpty) return;
+              if (!canUseDialog()) return;
               setLocalState(() {
                 lookupBusy = true;
                 error = null;
@@ -436,6 +445,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
               });
               try {
                 final macros = await api.extractMacrosWithLlm(name);
+                if (!canUseDialog()) return;
                 setLocalState(() {
                   nameController.text = (macros['name'] as String?) ?? name;
                   foodQuery = (macros['name'] as String?) ?? name;
@@ -453,18 +463,20 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                     weightController.text = '100';
                   }
                 });
-                if (!context.mounted) return;
-                weightFocus.requestFocus();
+                if (!canUseDialog()) return;
                 weightController.selection = TextSelection(
                   baseOffset: 0,
                   extentOffset: weightController.text.length,
                 );
               } catch (e) {
+                if (!canUseDialog()) return;
                 setLocalState(() {
                   error = 'Failed to extract macros: ${e.toString()}';
                 });
               } finally {
-                setLocalState(() => lookupBusy = false);
+                if (canUseDialog()) {
+                  setLocalState(() => lookupBusy = false);
+                }
               }
             }
 
@@ -476,6 +488,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
             ) async {
               final name = foodName.trim();
               if (name.isEmpty) return;
+              if (!canUseDialog()) return;
 
               setLocalState(() {
                 lookupBusy = true;
@@ -487,7 +500,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                 // First, search for results
                 final results = await api.searchUSDAFoods(name, dataType);
 
-                if (!context.mounted) return;
+                if (!canUseDialog()) return;
 
                 if (results.isEmpty) {
                   // No results, move to next dataset or LLM
@@ -511,6 +524,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                   usda_search_state = 'showing_results';
                 });
               } catch (e) {
+                if (!canUseDialog()) return;
                 setLocalState(() {
                   lookupBusy = false;
                   error = 'Search failed: $e';
@@ -527,6 +541,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
               StateSetter setLocalState,
             ) async {
               try {
+                if (!canUseDialog()) return;
                 // Extract macros directly from search result (already available from USDA API)
                 final protein =
                     (result['protein_per_100g'] as num?)?.toDouble() ?? 0.0;
@@ -550,13 +565,13 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                     weightController.text = '100';
                   }
                 });
-                if (!context.mounted) return;
-                weightFocus.requestFocus();
+                if (!canUseDialog()) return;
                 weightController.selection = TextSelection(
                   baseOffset: 0,
                   extentOffset: weightController.text.length,
                 );
               } catch (e) {
+                if (!canUseDialog()) return;
                 setLocalState(() {
                   error = 'Failed to select food: $e';
                 });
@@ -602,7 +617,6 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                     ),
                   TextField(
                     controller: nameController,
-                    focusNode: nameFocus,
                     autofocus: true,
                     decoration: denseDecoration(
                       InputDecoration(
@@ -654,7 +668,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                       api
                           .listFoods(query: q)
                           .then((results) {
-                            if (!context.mounted) return;
+                            if (!canUseDialog()) return;
                             if (mySeq != searchSeq) return;
                             setLocalState(
                               () => matches = results.take(4).toList(),
@@ -859,7 +873,6 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                                       saved.lastWeightG,
                                     );
                                   });
-                                  weightFocus.requestFocus();
                                   weightController.selection = TextSelection(
                                     baseOffset: 0,
                                     extentOffset: weightController.text.length,
@@ -1043,7 +1056,6 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                     decoration: denseDecoration(
                       const InputDecoration(labelText: 'Total weight (g)'),
                     ),
-                    focusNode: weightFocus,
                     keyboardType: const TextInputType.numberWithOptions(
                       decimal: true,
                     ),
@@ -1189,8 +1201,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
       },
     );
 
-    nameFocus.dispose();
-    weightFocus.dispose();
+    dialogClosed = true;
     if (saved == true) {
       await _loadMonth();
     }
@@ -1525,8 +1536,10 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
     List<Food> foods = const [];
     bool loading = false;
     String? error;
+    bool initialLoadQueued = false;
 
     Future<void> load(StateSetter setLocalState) async {
+      if (loading) return;
       setLocalState(() {
         loading = true;
         error = null;
@@ -1545,84 +1558,83 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setLocalState) {
-          if (!loading && foods.isEmpty && error == null) {
+          if (!initialLoadQueued &&
+              !loading &&
+              foods.isEmpty &&
+              error == null) {
+            initialLoadQueued = true;
             Future.microtask(() => load(setLocalState));
           }
           return AlertDialog(
             title: const Text('Pick food'),
-            content: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 520),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 420),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextField(
-                      autofocus: true,
-                      decoration: const InputDecoration(
-                        labelText: 'Search',
-                        prefixIcon: Icon(Icons.search),
-                      ),
-                      onChanged: (v) {
-                        query = v;
-                        load(setLocalState);
-                      },
+            content: SizedBox(
+              width: 520,
+              height: 420,
+              child: Column(
+                children: [
+                  TextField(
+                    autofocus: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Search',
+                      prefixIcon: Icon(Icons.search),
                     ),
-                    const SizedBox(height: 8),
-                    Flexible(
-                      child: loading
-                          ? const Center(child: CircularProgressIndicator())
-                          : error != null
-                          ? SingleChildScrollView(
-                              child: Padding(
-                                padding: const EdgeInsets.all(12),
-                                child: Text(error!),
-                              ),
-                            )
-                          : ListView.builder(
-                              itemCount: foods.length,
-                              itemBuilder: (_, i) {
-                                final f = foods[i];
-                                return ListTile(
-                                  dense: true,
-                                  title: Text(f.name),
-                                  subtitle: RichText(
-                                    text: TextSpan(
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.bodySmall,
-                                      children: [
-                                        TextSpan(
-                                          text: 'P ${_fmt(f.proteinPer100G)}',
-                                          style: const TextStyle(
-                                            color: _proteinColor,
-                                            fontWeight: FontWeight.w700,
-                                          ),
+                    onChanged: (v) {
+                      query = v;
+                      load(setLocalState);
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: loading
+                        ? const Center(child: CircularProgressIndicator())
+                        : error != null
+                        ? Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Text(error!),
+                          )
+                        : ListView.builder(
+                            itemCount: foods.length,
+                            itemBuilder: (_, i) {
+                              final f = foods[i];
+                              return ListTile(
+                                dense: true,
+                                title: Text(f.name),
+                                subtitle: RichText(
+                                  text: TextSpan(
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodySmall,
+                                    children: [
+                                      TextSpan(
+                                        text: 'P ${_fmt(f.proteinPer100G)}',
+                                        style: const TextStyle(
+                                          color: _proteinColor,
+                                          fontWeight: FontWeight.w700,
                                         ),
-                                        TextSpan(
-                                          text: ' C ${_fmt(f.carbsPer100G)}',
-                                          style: const TextStyle(
-                                            color: _carbsColor,
-                                            fontWeight: FontWeight.w700,
-                                          ),
+                                      ),
+                                      TextSpan(
+                                        text: ' C ${_fmt(f.carbsPer100G)}',
+                                        style: const TextStyle(
+                                          color: _carbsColor,
+                                          fontWeight: FontWeight.w700,
                                         ),
-                                        TextSpan(
-                                          text: ' F ${_fmt(f.fatsPer100G)}',
-                                          style: const TextStyle(
-                                            color: _fatsColor,
-                                            fontWeight: FontWeight.w700,
-                                          ),
+                                      ),
+                                      TextSpan(
+                                        text: ' F ${_fmt(f.fatsPer100G)}',
+                                        style: const TextStyle(
+                                          color: _fatsColor,
+                                          fontWeight: FontWeight.w700,
                                         ),
-                                      ],
-                                    ),
+                                      ),
+                                    ],
                                   ),
-                                  onTap: () => Navigator.pop(ctx, f),
-                                );
-                              },
-                            ),
-                    ),
-                  ],
-                ),
+                                ),
+                                onTap: () => Navigator.pop(ctx, f),
+                              );
+                            },
+                          ),
+                  ),
+                ],
               ),
             ),
             actions: [
@@ -1905,8 +1917,10 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
     List<MealSummary> allMeals = const [];
     String? error;
     bool loading = false;
+    bool initialLoadQueued = false;
 
     Future<void> load(StateSetter setLocalState) async {
+      if (loading) return;
       setLocalState(() {
         loading = true;
         error = null;
@@ -1924,7 +1938,11 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setLocalState) {
-          if (!loading && allMeals.isEmpty && error == null) {
+          if (!initialLoadQueued &&
+              !loading &&
+              allMeals.isEmpty &&
+              error == null) {
+            initialLoadQueued = true;
             Future.microtask(() => load(setLocalState));
           }
           final matches = query.trim().isEmpty
@@ -2023,22 +2041,35 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                                 context,
                               ).colorScheme.outlineVariant,
                             ),
-                            FilledButton.icon(
-                              onPressed: () async {
-                                final created = await _showMealEditor();
-                                if (created == null) return;
-                                await load(setLocalState);
-                                picked = allMeals.firstWhere(
-                                  (m) => m.id == created.id,
-                                  orElse: () => picked ?? allMeals.first,
-                                );
-                              },
-                              icon: const Icon(Icons.add),
-                              label: const Text('Add new meal'),
-                            ),
                           ],
                         ),
                       ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: loading
+                            ? null
+                            : () async {
+                                final created = await _showMealEditor();
+                                if (created == null) return;
+                                await load(setLocalState);
+                                MealSummary? createdSummary;
+                                for (final mealSummary in allMeals) {
+                                  if (mealSummary.id == created.id) {
+                                    createdSummary = mealSummary;
+                                    break;
+                                  }
+                                }
+                                setLocalState(() {
+                                  picked = createdSummary ?? picked;
+                                  query = created.name;
+                                });
+                              },
+                        icon: const Icon(Icons.add),
+                        label: const Text('Add new meal'),
+                      ),
+                    ),
                     const SizedBox(height: 12),
                     Row(
                       children: [
@@ -2503,6 +2534,28 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                   onPressed: () => _showMealLogDialog(meal: meal),
                   icon: const Icon(Icons.add_circle_outline),
                   tooltip: 'Add meal',
+                ),
+                IconButton(
+                  onPressed: () async {
+                    final created = await _showMealEditor();
+                    if (created == null || !mounted) return;
+                    try {
+                      await api.logMeal(
+                        day: _dayString(_selectedDay),
+                        mealPeriod: meal,
+                        mealId: created.id,
+                        percent: 100,
+                      );
+                      await _loadMonth();
+                    } catch (e) {
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Failed to add meal: $e')),
+                      );
+                    }
+                  },
+                  icon: const Icon(Icons.restaurant_menu),
+                  tooltip: 'Create and add meal',
                 ),
                 IconButton(
                   onPressed: () => _showFoodDialog(meal: meal),
