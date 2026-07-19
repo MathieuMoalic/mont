@@ -1727,6 +1727,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   TextField(
+                    key: const ValueKey('e2e-meal-editor-name'),
                     controller: nameCtrl,
                     autofocus: true,
                     decoration: const InputDecoration(labelText: 'Meal name'),
@@ -1791,6 +1792,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                   Align(
                     alignment: Alignment.centerLeft,
                     child: TextButton.icon(
+                      key: const ValueKey('e2e-meal-editor-add-ingredient'),
                       onPressed: saving || deleting
                           ? null
                           : () async {
@@ -1880,6 +1882,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                   ),
                 const Spacer(),
                 TextButton(
+                  key: const ValueKey('e2e-meal-editor-cancel'),
                   onPressed: saving || deleting
                       ? null
                       : () => Navigator.pop(ctx),
@@ -1963,6 +1966,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     TextField(
+                      key: const ValueKey('e2e-meal-search-input'),
                       autofocus: true,
                       decoration: const InputDecoration(
                         labelText: 'Search meals',
@@ -2048,6 +2052,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                     SizedBox(
                       width: double.infinity,
                       child: FilledButton.icon(
+                        key: const ValueKey('e2e-meal-search-add-new'),
                         onPressed: loading
                             ? null
                             : () async {
@@ -2099,6 +2104,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
             ),
             actions: [
               TextButton(
+                key: const ValueKey('e2e-meal-log-cancel'),
                 onPressed: () => Navigator.pop(ctx, false),
                 child: const Text('Cancel'),
               ),
@@ -2184,6 +2190,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
     );
 
     return Scaffold(
+      key: const ValueKey('e2e-calories-screen'),
       appBar: AppBar(
         title: const Text('Calories'),
         actions: [
@@ -2531,6 +2538,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                   ),
                 ),
                 IconButton(
+                  key: ValueKey('e2e-add-meal-$meal'),
                   onPressed: () => _showMealLogDialog(meal: meal),
                   icon: const Icon(Icons.add_circle_outline),
                   tooltip: 'Add meal',

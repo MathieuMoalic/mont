@@ -65,6 +65,43 @@ cd flutter && flutter analyze && flutter test
 
 A pre-commit hook runs all three automatically.
 
+### Flutter web E2E tests
+
+Run the full-stack web E2E test from the repository root:
+
+```bash
+nix develop -c just e2e-web
+```
+
+For a headed run (visible Chromium window), use:
+
+```bash
+nix develop -c just e2e-web-headed
+```
+
+The runner (`scripts/e2e-web.sh`) starts:
+- a local Rust backend on `127.0.0.1:6001`
+- ChromeDriver on `127.0.0.1:4444`
+- Flutter `integration_test` via `flutter drive -d web-server`
+
+It uses a temporary SQLite database under a `mktemp -d` directory, and points
+the Flutter app to that local backend only (`API_BASE_URL=http://127.0.0.1:6001`).
+No production server is contacted.
+
+On failure, the runner prints tails of backend/ChromeDriver logs and their temp
+paths before cleanup.
+
+For manual Flutter-side debugging (with backend and ChromeDriver already
+running), use:
+
+```bash
+cd flutter
+flutter drive \
+  --driver=test_driver/integration_test.dart \
+  --target=integration_test/app_test.dart \
+  -d web-server
+```
+
 ## Importing runs from Gadgetbridge
 
 Point `MONT_GADGETBRIDGE_ZIP` at your daily Gadgetbridge export zip (e.g. `/home/you/dl/Gadgetbridge.zip`). Then hit the **↻** sync button in the Runs tab. Re-syncing is idempotent — already-imported runs are skipped.

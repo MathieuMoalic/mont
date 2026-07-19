@@ -15,6 +15,10 @@ import 'src/home_shell.dart';
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
+  await bootstrapAndRunApp();
+}
+
+Future<void> bootstrapAndRunApp() async {
   WidgetsFlutterBinding.ensureInitialized();
   await api.initApi();
   await MontColors.loadCustomMuscleColors();

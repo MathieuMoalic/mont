@@ -43,6 +43,7 @@ class _ServerUrlDialogState extends State<ServerUrlDialog> {
         mainAxisSize: MainAxisSize.min,
         children: [
           TextField(
+            key: const ValueKey('e2e-server-url-input'),
             controller: _controller,
             decoration: const InputDecoration(
               labelText: 'Base URL (e.g. https://my-host:8080)',
@@ -65,6 +66,7 @@ class _ServerUrlDialogState extends State<ServerUrlDialog> {
           child: const Text('Cancel'),
         ),
         FilledButton(
+          key: const ValueKey('e2e-server-url-save'),
           onPressed: _busy ? null : _save,
           child: _busy
               ? const SizedBox(

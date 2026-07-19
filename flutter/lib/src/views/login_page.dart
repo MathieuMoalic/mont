@@ -100,6 +100,7 @@ class _LoginPageState extends State<LoginPage> {
             padding: const EdgeInsets.all(16),
             children: [
               TextFormField(
+                key: const ValueKey('e2e-login-password'),
                 controller: _password,
                 decoration: const InputDecoration(
                   labelText: 'Password',
@@ -113,6 +114,7 @@ class _LoginPageState extends State<LoginPage> {
               ),
               const SizedBox(height: 16),
               FilledButton.icon(
+                key: const ValueKey('e2e-login-submit'),
                 onPressed: _busy ? null : _submit,
                 icon: _busy
                     ? const SizedBox(

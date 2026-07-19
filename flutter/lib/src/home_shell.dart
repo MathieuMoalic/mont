@@ -24,25 +24,36 @@ class _HomeShellState extends State<HomeShell> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      key: const ValueKey('e2e-home-screen'),
       body: _screens[_tab],
       bottomNavigationBar: NavigationBar(
+        key: const ValueKey('e2e-primary-navigation'),
         selectedIndex: _tab,
         onDestinationSelected: (i) => setState(() => _tab = i),
         destinations: const [
           NavigationDestination(
-            icon: Icon(Icons.fitness_center),
+            icon: Icon(Icons.fitness_center, key: ValueKey('e2e-nav-workouts')),
             label: 'Workouts',
           ),
           NavigationDestination(
-            icon: Icon(Icons.restaurant_outlined),
+            icon: Icon(
+              Icons.restaurant_outlined,
+              key: ValueKey('e2e-nav-calories'),
+            ),
             label: 'Calories',
           ),
           NavigationDestination(
-            icon: Icon(Icons.monitor_heart_outlined),
+            icon: Icon(
+              Icons.monitor_heart_outlined,
+              key: ValueKey('e2e-nav-health'),
+            ),
             label: 'Health',
           ),
           NavigationDestination(
-            icon: Icon(Icons.settings_outlined),
+            icon: Icon(
+              Icons.settings_outlined,
+              key: ValueKey('e2e-nav-settings'),
+            ),
             label: 'Settings',
           ),
         ],

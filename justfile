@@ -11,6 +11,12 @@ android:
 web:
   cd flutter && flutter run -d web-server --web-hostname 127.0.0.1 --web-port 5173
 
+e2e-web:
+  ./scripts/e2e-web.sh
+
+e2e-web-headed:
+  E2E_HEADED=1 ./scripts/e2e-web.sh
+
 cp-db:
   rm -rf /tmp/mont 
   mkdir /tmp/mont

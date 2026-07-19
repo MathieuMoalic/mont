@@ -60,6 +60,8 @@
         ripgrep
         fd
         netcat-openbsd
+        chromium
+        chromedriver
       ];
 
       RUSTFLAGS = "-C link-arg=-fuse-ld=mold";
@@ -67,6 +69,7 @@
       ANDROID_SDK_ROOT = sdkRoot;
       ANDROID_HOME = sdkRoot;
       JAVA_HOME = "${pkgs.jdk17}/lib/openjdk";
+      CHROME_EXECUTABLE = "${pkgs.chromium}/bin/chromium";
     };
 
     webBuild = pkgs.flutter.buildFlutterApplication {
