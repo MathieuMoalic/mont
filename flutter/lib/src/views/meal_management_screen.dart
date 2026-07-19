@@ -224,6 +224,21 @@ class _MealEditorScreenState extends State<_MealEditorScreen> {
       (food.proteinPer100G * 4 + food.carbsPer100G * 4 + food.fatsPer100G * 9)
           .round();
 
+  int _ingredientProtein(_EditableIngredient ing) =>
+      (ing.food.proteinPer100G * ing.grams / 100).round();
+
+  int _ingredientCarbs(_EditableIngredient ing) =>
+      (ing.food.carbsPer100G * ing.grams / 100).round();
+
+  int _ingredientFats(_EditableIngredient ing) =>
+      (ing.food.fatsPer100G * ing.grams / 100).round();
+
+  int _ingredientKcal(_EditableIngredient ing) =>
+      (_ingredientProtein(ing) * 4 +
+              _ingredientCarbs(ing) * 4 +
+              _ingredientFats(ing) * 9)
+          .round();
+
   Future<void> _load() async {
     if (!_isEditing) return;
     setState(() {
@@ -623,6 +638,7 @@ class _MealEditorScreenState extends State<_MealEditorScreen> {
     Color? color,
     bool showDivider = true,
     TextAlign textAlign = TextAlign.left,
+    bool fit = false,
   }) {
     final horizontalPadding = flex <= 1 ? 2.0 : (flex == 2 ? 4.0 : 10.0);
     return Expanded(
@@ -643,13 +659,26 @@ class _MealEditorScreenState extends State<_MealEditorScreen> {
                 )
               : null,
         ),
-        child: Text(
-          value,
-          textAlign: textAlign,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(color: color),
-        ),
+        child: fit
+            ? FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: textAlign == TextAlign.center
+                    ? Alignment.center
+                    : Alignment.centerLeft,
+                child: Text(
+                  value,
+                  textAlign: textAlign,
+                  maxLines: 1,
+                  style: TextStyle(color: color),
+                ),
+              )
+            : Text(
+                value,
+                textAlign: textAlign,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: color),
+              ),
       ),
     );
   }
@@ -719,22 +748,22 @@ class _MealEditorScreenState extends State<_MealEditorScreen> {
                           ),
                           child: Row(
                             children: [
-                              _buildHeaderCell('Name', flex: 5),
+                              _buildHeaderCell('Name', flex: 4),
                               _buildHeaderCell(
                                 'P',
-                                flex: 1,
+                                flex: 2,
                                 color: _proteinColor,
                                 textAlign: TextAlign.center,
                               ),
                               _buildHeaderCell(
                                 'C',
-                                flex: 1,
+                                flex: 2,
                                 color: _carbsColor,
                                 textAlign: TextAlign.center,
                               ),
                               _buildHeaderCell(
                                 'F',
-                                flex: 1,
+                                flex: 2,
                                 color: _fatsColor,
                                 textAlign: TextAlign.center,
                               ),
@@ -782,35 +811,40 @@ class _MealEditorScreenState extends State<_MealEditorScreen> {
                                       padding: const EdgeInsets.symmetric(vertical: 6),
                                       child: Row(
                                         children: [
-                                          _buildValueCell(ing.food.name, flex: 5),
+                                          _buildValueCell(ing.food.name, flex: 4),
                                           _buildValueCell(
-                                            _fmt(ing.food.proteinPer100G),
-                                            flex: 1,
+                                            '${_ingredientProtein(ing)}',
+                                            flex: 2,
                                             color: _proteinColor,
                                             textAlign: TextAlign.center,
+                                            fit: true,
                                           ),
                                           _buildValueCell(
-                                            _fmt(ing.food.carbsPer100G),
-                                            flex: 1,
+                                            '${_ingredientCarbs(ing)}',
+                                            flex: 2,
                                             color: _carbsColor,
                                             textAlign: TextAlign.center,
+                                            fit: true,
                                           ),
                                           _buildValueCell(
-                                            _fmt(ing.food.fatsPer100G),
-                                            flex: 1,
+                                            '${_ingredientFats(ing)}',
+                                            flex: 2,
                                             color: _fatsColor,
                                             textAlign: TextAlign.center,
+                                            fit: true,
                                           ),
                                           _buildValueCell(
-                                            '${_kcalPer100(ing.food)}',
+                                            '${_ingredientKcal(ing)}',
                                             flex: 2,
                                             color: Theme.of(context).colorScheme.primary,
                                             textAlign: TextAlign.center,
+                                            fit: true,
                                           ),
                                           _buildValueCell(
-                                            _fmt(ing.grams),
+                                            '${ing.grams.round()}',
                                             flex: 2,
                                             textAlign: TextAlign.center,
+                                            fit: true,
                                           ),
                                           Expanded(
                                             flex: 1,
@@ -847,37 +881,42 @@ class _MealEditorScreenState extends State<_MealEditorScreen> {
                             children: [
                               _buildValueCell(
                                 'Total',
-                                flex: 5,
+                                flex: 4,
                                 color: Theme.of(context).colorScheme.onSurface,
                               ),
                               _buildValueCell(
-                                _fmt(_proteinTotal),
-                                flex: 1,
+                                '${_proteinTotal.round()}',
+                                flex: 2,
                                 color: _proteinColor,
                                 textAlign: TextAlign.center,
+                                fit: true,
                               ),
                               _buildValueCell(
-                                _fmt(_carbsTotal),
-                                flex: 1,
+                                '${_carbsTotal.round()}',
+                                flex: 2,
                                 color: _carbsColor,
                                 textAlign: TextAlign.center,
+                                fit: true,
                               ),
                               _buildValueCell(
-                                _fmt(_fatsTotal),
-                                flex: 1,
+                                '${_fatsTotal.round()}',
+                                flex: 2,
                                 color: _fatsColor,
                                 textAlign: TextAlign.center,
+                                fit: true,
                               ),
                               _buildValueCell(
                                 '$_kcalTotal',
                                 flex: 2,
                                 color: Theme.of(context).colorScheme.primary,
                                 textAlign: TextAlign.center,
+                                fit: true,
                               ),
                               _buildValueCell(
-                                _fmt(_gramsTotal),
+                                '${_gramsTotal.round()}',
                                 flex: 2,
                                 textAlign: TextAlign.center,
+                                fit: true,
                               ),
                               _buildValueCell(
                                 '',
