@@ -214,13 +214,27 @@ Future<String> refreshAccessToken(String refreshToken) async {
 // ── Exercises ────────────────────────────────────────────────────────────────
 
 Future<List<Exercise>> listExercises() async {
-  final res = await _handleUnauthorized(
-    () => http.get(_u('/exercises'), headers: _headers()),
-  );
-  if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
-  return (jsonDecode(res.body) as List)
-      .map((e) => Exercise.fromJson(e as Map<String, dynamic>))
-      .toList();
+  const pageSize = 500;
+  var offset = 0;
+  final all = <Exercise>[];
+
+  while (true) {
+    final res = await _handleUnauthorized(
+      () => http.get(
+        _u('/exercises?limit=$pageSize&offset=$offset'),
+        headers: _headers(),
+      ),
+    );
+    if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
+    final batch = (jsonDecode(res.body) as List)
+        .map((e) => Exercise.fromJson(e as Map<String, dynamic>))
+        .toList();
+    all.addAll(batch);
+    if (batch.length < pageSize) break;
+    offset += pageSize;
+  }
+
+  return all;
 }
 
 Future<Exercise> createExercise({
