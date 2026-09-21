@@ -4,6 +4,7 @@ import '../api.dart' as api;
 import '../models.dart';
 import 'active_workout_screen.dart';
 import 'exercise_history_screen.dart';
+import 'run_detail_screen.dart';
 import 'run_heatmap_screen.dart';
 import 'run_stats_screen.dart';
 import 'runs_screen.dart';
@@ -399,12 +400,39 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
     _load();
   }
 
+  Future<void> _openRun(int runId) async {
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(builder: (_) => RunDetailScreen(runId: runId)),
+    );
+    _load();
+  }
+
+  String _formatRunDuration(int seconds) {
+    final h = seconds ~/ 3600;
+    final m = (seconds % 3600) ~/ 60;
+    final s = seconds % 60;
+    if (h > 0) {
+      return '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+    }
+    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+  }
+
+  String _formatRunPace(RunSummary run) {
+    if (run.distanceM < 1) return '--';
+    final secsPerKm = run.durationS / (run.distanceM / 1000);
+    final m = secsPerKm ~/ 60;
+    final s = (secsPerKm % 60).round();
+    return "$m'${s.toString().padLeft(2, '0')}\"/km";
+  }
+
   Future<void> _openDayActions(
     DateTime day,
     List<WorkoutSummary> sessions,
-    bool hasRun,
   ) async {
     if (!mounted) return;
+    final dayRuns = _runs.where((r) => _dayKey(r.startedAt) == day).toList()
+      ..sort((a, b) => b.startedAt.compareTo(a.startedAt));
     final hasHyrox = _hyroxDays.contains(day);
     final today = _dayKey(DateTime.now());
     final canToggleHyrox = !day.isAfter(today);
@@ -418,13 +446,15 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
               ListTile(
                 title: Text('${day.day}/${day.month}/${day.year}'),
                 subtitle: Text(
-                  sessions.isEmpty
-                      ? [
-                          if (hasHyrox) 'Hyrox',
-                          if (hasRun) 'Run',
-                          if (!hasHyrox && !hasRun) 'No sessions',
-                        ].join(' · ')
-                      : '${sessions.length} workout ${sessions.length == 1 ? 'session' : 'sessions'}',
+                  [
+                    if (sessions.isNotEmpty)
+                      '${sessions.length} workout ${sessions.length == 1 ? 'session' : 'sessions'}',
+                    if (dayRuns.isNotEmpty)
+                      '${dayRuns.length} run${dayRuns.length == 1 ? '' : 's'}',
+                    if (hasHyrox) 'Hyrox',
+                    if (sessions.isEmpty && dayRuns.isEmpty && !hasHyrox)
+                      'No sessions',
+                  ].join(' · '),
                 ),
               ),
               if (sessions.isNotEmpty)
@@ -460,6 +490,30 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
                   onTap: () async {
                     Navigator.pop(ctx);
                     await _openWorkout(w.id);
+                  },
+                );
+              }),
+              if (dayRuns.isNotEmpty)
+                const ListTile(
+                  dense: true,
+                  title: Text('Runs'),
+                  visualDensity: VisualDensity(vertical: -4),
+                ),
+              ...dayRuns.map((run) {
+                return ListTile(
+                  leading: const Icon(
+                    Icons.directions_run,
+                    color: Color(0xFF67B956),
+                  ),
+                  title: Text(
+                    '${(run.distanceM / 1000).toStringAsFixed(2)} km · ${_formatRunDuration(run.durationS)}',
+                  ),
+                  subtitle: Text(
+                    '${_clock(run.startedAt)} · ${_formatRunPace(run)}',
+                  ),
+                  onTap: () async {
+                    Navigator.pop(ctx);
+                    await _openRun(run.id);
                   },
                 );
               }),
@@ -793,7 +847,7 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
         borderRadius: BorderRadius.circular(10),
         child: InkWell(
           borderRadius: BorderRadius.circular(10),
-          onTap: () => _openDayActions(day, sessions, hasRun),
+          onTap: () => _openDayActions(day, sessions),
           child: Container(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(10),
