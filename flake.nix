@@ -215,16 +215,28 @@
           description = "Path to file containing JWT secret (for sops-nix)";
         };
 
-        gadgetbridgeZip = lib.mkOption {
-          type = lib.types.nullOr lib.types.str;
-          default = null;
-          description = "Path to GadgetBridge zip export file on the filesystem";
+        bleEnabled = lib.mkOption {
+          type = lib.types.bool;
+          default = false;
+          description = "Enable the BLE watch-sync WebSocket relay endpoint";
         };
 
-        syncTime = lib.mkOption {
-          type = lib.types.str;
-          default = "05:00";
-          description = "Daily auto-sync time in HH:MM format (local time)";
+        bleWatchMac = lib.mkOption {
+          type = lib.types.nullOr lib.types.str;
+          default = null;
+          description = "Watch MAC address to connect to directly (skips scanning)";
+        };
+
+        bleAuthKey = lib.mkOption {
+          type = lib.types.nullOr lib.types.str;
+          default = null;
+          description = "Watch auth key (32 hex chars). If not set, BLE auth is disabled.";
+        };
+
+        bleAuthKeyFile = lib.mkOption {
+          type = lib.types.nullOr lib.types.path;
+          default = null;
+          description = "Path to file containing the watch auth key (for sops-nix)";
         };
 
         usdaApiKey = lib.mkOption {
@@ -312,14 +324,14 @@
               MONT_BIND_ADDR = cfg.bindAddr;
               MONT_DATABASE_PATH = cfg.databasePath;
               MONT_LOG_FILE = cfg.logFile;
-              MONT_SYNC_TIME = cfg.syncTime;
               MONT_LLM_API_URL = cfg.llmApiUrl;
               MONT_LLM_MODEL = cfg.llmModel;
+              MONT_BLE_ENABLED = lib.boolToString cfg.bleEnabled;
             }
             // lib.optionalAttrs (cfg.corsOrigin != null) {MONT_CORS_ORIGIN = cfg.corsOrigin;}
             // lib.optionalAttrs (cfg.passwordHash != null) {MONT_PASSWORD_HASH = cfg.passwordHash;}
             // lib.optionalAttrs (cfg.jwtSecret != null) {MONT_JWT_SECRET = cfg.jwtSecret;}
-            // lib.optionalAttrs (cfg.gadgetbridgeZip != null) {MONT_GADGETBRIDGE_ZIP = cfg.gadgetbridgeZip;}
+            // lib.optionalAttrs (cfg.bleWatchMac != null) {MONT_BLE_WATCH_MAC = cfg.bleWatchMac;}
             // lib.optionalAttrs (cfg.usdaApiKey != null) {MONT_USDA_API_KEY = cfg.usdaApiKey;}
             // lib.optionalAttrs (cfg.llmApiKey != null) {MONT_LLM_API_KEY = cfg.llmApiKey;};
 
@@ -340,11 +352,18 @@
               if cfg.llmApiKeyFile != null
               then ''export MONT_LLM_API_KEY="$(cat ${cfg.llmApiKeyFile})"''
               else "";
+            bleAuthKeyLoader =
+              if cfg.bleAuthKeyFile != null
+              then ''export MONT_BLE_AUTH_KEY="$(cat ${cfg.bleAuthKeyFile})"''
+              else if cfg.bleAuthKey != null
+              then ''export MONT_BLE_AUTH_KEY="${cfg.bleAuthKey}"''
+              else "";
           in ''
             ${passwordHashLoader}
             ${jwtSecretLoader}
             ${usdaApiKeyLoader}
             ${llmApiKeyLoader}
+            ${bleAuthKeyLoader}
             exec ${cfg.package}/bin/mont \
               ${lib.concatStringsSep " " (
               lib.optionals (cfg.verbosity > 0) (lib.genList (_: "-v") cfg.verbosity)
@@ -363,7 +382,6 @@
             PrivateTmp = "yes";
             ProtectSystem = "strict";
             ReadWritePaths = [(dirOf cfg.databasePath)];
-            ReadOnlyPaths = lib.optional (cfg.gadgetbridgeZip != null) (dirOf cfg.gadgetbridgeZip);
             SocketBindAllow = let
               port = lib.last (lib.splitString ":" cfg.bindAddr);
             in ["tcp:${port}"];
