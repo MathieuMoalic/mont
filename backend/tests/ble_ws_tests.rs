@@ -771,44 +771,6 @@ async fn run_fetch_type(
     send_chunked_notify(ws, 0x004b, &[0x10, 0x03, 0x01], *handle).await;
 }
 
-// ── Phase 4: workout summary + details → runs ───────────────────────────────
-
-fn pb_varint(value: u64) -> Vec<u8> {
-    let mut out = Vec::new();
-    let mut v = value;
-    loop {
-        let b = (v & 0x7f) as u8;
-        v >>= 7;
-        if v == 0 {
-            out.push(b);
-            break;
-        }
-        out.push(b | 0x80);
-    }
-    out
-}
-
-fn pb_tag(num: u32, wire: u32) -> Vec<u8> {
-    pb_varint(u64::from((num << 3) | wire))
-}
-
-fn pb_varint_field(num: u32, value: u64) -> Vec<u8> {
-    [pb_tag(num, 0), pb_varint(value)].concat()
-}
-
-fn pb_len_field(num: u32, payload: &[u8]) -> Vec<u8> {
-    [
-        pb_tag(num, 2),
-        pb_varint(payload.len() as u64),
-        payload.to_vec(),
-    ]
-    .concat()
-}
-
-fn pb_f32_field(num: u32, value: f32) -> Vec<u8> {
-    [pb_tag(num, 5), value.to_le_bytes().to_vec()].concat()
-}
-
 #[tokio::test]
 async fn ble_relay_imports_workout_with_route() {
     let _tmp = tempfile::tempdir().unwrap();
@@ -901,7 +863,7 @@ async fn ble_relay_imports_workout_with_route() {
             handle,
         )
         .await;
-        let (ep, payload) = recv_chunked_write(&mut ws).await;
+        let (_ep, payload) = recv_chunked_write(&mut ws).await;
         assert_eq!(payload, vec![0x03, 0x09]);
         handle += 1;
         send_chunked_notify(&mut ws, 0x004b, &[0x10, 0x03, 0x01], handle).await;
@@ -958,7 +920,7 @@ async fn ble_relay_imports_workout_with_route() {
         handle,
     )
     .await;
-    let (ep, payload) = recv_chunked_write(&mut ws).await;
+    let (_ep, payload) = recv_chunked_write(&mut ws).await;
     assert_eq!(payload, vec![0x03, 0x01]);
     handle += 1;
     send_chunked_notify(&mut ws, 0x004b, &[0x10, 0x03, 0x01], handle).await;
@@ -974,7 +936,7 @@ async fn ble_relay_imports_workout_with_route() {
         handle,
     )
     .await;
-    let (ep, payload) = recv_chunked_write(&mut ws).await;
+    let (_ep, payload) = recv_chunked_write(&mut ws).await;
     assert_eq!(payload, vec![0x03, 0x01]);
     handle += 1;
     send_chunked_notify(&mut ws, 0x004b, &[0x10, 0x03, 0x01], handle).await;
