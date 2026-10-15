@@ -18,3 +18,5 @@ gadgetbridge_export/
 /.agent/logs
 /backend/web_build
 /release/artifacts
+/Gadgetbridge/
+/backend/ble_sessions/

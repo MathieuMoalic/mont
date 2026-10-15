@@ -9,6 +9,7 @@
 
 pub mod app;
 pub mod auth_middleware;
+pub mod ble;
 pub mod config;
 pub mod db;
 pub mod embedded_web;

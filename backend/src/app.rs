@@ -1,6 +1,6 @@
 use crate::rate_limit::{RateLimitState, rate_limit_middleware};
 use crate::routes::{
-    auth, calories, exercises, health, hyrox, issues, meals, runs, weight, workouts,
+    auth, ble, calories, exercises, health, hyrox, issues, meals, runs, weight, workouts,
 };
 use crate::{
     auth_middleware::require_auth,
@@ -61,7 +61,8 @@ pub fn build_app(state: AppState) -> Router {
         .route("/healthz", get(healthz))
         .route("/version", get(version))
         .route("/auth/login", post(auth::login))
-        .route("/auth/refresh", post(auth::refresh));
+        .route("/auth/refresh", post(auth::refresh))
+        .route("/ble/ws", get(ble::ws_handler));
 
     let protected_routes = Router::new()
         .route(
@@ -78,6 +79,8 @@ pub fn build_app(state: AppState) -> Router {
             "/exercises/{id}/pr",
             get(exercises::exercise_personal_records),
         )
+        .route("/ble/status", get(ble::status_handler))
+        .route("/ble/debug", get(ble::debug_handler))
         .route("/health/daily", get(health::list_daily_health))
         .route(
             "/health/pictures",
@@ -177,11 +180,8 @@ pub fn build_app(state: AppState) -> Router {
         )
         .route("/runs", get(runs::list_runs).delete(runs::delete_all_runs))
         .route("/runs/prs", get(runs::personal_records))
-        .route("/runs/heatmap", get(runs::heatmap))
         .route("/runs/import", post(runs::import_run))
-        .route("/runs/sync", post(runs::sync_gadgetbridge))
-        .route("/runs/sync-debug", get(runs::sync_debug))
-        .route("/runs/gb-debug", get(runs::gb_debug))
+        .route("/runs/heatmap", get(runs::heatmap))
         .route(
             "/runs/{id}",
             get(runs::get_run)

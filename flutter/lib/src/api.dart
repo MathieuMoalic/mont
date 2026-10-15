@@ -1242,3 +1242,14 @@ Future<void> deleteBodyPicture(String pictureDate) async {
   );
   if (res.statusCode != 204) throw Exception('HTTP ${res.statusCode}');
 }
+
+/// Debug data for the BLE import tab (temporary endpoint).
+Future<Map<String, dynamic>> getBleDebug() async {
+  final res = await _handleUnauthorized(
+    () => http.get(_u('/ble/debug'), headers: _headers()),
+  );
+  if (res.statusCode != 200) {
+    throw Exception('HTTP ${res.statusCode}');
+  }
+  return jsonDecode(res.body) as Map<String, dynamic>;
+}

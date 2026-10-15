@@ -1,3 +1,5 @@
+import 'dart:async' show unawaited;
+
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -11,6 +13,7 @@ import 'src/theme.dart';
 import 'src/views/login_page.dart';
 import 'src/auth.dart';
 import 'src/home_shell.dart';
+import 'src/platform/ble_relay.dart' as ble;
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -23,6 +26,10 @@ Future<void> bootstrapAndRunApp() async {
   await api.initApi();
   await MontColors.loadCustomMuscleColors();
   await Auth.init();
+
+  // Debug-only: run an unattended BLE relay session if the adb trigger file
+  // exists. Consumes the trigger, then the app continues to start normally.
+  await ble.autoSyncIfTriggered();
 
   // Set up auth failure callback to redirect to login
   api.onAuthFailure = () {
@@ -48,6 +55,12 @@ Future<void> bootstrapAndRunApp() async {
   }
 
   runApp(const MontApp());
+
+  // Sync the watch in the background after the UI is up (skipped when the
+  // last attempt is recent or the user isn't logged in).
+  if (Auth.token != null || Auth.refreshToken != null) {
+    unawaited(ble.autoSyncOnAppOpen());
+  }
 }
 
 class MontApp extends StatelessWidget {

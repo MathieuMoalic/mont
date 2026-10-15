@@ -36,17 +36,21 @@ impl TestApp {
         Self::spawn_inner(Some(hash), None).await
     }
 
-    pub async fn spawn_with_zip(zip_path: PathBuf) -> Self {
-        Self::spawn_inner(None, Some(zip_path)).await
+    /// Spawn with arbitrary config overrides (e.g. enabling the BLE relay).
+    pub async fn spawn_custom(customize: impl FnOnce(&mut Config) + 'static) -> Self {
+        Self::spawn_inner(None, Some(Box::new(customize))).await
     }
 
-    async fn spawn_inner(password_hash: Option<String>, gadgetbridge_zip: Option<PathBuf>) -> Self {
+    async fn spawn_inner(
+        password_hash: Option<String>,
+        customize: Option<Box<dyn FnOnce(&mut Config)>>,
+    ) -> Self {
         let db = tempfile::NamedTempFile::new().expect("temp db");
         let pool = make_pool(db.path().to_str().unwrap().to_string())
             .await
             .expect("pool");
 
-        let config = Config {
+        let mut config = Config {
             verbose: 0,
             quiet: 0,
             bind: "127.0.0.1:0".parse().unwrap(),
@@ -55,13 +59,24 @@ impl TestApp {
             cors_origin: None,
             jwt_secret: Some(TEST_JWT_SECRET.to_string()),
             password_hash,
-            gadgetbridge_zip,
-            sync_time: "05:00".to_string(),
             usda_api_key: None,
             llm_api_url: "https://openrouter.ai/api/v".to_string(),
             llm_api_key: None,
             llm_model: "deepseek/deepseek-v4-flash".to_string(),
+            ble_enabled: false,
+            ble_watch_name: "Amazfit Cheetah".to_string(),
+            ble_watch_mac: None,
+            ble_auth_key: None,
+            ble_settle_secs: 30,
+            ble_fetch_enabled: false,
+            ble_fetch_lookback_days: 30,
+            ble_sessions_dir: None,
+            ble_session_timeout_secs: 300,
         };
+        if let Some(customize) = customize {
+            customize(&mut config);
+        }
+        let config = config;
 
         let pool2 = pool.clone();
         let state = AppState {

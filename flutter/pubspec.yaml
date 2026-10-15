@@ -26,6 +26,8 @@ dependencies:
   mobile_scanner: ^6.0.2
   image_picker: ^1.0.0
   permission_handler: ^11.4.0
+  flutter_blue_plus: ^1.36.8
+  web_socket_channel: ^3.0.0
 
 dev_dependencies:
   flutter_test:
