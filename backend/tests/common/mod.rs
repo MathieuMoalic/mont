@@ -18,6 +18,8 @@ struct Claims {
 
 use sqlx::SqlitePool;
 
+type TestConfigCustomizer = Box<dyn FnOnce(&mut Config)>;
+
 pub struct TestApp {
     pub client: reqwest::Client,
     pub base_url: String,
@@ -43,7 +45,7 @@ impl TestApp {
 
     async fn spawn_inner(
         password_hash: Option<String>,
-        customize: Option<Box<dyn FnOnce(&mut Config)>>,
+        customize: Option<TestConfigCustomizer>,
     ) -> Self {
         let db = tempfile::NamedTempFile::new().expect("temp db");
         let pool = make_pool(db.path().to_str().unwrap().to_string())

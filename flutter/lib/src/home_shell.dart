@@ -1,8 +1,7 @@
-import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'views/calories_screen.dart';
-import 'views/debug_screen.dart';
 import 'views/health_screen.dart';
+import 'views/morning_screen.dart';
 import 'views/settings_screen.dart';
 import 'views/workouts_screen.dart';
 
@@ -16,16 +15,19 @@ class HomeShell extends StatefulWidget {
 class _HomeShellState extends State<HomeShell> {
   int _tab = 0;
 
-  static List<Widget> get _screens => [
-    const WorkoutsScreen(),
-    const CaloriesScreen(),
-    const HealthScreen(),
-    const SettingsScreen(),
-    // Temporary BLE-import inspection tab; removed once the import is trusted.
-    if (kDebugMode) const DebugScreen(),
+  static const List<Widget> _screens = [
+    MorningScreen(),
+    WorkoutsScreen(),
+    CaloriesScreen(),
+    HealthScreen(),
+    SettingsScreen(),
   ];
 
-  List<NavigationDestination> get _destinations => const [
+  static const List<NavigationDestination> _destinations = [
+    NavigationDestination(
+      icon: Icon(Icons.wb_twilight_outlined, key: ValueKey('e2e-nav-morning')),
+      label: 'Morning',
+    ),
     NavigationDestination(
       icon: Icon(Icons.fitness_center, key: ValueKey('e2e-nav-workouts')),
       label: 'Workouts',
@@ -42,28 +44,20 @@ class _HomeShellState extends State<HomeShell> {
       icon: Icon(Icons.settings_outlined, key: ValueKey('e2e-nav-settings')),
       label: 'Settings',
     ),
-    if (kDebugMode)
-      NavigationDestination(
-        icon: Icon(Icons.bug_report_outlined),
-        label: 'Debug',
-      ),
   ];
 
   @override
   Widget build(BuildContext context) {
-    final screens = _screens;
-    final destinations = _destinations;
-    if (_tab >= screens.length) {
-      _tab = 0;
-    }
+    // IndexedStack keeps every tab's state alive (e.g. the Morning tab's
+    // selected day) instead of rebuilding from scratch on each switch.
     return Scaffold(
       key: const ValueKey('e2e-home-screen'),
-      body: screens[_tab],
+      body: IndexedStack(index: _tab, children: _screens),
       bottomNavigationBar: NavigationBar(
         key: const ValueKey('e2e-primary-navigation'),
         selectedIndex: _tab,
         onDestinationSelected: (i) => setState(() => _tab = i),
-        destinations: destinations,
+        destinations: _destinations,
       ),
     );
   }

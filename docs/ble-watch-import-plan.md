@@ -522,3 +522,143 @@ since past its end; the driver detects the re-send (start <= round since) and
 jumps the pointer to the next local midnight, then continues. Non-advance
 guard (same workout end twice) and the 20-round cap both fire as backstops.
 Daily syncs now: health no-data + workout no-data within seconds.
+
+## 11. Morning tab (Oct 19)
+
+New default tab showing the GB morning stats: sleep (window, total,
+deep/light/REM/awake, per-minute stage strip), HRV status (last night,
+7-day avg, balanced-status vs 30-day baseline, night chart), heart rate
+(day chart with avg line, min/avg/max/resting), and steps/stress. Day
+navigation `<` `>` and a Sync now button. No sleep score (BLE exposes
+none — Zepp-only feature).
+
+Backend: migration 00034 (sleep/deep_sleep/rem_sleep columns on
+activity_samples + stress_samples table), activity parser now decodes
+bytes 5-7 (sleep flags), stress fetch type 0x13 (1 byte/min, 0xFF =
+gap), driver queues Stress between HRV and Activity. `GET
+/health/morning?date=` computes the night: kind=120 rows are split
+into segments at >3h gaps and the largest segment is the main night —
+this excludes afternoon naps (validated live: Oct 15 had a 13:57 nap;
+window correctly shows 00:54–08:00). Timeline is one entry per minute
+with stage-0 gap-fill so the app's equal-width strip stays
+proportionate. Sleep attribution to wake date via
+`date(ts + 43200, 'unixepoch')`.
+
+State: endpoint + UI verified against dev data (emulator, Oct 15:
+HRV 145/141 ms Higher baseline 125-164, HR 37/73/134, 14,116 steps).
+Sleep stages + stress still need ONE live watch sync — the type-1 and
+type-19 sync pointers were reset on Oct 16 so the next session
+re-fetches activity+stress and `INSERT OR REPLACE` backfills the sleep
+bytes into existing rows. Phone was unplugged; awaiting replug, then
+push dev APK to phone for user testing.
+
+### Sync history in Settings (Oct 19)
+
+The app's Settings tab now has a "Watch sync" section listing what each
+BLE session imported. Backend: migration 00035 adds `ble_sync_log`
+(ts, source, kind, status, stored, detail; pruned to 500 rows). At
+session end the driver converts its fetch results into rows — imports
+only (activity/HRV/stress samples and counts, HR marks, imported runs
+with start/km/duration) plus failures (CRC/store/data/timeout, and a
+session-level row when a sync never got far enough to fetch); "no
+data" and duplicate rounds are not logged. The WS connect URL carries
+`&source=` (`app_open` / `manual` / `adb`) so the trigger shows in the
+history; `GET /ble/sync-log` serves it (auth, 404 when BLE disabled —
+the app hides the section then). Verified end-to-end on the emulator
+(app-open sync failure → red "Sync problem (session)" row with phase
++ source) and by the WS integration test (resting_hr → hrv → activity
+rows with counts, dates and source, served by the endpoint).
+
+### Sleep sessions (0x48) — real stages (Oct 19, live-verified)
+
+The first live backfill exposed two wrong assumptions from the export
+analysis: the activity sample's byte 5 is NOT a sleep flag (it holds an
+HR-like 53–60 on sleep minutes; bytes 6/7 are always 0 — deep/REM do NOT
+come from the 8-byte activity payload), and stress (0x13) is parsed
+correctly but the watch currently sends ~99% 0xFF gaps (no all-day
+stress data; GB's own DB had only 991 sparse samples, ending March).
+
+Actual stages source: **fetch type 0x48 SLEEP_SESSION** (GB
+`FetchSleepSessionOperation`) — 594-byte records per session:
+u32 session ts, u32 midnight ts (wake day, user-tz), u16 sleepStart /
+sleepEnd (minutes since the midnight BEFORE the wake-day midnight),
+u8 avgHr @0x15, **u8 score @0x16** (the Zepp sleep score IS exposed —
+kept in the DB, not shown per user's choice), u8 numStages @0x54,
+stages @0x56 each 5 B (u16 start, u16 end, u8 type: 4=light 5=deep
+8=REM 7=awake), totals @0x024a–0x0250 (rem/light/deep/wake u16).
+
+Implemented end-to-end: parser + migration 00036 (`sleep_sessions` +
+`sleep_stages`, stage normalized 0=awake 1=light 2=deep 3=REM) +
+driver queue (runs after activity, before workouts; single round,
+pointer = last session +60) + `/health/morning` rewritten to serve the
+watch's own session (naps share the midnight; the session with the most
+asleep minutes wins; per-minute stage strip from stage intervals).
+App auto-steps back (≤3 days, stops on manual nav) to the most recent
+night with a session — the watch finalizes the current night's session
+later in the day, so "today" is usually empty.
+
+Live: 29 sessions backfilled (Sept 20 → Oct 18), 603 stages; Oct 18
+night = 7h35 (deep 80 / light 321 / REM 54), window 00:30–08:05,
+HRV status Lower for that night. Sync log shows per-session imports
+("Sleep · 29 nights").
+
+Morning-tab UI polish (user feedback, Oct 19): header shows
+Today/Yesterday/weekday with the full date ("Sunday 18.10.2026") where the
+Sync-now button was; the AppBar refresh button now runs the watch sync
+(same as Sync now did, pull-to-refresh too) and the > chevron is disabled
+on today. HRV chart got axes (3-h time grid, round ms intervals) and only
+the 7-day avg below (status/baseline/last-night removed). HR chart axes
+are bounded by the data (the old hard maxY: 120 clipped the curve) and
+show the selected day since midnight; resting removed. Stress removed
+from the Day card (watch sends none). Axis labels: fl_chart adds off-grid
+min/max edge ticks — they are filtered so only interval-grid labels show.
+
+Morning-tab follow-ups (user feedback round 2, Oct 19): Debug tab removed;
+touch tooltips re-enabled on both charts (`_touch()`, tap-and-hold shows
+time · value); HRV x-axis spans the sleep window (spots filtered to it —
+fl_chart 1.1.1 silently draws NOTHING when the first spot is outside
+minX, so the domain edges must pad-or-contain the data); HR x-axis unit
+bug fixed (points are SECONDS since midnight — /3600 not /60; the /60
+left exactly five points on-screen, which the user reported verbatim).
+Web-dev trivia: the browser had a stale cached build calling a long-dead
+localhost:6001 (an old dev base URL) — fixed by a clean rebuild with
+`--dart-define=API_BASE_URL=http://localhost:8080`, now pinned in the
+`just web` recipe; a hard refresh clears the poisoned origin cache.
+
+Follow-up (user feedback round 3): the HRV fallback for dates WITHOUT a
+finalized sleep session (e.g. today) used the data's own span, which
+starts at ~22:00 the previous evening — now a fixed 00:00–08:15 night
+window, matching the sleep-window view. The adb reverse tunnel drops on
+every phone replug; re-add with `adb reverse tcp:8080 tcp:8080` (the
+app's "couldn't connect" is almost always this).
+
+Follow-up (round 4): the watch exposes the latest sleep session over BLE
+~a day late (re-syncs during the day just re-send the previous night), so
+"Today" had an empty sleep card. `/health/morning` now falls back: when
+the requested date has no session it serves the most recent night within
+the previous two days (latest midnight wins; naps still excluded within a
+midnight). The Morning tab therefore always shows the last known night on
+Today, and switches to the true night automatically once the watch
+exposes it. The tab's day selection also persists across tab switches
+(home_shell uses an IndexedStack).
+
+### HRV/HR-mark timezone bug (workflow finding, Oct 19 evening)
+
+The 6-byte HRV (0x49) and resting/max-HR (0x3a/0x3d) records carry a TRUE
+UTC epoch plus a SIGNED quarter-hour timezone byte (byte 4) — mont's
+parsers ignored the byte and stored raw UTC, shifting every HRV/mark
+timestamp 2h early in summer. That's why mont's HRV chart "ended at
+06:14" while GB's chart for the same kind of night reaches ~08:03: GB
+applies the tz byte and shows local time. Verified: mont's Oct 15→16
+night matches GB's chart exactly once compared in local time (first
+00:07:05, last 08:08:05, avg 150.97 vs GB's 151, max 5-min rolling 185.6
+vs 185; GB's chart x-range is simply first→last sample — HrvChartData.kt
+xAxis min/max, no padding). Both parsers now apply the tz byte
+(tz_offset_seconds); hrv_samples and daily_hr_marks were cleared and the
+73/61/58 pointers zeroed for a clean re-fetch (INSERT OR IGNORE on
+hrv_samples would otherwise keep the wrong-ts rows; marks are upserted
+but stale shifted-date rows would linger).
+
+Data forensics also refuted an earlier claim: today's session IS
+finalized in sleep_sessions (midnight 2026-10-19, window 00:30–08:05) —
+the /health/morning fallback only matters for genuinely missing days.

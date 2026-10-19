@@ -22,11 +22,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   int _smoothing = kSmoothingDefault;
   String? _clientVersion;
   String? _serverVersion;
+  List<Map<String, dynamic>>? _bleLog;
+  bool _bleLogLoading = false;
 
   @override
   void initState() {
     super.initState();
     _load();
+    _loadBleLog();
   }
 
   Future<void> _load() async {
@@ -49,6 +52,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _save(int value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(kSmoothingKey, value);
+  }
+
+  Future<void> _loadBleLog() async {
+    setState(() => _bleLogLoading = true);
+    try {
+      final entries = await api.getBleSyncLog();
+      if (!mounted) return;
+      setState(() => _bleLog = entries.cast<Map<String, dynamic>>());
+    } catch (_) {
+      // BLE sync not available (disabled or old server): hide the section.
+      if (!mounted) return;
+      setState(() => _bleLog = null);
+    } finally {
+      if (mounted) setState(() => _bleLogLoading = false);
+    }
   }
 
   Future<void> _logIssue() async {
@@ -221,6 +239,95 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  static const _months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+
+  String _bleLogTime(String ts) {
+    final t = DateTime.tryParse(ts)?.toLocal();
+    if (t == null) return ts;
+    return '${_months[t.month - 1]} ${t.day} '
+        '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+  }
+
+  (IconData, String) _bleLogKind(String kind, int stored, bool isError) {
+    if (isError) return (Icons.error_outline, 'Sync problem ($kind)');
+    return switch (kind) {
+      'workout' => (Icons.directions_run, 'Run imported'),
+      'sleep_session' => (Icons.bedtime_outlined, 'Sleep · $stored nights'),
+      'activity' => (Icons.directions_walk, 'Activity · $stored min'),
+      'hrv' => (Icons.favorite_outline, 'HRV · $stored samples'),
+      'stress' => (Icons.bolt, 'Stress · $stored samples'),
+      'max_hr' => (Icons.speed, 'Max HR · $stored marks'),
+      'resting_hr' => (Icons.monitor_heart, 'Resting HR · $stored marks'),
+      _ => (Icons.sync, 'Sync'),
+    };
+  }
+
+  Widget _bleLogTile(Map<String, dynamic> e) {
+    final kind = (e['kind'] ?? '').toString();
+    final status = (e['status'] ?? '').toString();
+    final stored = (e['stored'] as num?)?.toInt() ?? 0;
+    final detail = (e['detail'] ?? '').toString();
+    final source = (e['source'] ?? '').toString();
+    final isError = status != 'ok';
+    final (icon, title) = _bleLogKind(kind, stored, isError);
+    final subtitle = [
+      _bleLogTime((e['ts'] ?? '').toString()),
+      if (detail.isNotEmpty) detail,
+      if (source.isNotEmpty && source != 'sync') source,
+    ].join(' · ');
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      dense: true,
+      leading: Icon(icon, color: isError ? Colors.redAccent : null),
+      title: Text(title),
+      subtitle: Text(subtitle),
+    );
+  }
+
+  Widget _bleLogSection() {
+    final log = _bleLog ?? const [];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 32),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Watch sync',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            IconButton(
+              tooltip: 'Refresh',
+              onPressed: _bleLogLoading ? null : _loadBleLog,
+              icon: const Icon(Icons.refresh),
+            ),
+          ],
+        ),
+        if (log.isEmpty)
+          const Text(
+            'No sync history yet',
+            style: TextStyle(color: Colors.grey),
+          )
+        else
+          for (final e in log) _bleLogTile(e),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -281,6 +388,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               subtitle: const Text('View latest reports from the server'),
               onTap: _showIssues,
             ),
+          if (_bleLog != null) _bleLogSection(),
           const SizedBox(height: 32),
           const Text(
             'About',

@@ -9,7 +9,7 @@ android:
   cd flutter && flutter run --flavor dev -d CPH2465
 
 web:
-  cd flutter && flutter run -d web-server --web-hostname 127.0.0.1 --web-port 5173
+  cd flutter && flutter run -d web-server --web-hostname 127.0.0.1 --web-port 5173 --dart-define=API_BASE_URL=http://localhost:8080
 
 e2e-web:
   ./scripts/e2e-web.sh

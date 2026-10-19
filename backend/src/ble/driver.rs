@@ -16,7 +16,10 @@ use serde_json::json;
 use crate::ble::auth::{AuthOutcome, AuthSession};
 use crate::ble::codec::{ChunkedDecoder, ChunkedEncoder, chunked_ack};
 use crate::ble::fetch::{FetchEvent, FetchTracker, FetchType};
-use crate::ble::parsers::{parse_activity_samples, parse_hr_marks, parse_hrv_samples};
+use crate::ble::parsers::{
+    parse_activity_samples, parse_hr_marks, parse_hrv_samples, parse_sleep_sessions,
+    parse_stress_samples,
+};
 use crate::ble::protocol::{
     CharacteristicInfo, EventFrame, RelayCommand, RelayEvent, ServiceInfo, command_frame,
 };
@@ -108,11 +111,14 @@ struct Session {
     commands_sent: u64,
     started: Instant,
     finished: bool,
+    /// Where this session was triggered from (app open, manual button, adb).
+    source: String,
 }
 
 /// Entry point for one relay session; runs until the socket closes or the
-/// session times out.
-pub async fn run_session(socket: WebSocket, state: AppState) {
+/// session times out. `source` records what triggered the sync (app open,
+/// manual button, adb debug trigger) for the sync history.
+pub async fn run_session(socket: WebSocket, state: AppState, source: String) {
     let recorder = match SessionRecorder::create(&state.config.ble_sessions_dir()) {
         Ok(r) => r,
         Err(e) => {
@@ -168,6 +174,7 @@ pub async fn run_session(socket: WebSocket, state: AppState) {
         commands_sent: 0,
         started: Instant::now(),
         finished: false,
+        source,
     };
 
     let mut tick = tokio::time::interval(Duration::from_secs(1));
@@ -546,7 +553,9 @@ impl Session {
         // `since` and always returns its oldest summary)
         self.fetch_queue = vec![
             FetchType::SportsDetails,
+            FetchType::SleepSession,
             FetchType::Activity,
+            FetchType::Stress,
             FetchType::Hrv,
             FetchType::MaxHr,
             FetchType::RestingHr,
@@ -697,7 +706,10 @@ impl Session {
     /// ack reply moves us on).
     async fn handle_fetch_no_data(&mut self, fetch_type: FetchType) {
         tracing::info!("BLE session: {fetch_type:?}: no data");
-        if matches!(fetch_type, FetchType::Activity | FetchType::SportsDetails) {
+        if matches!(
+            fetch_type,
+            FetchType::Activity | FetchType::Stress | FetchType::SportsDetails
+        ) {
             let now = chrono::Utc::now().timestamp();
             self.fetch_since = now;
             if let Err(e) =
@@ -715,7 +727,7 @@ impl Session {
     /// Whether another round of `fetch_type` is needed to catch up to now.
     fn wants_another_round(&self, fetch_type: FetchType) -> bool {
         match fetch_type {
-            FetchType::Activity | FetchType::SportsDetails => {
+            FetchType::Activity | FetchType::Stress | FetchType::SportsDetails => {
                 let now = chrono::Utc::now().timestamp();
                 self.fetch_since + 120 < now
             }
@@ -847,6 +859,12 @@ impl Session {
                     "dates": dates,
                 }));
             }
+            FetchType::Stress => {
+                self.store_stress_payload(payload, start).await?;
+            }
+            FetchType::SleepSession => {
+                self.store_sleep_session_payload(payload).await?;
+            }
             FetchType::SportsDetails => {
                 self.store_workout_details(payload).await?;
             }
@@ -854,6 +872,70 @@ impl Session {
             // its oldest summary, so workouts enumerate via 0x06 instead
             FetchType::SportsSummaries => {}
         }
+        Ok(())
+    }
+
+    /// Parse and store one 0x48 sleep-session payload (594-byte records);
+    /// the pointer advances past the newest session.
+    async fn store_sleep_session_payload(&mut self, payload: &[u8]) -> Result<(), String> {
+        let sessions = parse_sleep_sessions(payload)
+            .map_err(|_| "sleep payload not a multiple of 594".to_string())?;
+        let count = sessions.len();
+        store::store_sleep_sessions(&self.state.pool, &sessions)
+            .await
+            .map_err(|e| e.to_string())?;
+        let last = sessions.last().map_or(self.fetch_since, |s| s.ts + 60);
+        store::update_sync_state(
+            &self.state.pool,
+            FetchType::SleepSession.id(),
+            last,
+            ACK_KEEP_DATA,
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+        tracing::info!("BLE session: stored {count} sleep sessions");
+        self.fetch_results.push(json!({
+            "type": FetchType::SleepSession.id(), "status": "ok", "samples": count,
+        }));
+        Ok(())
+    }
+
+    /// Parse and store a stress-auto payload (1 byte per minute); advance the
+    /// pointer past it, or mark caught up when the watch re-sends the window.
+    async fn store_stress_payload(&mut self, payload: &[u8], start: i64) -> Result<(), String> {
+        let samples = parse_stress_samples(payload, start);
+        let count = samples.len();
+        store::store_stress_samples(&self.state.pool, &samples)
+            .await
+            .map_err(|e| e.to_string())?;
+        let last_ts = start + i64::try_from(count).unwrap_or(0) * 60;
+        store::update_sync_state(
+            &self.state.pool,
+            FetchType::Stress.id(),
+            last_ts,
+            ACK_KEEP_DATA,
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+        if last_ts <= self.fetch_since {
+            // watch re-sent the same window — treat as caught up
+            tracing::info!("BLE session: stress fetch made no progress — treating as caught up");
+            self.fetch_since = chrono::Utc::now().timestamp();
+            store::update_sync_state(
+                &self.state.pool,
+                FetchType::Stress.id(),
+                self.fetch_since,
+                ACK_KEEP_DATA,
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+        } else {
+            self.fetch_since = last_ts;
+        }
+        tracing::info!("BLE session: stored {count} stress samples");
+        self.fetch_results.push(json!({
+            "type": FetchType::Stress.id(), "status": "ok", "samples": count,
+        }));
         Ok(())
     }
 
@@ -1100,6 +1182,7 @@ impl Session {
     }
 
     async fn finish(&mut self) {
+        self.persist_sync_log().await;
         let summary = json!({
             "event": "session_end",
             "phase": format!("{:?}", self.phase),
@@ -1126,6 +1209,96 @@ impl Session {
             self.recorder.path().display()
         );
         let _ = self.sink.close().await;
+    }
+
+    /// Persist the sync history: one `ble_sync_log` row per meaningful fetch
+    /// result (imports and failures; "no data" / duplicates are noise), plus a
+    /// session-level failure row when a sync never got far enough to fetch.
+    async fn persist_sync_log(&self) {
+        let now = store::rfc3339_utc(chrono::Utc::now().timestamp());
+        let mut entries: Vec<store::SyncLogEntry> = Vec::new();
+        for r in &self.fetch_results {
+            let status = r["status"].as_str().unwrap_or("unknown");
+            let kind =
+                FetchType::name_for_id(u8::try_from(r["type"].as_u64().unwrap_or(0)).unwrap_or(0));
+            match status {
+                "ok" => {
+                    let stored = r["samples"]
+                        .as_i64()
+                        .or_else(|| r["records"].as_i64())
+                        .unwrap_or(0);
+                    let detail = if kind == "workout" {
+                        let start = r["start"]
+                            .as_str()
+                            .unwrap_or("")
+                            .trim_start_matches("ble-")
+                            .get(..16)
+                            .unwrap_or("")
+                            .replace('T', " ");
+                        format!(
+                            "{start} UTC · {:.1} km · {} min",
+                            r["distance_m"].as_f64().unwrap_or(0.0) / 1000.0,
+                            r["duration_s"].as_i64().unwrap_or(0) / 60,
+                        )
+                    } else {
+                        dates_detail(r)
+                    };
+                    let stored = if kind == "workout" { 1 } else { stored };
+                    if stored > 0 {
+                        entries.push(store::SyncLogEntry {
+                            ts: now.clone(),
+                            source: self.source.clone(),
+                            kind: kind.to_string(),
+                            status: "ok".to_string(),
+                            stored,
+                            detail,
+                        });
+                    }
+                }
+                "crc_error" | "store_error" | "data_error" | "timeout" => {
+                    entries.push(store::SyncLogEntry {
+                        ts: now.clone(),
+                        source: self.source.clone(),
+                        kind: kind.to_string(),
+                        status: status.to_string(),
+                        stored: 0,
+                        detail: r["error"].as_str().unwrap_or("").to_string(),
+                    });
+                }
+                // no_data / duplicate / behind_window: nothing was imported
+                _ => {}
+            }
+        }
+        if entries.is_empty() && self.authenticated != Some(true) {
+            entries.push(store::SyncLogEntry {
+                ts: now,
+                source: self.source.clone(),
+                kind: "session".to_string(),
+                status: "error".to_string(),
+                stored: 0,
+                detail: format!("phase={:?} device={:?}", self.phase, self.device_name),
+            });
+        }
+        if entries.is_empty() {
+            return;
+        }
+        if let Err(e) = store::append_sync_log(&self.state.pool, &self.source, &entries).await {
+            tracing::error!("BLE session: sync log write failed: {e}");
+        }
+    }
+}
+
+/// Detail string for fetch results carrying a `dates` array (activity, HRV):
+/// the days covered, truncated when a backfill touches many at once.
+fn dates_detail(r: &serde_json::Value) -> String {
+    let dates: Vec<&str> = r["dates"]
+        .as_array()
+        .map(|a| a.iter().filter_map(|d| d.as_str()).collect())
+        .unwrap_or_default();
+    if dates.len() > 3 {
+        format!("{} … +{} days", dates[..2].join(", "), dates.len() - 2)
+    } else {
+        dates.join(", ")
     }
 }
 

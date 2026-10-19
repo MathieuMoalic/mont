@@ -35,6 +35,7 @@ Future<void> autoSyncIfTriggered() async {
     final timeoutSecs = (cfg['timeout_s'] as num?)?.toInt() ?? 240;
     final outcome = await runRelaySession(
       timeout: Duration(seconds: timeoutSecs),
+      source: 'adb',
     );
 
     await File(
@@ -52,7 +53,10 @@ Future<void> autoSyncIfTriggered() async {
 /// Manual sync for the debug tab: connects to the watch through the backend
 /// and returns a one-line outcome.
 Future<String> startManualSync() async {
-  final outcome = await runRelaySession(timeout: const Duration(minutes: 20));
+  final outcome = await runRelaySession(
+    timeout: const Duration(minutes: 20),
+    source: 'manual',
+  );
   await _writeLastResult(outcome);
   return '${outcome['status']} (${outcome['reason']}, phase: ${outcome['phase']}, '
       'notify frames: ${outcome['notify_frames']})';
@@ -78,7 +82,10 @@ Future<void> autoSyncOnAppOpen() async {
         return;
       }
     }
-    final outcome = await runRelaySession(timeout: const Duration(minutes: 20));
+    final outcome = await runRelaySession(
+      timeout: const Duration(minutes: 20),
+      source: 'app_open',
+    );
     await _writeLastResult(outcome);
     // Grep target for the adb debug loop.
     // ignore: avoid_print
@@ -99,16 +106,18 @@ Future<void> _writeLastResult(Map<String, dynamic> outcome) async {
 }
 
 /// Connects to the backend relay WebSocket and relays GATT traffic until the
-/// backend shuts the session down or the timeout expires.
+/// backend shuts the session down or the timeout expires. `source` records
+/// what triggered the sync (shown in the Settings sync history).
 Future<Map<String, dynamic>> runRelaySession({
   required Duration timeout,
+  String source = 'sync',
 }) async {
   final refreshed = await auth.Auth.tryRefresh();
   if (!refreshed || auth.Auth.token == null) {
     return {'status': 'fail', 'reason': 'no_auth'};
   }
   final wsBase = api.baseUrl.replaceFirst('http', 'ws');
-  final wsUrl = '$wsBase/ble/ws?token=${auth.Auth.token}';
+  final wsUrl = '$wsBase/ble/ws?token=${auth.Auth.token}&source=$source';
   final session = _RelaySession(wsUrl, timeout);
   return session.run();
 }

@@ -17,6 +17,9 @@ use crate::models::AppState;
 #[derive(Debug, Deserialize)]
 pub struct WsQuery {
     pub token: Option<String>,
+    /// What triggered the sync (`app_open`, `manual`, `adb`) — recorded in
+    /// the sync history.
+    pub source: Option<String>,
 }
 
 /// Relay WebSocket: `GET /ble/ws?token=<jwt>` (query param because browser
@@ -39,7 +42,38 @@ pub async fn ws_handler(
     if verify_access_token(&state, &token).is_err() {
         return (StatusCode::UNAUTHORIZED, "invalid token").into_response();
     }
-    ws.on_upgrade(move |socket| driver::run_session(socket, state))
+    let source = query
+        .source
+        .map(|s| {
+            s.chars()
+                .filter(|c| c.is_ascii_alphanumeric() || *c == '_')
+                .take(20)
+                .collect::<String>()
+        })
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "sync".to_string());
+    ws.on_upgrade(move |socket| driver::run_session(socket, state, source))
+}
+
+/// `GET /ble/sync-log?limit=` — what recent sync sessions imported, newest
+/// first (for the Settings tab).
+pub async fn sync_log_handler(
+    State(state): State<AppState>,
+    Query(query): Query<SyncLogQuery>,
+) -> Response {
+    if !state.config.ble_enabled {
+        return (StatusCode::NOT_FOUND, "BLE sync is disabled").into_response();
+    }
+    let limit = query.limit.unwrap_or(100).clamp(1, 500);
+    match crate::ble::store::load_sync_log(&state.pool, limit).await {
+        Ok(entries) => Json(json!({ "entries": entries })).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SyncLogQuery {
+    pub limit: Option<i64>,
 }
 
 fn bearer_token(headers: &HeaderMap) -> Option<String> {

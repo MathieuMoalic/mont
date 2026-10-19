@@ -22,12 +22,16 @@ pub async fn store_activity_samples(
     let mut dates: Vec<String> = Vec::new();
     for s in samples {
         sqlx::query(
-            "INSERT OR REPLACE INTO activity_samples (ts, kind, steps, hr) VALUES (?, ?, ?, ?)",
+            "INSERT OR REPLACE INTO activity_samples (ts, kind, steps, hr, sleep, deep_sleep, rem_sleep) \
+             VALUES (?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(s.ts)
         .bind(i64::from(s.kind))
         .bind(i64::from(s.steps))
         .bind(i64::from(s.hr))
+        .bind(i64::from(s.sleep))
+        .bind(i64::from(s.deep_sleep))
+        .bind(i64::from(s.rem_sleep))
         .execute(pool)
         .await?;
         let date = utc_date(s.ts);
@@ -281,4 +285,138 @@ pub fn rfc3339_utc(ts: i64) -> String {
         || "1970-01-01T00:00:00Z".to_string(),
         |dt| dt.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
     )
+}
+
+/// Insert per-minute stress samples (ignoring ones already stored).
+///
+/// # Errors
+/// Propagates sqlx errors.
+pub async fn store_stress_samples(
+    pool: &SqlitePool,
+    samples: &[crate::ble::parsers::StressSample],
+) -> Result<(), sqlx::Error> {
+    for s in samples {
+        sqlx::query("INSERT OR IGNORE INTO stress_samples (ts, stress) VALUES (?, ?)")
+            .bind(s.ts)
+            .bind(i64::from(s.stress))
+            .execute(pool)
+            .await?;
+    }
+    Ok(())
+}
+
+/// Upsert sleep sessions and replace their stage rows.
+///
+/// # Errors
+/// Propagates sqlx errors.
+pub async fn store_sleep_sessions(
+    pool: &SqlitePool,
+    sessions: &[crate::ble::parsers::SleepSession],
+) -> Result<(), sqlx::Error> {
+    for s in sessions {
+        sqlx::query(
+            "INSERT OR REPLACE INTO sleep_sessions \
+             (ts, midnight_ts, sleep_start_min, sleep_end_min, avg_hr, score, \
+              deep_min, light_min, rem_min, wake_min) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(s.ts)
+        .bind(s.midnight_ts)
+        .bind(i64::from(s.sleep_start_min))
+        .bind(i64::from(s.sleep_end_min))
+        .bind(i64::from(s.avg_hr))
+        .bind(i64::from(s.score))
+        .bind(i64::from(s.deep_min))
+        .bind(i64::from(s.light_min))
+        .bind(i64::from(s.rem_min))
+        .bind(i64::from(s.wake_min))
+        .execute(pool)
+        .await?;
+        sqlx::query("DELETE FROM sleep_stages WHERE session_ts = ?")
+            .bind(s.ts)
+            .execute(pool)
+            .await?;
+        for st in &s.stages {
+            sqlx::query(
+                "INSERT INTO sleep_stages (session_ts, start_min, end_min, stage) \
+                 VALUES (?, ?, ?, ?)",
+            )
+            .bind(s.ts)
+            .bind(i64::from(st.start_min))
+            .bind(i64::from(st.end_min))
+            .bind(crate::ble::parsers::sleep_stage_code(st.raw_type))
+            .execute(pool)
+            .await?;
+        }
+    }
+    Ok(())
+}
+
+/// One sync-history row: what a BLE session imported (or failed to).
+#[derive(Debug, serde::Serialize)]
+pub struct SyncLogEntry {
+    pub ts: String,
+    pub source: String,
+    pub kind: String,
+    pub status: String,
+    pub stored: i64,
+    pub detail: String,
+}
+
+/// Append sync-log rows for one session and prune the table to its newest
+/// 500 entries.
+///
+/// # Errors
+/// Propagates sqlx errors.
+pub async fn append_sync_log(
+    pool: &SqlitePool,
+    source: &str,
+    entries: &[SyncLogEntry],
+) -> Result<(), sqlx::Error> {
+    for e in entries {
+        sqlx::query(
+            "INSERT INTO ble_sync_log (ts, source, kind, status, stored, detail) \
+             VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .bind(&e.ts)
+        .bind(source)
+        .bind(&e.kind)
+        .bind(&e.status)
+        .bind(e.stored)
+        .bind(&e.detail)
+        .execute(pool)
+        .await?;
+    }
+    sqlx::query("DELETE FROM ble_sync_log WHERE id <= (SELECT MAX(id) - 500 FROM ble_sync_log)")
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Newest-first sync-log rows for the Settings tab.
+///
+/// # Errors
+/// Propagates sqlx errors.
+pub async fn load_sync_log(
+    pool: &SqlitePool,
+    limit: i64,
+) -> Result<Vec<SyncLogEntry>, sqlx::Error> {
+    let rows = sqlx::query_as::<
+        _,
+        (String, String, String, String, i64, String),
+    >("SELECT ts, source, kind, status, stored, detail FROM ble_sync_log ORDER BY id DESC LIMIT ?")
+    .bind(limit)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|(ts, source, kind, status, stored, detail)| SyncLogEntry {
+            ts,
+            source,
+            kind,
+            status,
+            stored,
+            detail,
+        })
+        .collect())
 }

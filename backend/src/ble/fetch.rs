@@ -16,15 +16,53 @@ pub enum FetchType {
     Activity = 0x01,
     SportsSummaries = 0x05,
     SportsDetails = 0x06,
+    Stress = 0x13,
     RestingHr = 0x3a,
     MaxHr = 0x3d,
     Hrv = 0x49,
+    SleepSession = 0x48,
 }
 
 impl FetchType {
     #[must_use]
     pub const fn id(self) -> u8 {
         self as u8
+    }
+
+    /// Stable `snake_case` name (sync-log rows, UI labels).
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Activity => "activity",
+            Self::SportsSummaries => "workout_summary",
+            Self::SportsDetails => "workout",
+            Self::Stress => "stress",
+            Self::RestingHr => "resting_hr",
+            Self::MaxHr => "max_hr",
+            Self::Hrv => "hrv",
+            Self::SleepSession => "sleep_session",
+        }
+    }
+
+    /// Name for a fetch-type id (inverse of [`FetchType::id`]).
+    #[must_use]
+    pub fn name_for_id(id: u8) -> &'static str {
+        const ALL: [FetchType; 8] = [
+            FetchType::Activity,
+            FetchType::SportsSummaries,
+            FetchType::SportsDetails,
+            FetchType::Stress,
+            FetchType::RestingHr,
+            FetchType::MaxHr,
+            FetchType::Hrv,
+            FetchType::SleepSession,
+        ];
+        for t in ALL {
+            if t.id() == id {
+                return t.name();
+            }
+        }
+        "unknown"
     }
 }
 
@@ -227,12 +265,12 @@ mod tests {
         let dt = Utc.timestamp_opt(start_epoch, 0).single().unwrap();
         let mut p = vec![0x10, 0x01, 0x01];
         p.extend_from_slice(&len.to_le_bytes());
-        p.extend_from_slice(&(dt.year() as u16).to_le_bytes());
-        p.push(dt.month() as u8);
-        p.push(dt.day() as u8);
-        p.push(dt.hour() as u8);
-        p.push(dt.minute() as u8);
-        p.push(dt.second() as u8);
+        p.extend_from_slice(&u16::try_from(dt.year()).unwrap().to_le_bytes());
+        p.push(u8::try_from(dt.month()).unwrap());
+        p.push(u8::try_from(dt.day()).unwrap());
+        p.push(u8::try_from(dt.hour()).unwrap());
+        p.push(u8::try_from(dt.minute()).unwrap());
+        p.push(u8::try_from(dt.second()).unwrap());
         p.push(4);
         p
     }
@@ -264,7 +302,7 @@ mod tests {
 
     #[test]
     fn full_transfer_flow_with_crc() {
-        let payload = vec![0xAAu8; 20];
+        let payload = [0xAAu8; 20];
         let mut t = FetchTracker::new(FetchType::RestingHr);
 
         match t.on_control(&start_response(20, 1_700_000_000)) {
@@ -298,17 +336,12 @@ mod tests {
 
     #[test]
     fn complete_with_crc_validation() {
-        let payload = vec![1u8, 2, 3, 4, 5, 6, 7, 8];
+        let payload = [1u8, 2, 3, 4, 5, 6, 7, 8];
         let crc = crc32fast::hash(&payload);
         let mut t = FetchTracker::new(FetchType::Activity);
         let _ = t.on_control(&start_response(8, 1_700_000_000));
-        t.on_data(
-            &[1u8]
-                .into_iter()
-                .chain(payload.iter().copied())
-                .collect::<Vec<_>>(),
-        )
-        .unwrap();
+        t.on_data(&std::iter::once(1u8).chain(payload).collect::<Vec<_>>())
+            .unwrap();
         let mut end = vec![0x10, 0x02, 0x01];
         end.extend_from_slice(&crc.to_le_bytes());
         match t.on_control(&end) {

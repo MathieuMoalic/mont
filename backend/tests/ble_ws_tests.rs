@@ -258,21 +258,20 @@ async fn recv_write(
     ws: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
     char_prefix: &str,
 ) -> Vec<u8> {
-    loop {
-        let cmd = recv_cmd(ws).await;
-        assert_eq!(
-            cmd["k"], "write",
-            "expected a write to {char_prefix}, got {cmd}"
-        );
-        let char_uuid = cmd["char_uuid"].as_str().expect("char uuid");
-        if char_uuid.starts_with(char_prefix) {
-            use base64::Engine as _;
-            return base64::engine::general_purpose::STANDARD
-                .decode(cmd["data"].as_str().expect("data"))
-                .expect("base64 data");
-        }
-        panic!("write to unexpected characteristic {char_uuid}: {cmd}");
-    }
+    let cmd = recv_cmd(ws).await;
+    assert_eq!(
+        cmd["k"], "write",
+        "expected a write to {char_prefix}, got {cmd}"
+    );
+    let char_uuid = cmd["char_uuid"].as_str().expect("char uuid");
+    assert!(
+        char_uuid.starts_with(char_prefix),
+        "write to unexpected characteristic {char_uuid}: {cmd}"
+    );
+    use base64::Engine as _;
+    base64::engine::general_purpose::STANDARD
+        .decode(cmd["data"].as_str().expect("data"))
+        .expect("base64 data")
 }
 
 async fn ack_cmd(ws: &mut WebSocketStream<MaybeTlsStream<TcpStream>>, cmd: &Value) {
@@ -486,7 +485,11 @@ async fn ble_relay_fetches_and_stores_health_data() {
     .await;
 
     let (mut ws, _resp) = connect_async(
-        format!("{}/ble/ws?token={}", app.base_url, app.token).replacen("http", "ws", 1),
+        format!(
+            "{}/ble/ws?token={}&source=app_open",
+            app.base_url, app.token
+        )
+        .replacen("http", "ws", 1),
     )
     .await
     .expect("ws connect");
@@ -591,7 +594,18 @@ async fn ble_relay_fetches_and_stores_health_data() {
     )
     .await;
 
-    // activity (0x01): 3 one-minute samples on 2023-11-14
+    // stress (0x13): no data
+    run_fetch_type(
+        &mut ws,
+        0x13,
+        start_response_payload(0, rest_epoch),
+        None,
+        &mut handle,
+        0x09,
+    )
+    .await;
+
+    // activity (0x01): 3 one-minute samples today
     let act_start: i32 = (chrono::Utc::now().timestamp() - 3600) as i32; // one hour ago
     let mut act_payload = Vec::new();
     for i in 0..3u8 {
@@ -607,12 +621,23 @@ async fn ble_relay_fetches_and_stores_health_data() {
     )
     .await;
 
-    // activity catches up (start+3min is in the past) → second round → no data
+    // activity catches up → second round → no data
     run_fetch_type(
         &mut ws,
         0x01,
         start_response_payload(0, act_start),
         None,
+        &mut handle,
+        0x09,
+    )
+    .await;
+
+    // sleep sessions (0x48): one 594-byte record
+    run_fetch_type(
+        &mut ws,
+        0x48,
+        start_response_payload(594, rest_epoch),
+        Some(sleep_session_record()),
         &mut handle,
         0x09,
     )
@@ -683,13 +708,132 @@ async fn ble_relay_fetches_and_stores_health_data() {
             .await
             .unwrap();
     assert_eq!(today_steps, Some(90));
+
+    // sleep session stored with its stages
+    let (sess_count, deep, rem): (i64, i64, i64) = sqlx::query_as(
+        "SELECT COUNT(*), deep_min, rem_min FROM sleep_sessions \
+         WHERE date(midnight_ts, 'unixepoch') = '2023-11-15'",
+    )
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+    assert_eq!((sess_count, deep, rem), (1, 30, 90));
+    let (stage_count,): (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM sleep_stages WHERE session_ts = 1700000000")
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+    assert_eq!(stage_count, 3);
+
+    // the morning endpoint serves the session
+    let res = app
+        .client
+        .get(format!("{}/health/morning?date=2023-11-15", app.base_url))
+        .bearer_auth(&app.token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 200);
+    let body: serde_json::Value = res.json().await.unwrap();
+    assert_eq!(body["sleep"]["total_min"], 510);
+    assert_eq!(body["sleep"]["deep_min"], 30);
+    assert_eq!(body["sleep"]["rem_min"], 90);
+    assert_eq!(body["sleep"]["light_min"], 390);
+    assert_eq!(body["sleep"]["awake_min"], 30);
+    assert_eq!(
+        body["sleep"]["window_start"],
+        1_700_006_400 - 86_400 + 1380 * 60
+    );
+    let timeline = body["sleep"]["timeline"].as_array().unwrap();
+    assert_eq!(timeline.len(), 480);
+    assert_eq!(timeline[0][1], 2); // deep first (23:00–23:30)
+    assert_eq!(timeline[100][1], 3); // REM (23:30–01:00)
+
     let (synced_types,): (i64,) =
         sqlx::query_as("SELECT COUNT(DISTINCT data_type) FROM watch_sync_state")
             .fetch_one(&app.pool)
             .await
             .unwrap();
-    // resting, HRV, activity + summaries "no data" (max HR had no data at all)
-    assert_eq!(synced_types, 4);
+    // resting, HRV, activity, stress + summaries + sleep-session pointers
+    assert_eq!(synced_types, 6);
+
+    // ── sync log: written when the session finishes ──
+    ws.close(None).await.unwrap();
+    let mut log: Vec<(String, String, i64, String, String)> = Vec::new();
+    for _ in 0..50 {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        log = sqlx::query_as(
+            "SELECT kind, status, stored, detail, source FROM ble_sync_log ORDER BY id",
+        )
+        .fetch_all(&app.pool)
+        .await
+        .unwrap();
+        if !log.is_empty() {
+            break;
+        }
+    } // only real imports are logged: resting HR, HRV, activity, sleep
+    // (no-data and stress/summary no-data rounds are skipped)
+    let kinds: Vec<&str> = log.iter().map(|(k, ..)| k.as_str()).collect();
+    assert_eq!(
+        kinds,
+        vec!["resting_hr", "hrv", "activity", "sleep_session"]
+    );
+    assert!(log.iter().all(|(_, status, ..)| status == "ok"));
+    assert!(log.iter().all(|(.., source)| source == "app_open"));
+    assert_eq!(log[0].2, 1); // one resting-HR mark
+    assert_eq!(log[1].2, 2); // two HRV samples
+    assert_eq!(log[2].2, 3); // three activity samples
+    assert_eq!(log[3].2, 1); // one sleep session
+    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    assert!(log[2].3.contains(&today), "activity detail {}", log[2].3);
+
+    // the endpoint serves the same rows
+    let res = app
+        .client
+        .get(format!("{}/ble/sync-log", app.base_url))
+        .bearer_auth(&app.token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 200);
+    let body: serde_json::Value = res.json().await.unwrap();
+    assert_eq!(body["entries"].as_array().unwrap().len(), 4);
+    assert_eq!(body["entries"][0]["kind"], "sleep_session");
+}
+
+/// One 594-byte sleep-session record (Nov 14 23:00 → Nov 15 07:00, 2023):
+/// deep 0–30 min, REM 30–120, light 120–480, wake totals 30.
+fn sleep_session_record() -> Vec<u8> {
+    let mut rec = vec![0u8; 594];
+    put32(&mut rec, 0x00, 1_700_000_000);
+    put32(&mut rec, 0x04, 1_700_006_400); // midnight of Nov 15 UTC
+    put16(&mut rec, 0x0a, 1380); // 23:00
+    put16(&mut rec, 0x0c, 1860); // 07:00
+    rec[0x15] = 52; // avg hr
+    rec[0x16] = 91; // score
+    rec[0x54] = 3; // stages
+    for (i, (start, end, kind)) in [(1380u16, 1410u16, 5u8), (1410, 1500, 8), (1500, 1860, 4)]
+        .into_iter()
+        .enumerate()
+    {
+        let o = 0x56 + 5 * i;
+        put16(&mut rec, o, start);
+        put16(&mut rec, o + 2, end);
+        rec[o + 4] = kind;
+    }
+    put16(&mut rec, 0x024a, 90); // rem
+    put16(&mut rec, 0x024c, 390); // light
+    put16(&mut rec, 0x024e, 30); // deep
+    put16(&mut rec, 0x0250, 30); // wake
+    rec
+}
+
+fn put16(rec: &mut [u8], o: usize, v: u16) {
+    rec[o..o + 2].copy_from_slice(&v.to_le_bytes());
+}
+
+fn put32(rec: &mut [u8], o: usize, v: i32) {
+    rec[o..o + 4].copy_from_slice(&v.to_le_bytes());
 }
 
 /// CRC32 (IEEE) computed via the backend's crate dependency.
@@ -847,7 +991,7 @@ async fn ble_relay_imports_workout_with_route() {
     let _service_list = recv_chunked_write(&mut ws).await;
 
     let mut handle = 20u8;
-    for type_byte in [0x3au8, 0x3d, 0x49, 0x01] {
+    for type_byte in [0x3au8, 0x3d, 0x49, 0x13, 0x01, 0x48] {
         let (ep, payload) = recv_chunked_write(&mut ws).await;
         assert_eq!((ep, payload[0], payload[1]), (0x004b, 0x01, type_byte));
         handle += 1;

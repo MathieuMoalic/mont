@@ -105,21 +105,23 @@ fn summary_fixtures_match_gadgetbridge() {
         // rows (older firmware) keep their distance elsewhere — their parsed
         // float is garbage ≈ 0, so only compare plausible values.
         if let (Some(gb), Some(mine)) = (json_num("distanceMeters"), summary.distance_m) {
-            if mine > 100.0 {
-                compared += 1;
-                if (gb - mine).abs() < 2.0 {
-                    distance_matches += 1;
-                } else if compared - distance_matches <= 3 {
-                    eprintln!(
-                        "distance mismatch: gb={gb} mine={mine} type={:?}",
-                        summary.type_code
-                    );
-                }
+            if mine <= 100.0 {
+                continue;
+            }
+            compared += 1;
+            if (gb - mine).abs() < 2.0 {
+                distance_matches += 1;
+            } else if compared - distance_matches <= 3 {
+                eprintln!(
+                    "distance mismatch: gb={gb} mine={mine} type={:?}",
+                    summary.type_code
+                );
             }
         }
         // duration: GB activeSeconds == workoutDuration (active time)
         if let (Some(gb), Some(mine)) = (json_num("activeSeconds"), summary.workout_duration_s) {
-            if (gb - f64::from(mine as i32)).abs() <= 1.0 {
+            let secs = f64::from(i32::try_from(mine).unwrap_or(i32::MAX));
+            if (gb - secs).abs() <= 1.0 {
                 duration_matches += 1;
             }
         }

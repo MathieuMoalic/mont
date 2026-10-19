@@ -1253,3 +1253,26 @@ Future<Map<String, dynamic>> getBleDebug() async {
   }
   return jsonDecode(res.body) as Map<String, dynamic>;
 }
+
+/// Morning-glance data for the watch tab (sleep, HRV, HR, steps, stress).
+Future<Map<String, dynamic>> getMorning(String date) async {
+  final res = await _handleUnauthorized(
+    () => http.get(_u('/health/morning?date=$date'), headers: _headers()),
+  );
+  if (res.statusCode != 200) {
+    throw Exception('HTTP ${res.statusCode}');
+  }
+  return jsonDecode(res.body) as Map<String, dynamic>;
+}
+
+/// BLE sync history: what recent sync sessions imported, newest first.
+Future<List<dynamic>> getBleSyncLog() async {
+  final res = await _handleUnauthorized(
+    () => http.get(_u('/ble/sync-log'), headers: _headers()),
+  );
+  if (res.statusCode != 200) {
+    throw Exception('HTTP ${res.statusCode}');
+  }
+  return (jsonDecode(res.body) as Map<String, dynamic>)['entries'] as List? ??
+      [];
+}

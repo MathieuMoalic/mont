@@ -81,7 +81,9 @@ pub fn build_app(state: AppState) -> Router {
         )
         .route("/ble/status", get(ble::status_handler))
         .route("/ble/debug", get(ble::debug_handler))
+        .route("/ble/sync-log", get(ble::sync_log_handler))
         .route("/health/daily", get(health::list_daily_health))
+        .route("/health/morning", get(health::morning))
         .route(
             "/health/pictures",
             post(health::upload_picture).get(health::list_pictures),
