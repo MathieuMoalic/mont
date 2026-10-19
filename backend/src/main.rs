@@ -20,6 +20,11 @@ use mont::{
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Load backend/.env if present (dev convenience); real env vars win.
+    // dotenvy, not `source`: values may contain spaces and `$` (argon2 PHC
+    // strings), which a shell would word-split or expand.
+    dotenvy::dotenv().ok();
+
     let cli = Cli::parse();
 
     if let Some(command) = cli.command {
