@@ -20,3 +20,6 @@ gadgetbridge_export/
 /release/artifacts
 /Gadgetbridge/
 /backend/ble_sessions/
+
+.agent/
+.zcodeignore
