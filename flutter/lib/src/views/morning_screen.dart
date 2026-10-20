@@ -21,8 +21,10 @@ class _MorningScreenState extends State<MorningScreen> {
 
   /// Auto step-backs while hunting for the most recent night with a sleep
   /// session (the watch finalizes the current night's session later in the
-  /// day); stops as soon as the user navigates manually.
-  int _autoSteps = 0;
+  /// day). One look at yesterday; if that is empty too (fresh install, no
+  /// syncs yet) we return to today. Stops as soon as the user navigates
+  /// manually.
+  bool _hunted = false;
   bool _navigated = false;
 
   static const _weekdays = [
@@ -84,9 +86,14 @@ class _MorningScreenState extends State<MorningScreen> {
       });
       final sleep = data['sleep'] as Map<String, dynamic>?;
       final hasSleep = (sleep?['total_min'] as num? ?? 0) > 0;
-      if (!hasSleep && !_navigated && _autoSteps < 3) {
-        _autoSteps += 1;
-        _shiftDay(-1, manual: false);
+      if (!hasSleep && !_navigated) {
+        if (!_hunted) {
+          _hunted = true;
+          _shiftDay(-1, manual: false);
+        } else if (!_isToday) {
+          // yesterday is empty too — nothing older is worth showing
+          _shiftDay(1, manual: false);
+        }
       }
     } catch (e) {
       if (!mounted) return;
