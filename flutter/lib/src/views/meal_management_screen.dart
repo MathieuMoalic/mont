@@ -282,17 +282,23 @@ class _MealEditorScreenState extends State<_MealEditorScreen> {
     _EditableIngredient? existing,
     bool allowRemove = false,
   }) async {
-    final nameController = TextEditingController(text: existing?.food.name ?? '');
+    final nameController = TextEditingController(
+      text: existing?.food.name ?? '',
+    );
     final proteinController = TextEditingController(
       text: existing == null
           ? ''
           : existing.food.proteinPer100G.toStringAsFixed(1),
     );
     final carbsController = TextEditingController(
-      text: existing == null ? '' : existing.food.carbsPer100G.toStringAsFixed(1),
+      text: existing == null
+          ? ''
+          : existing.food.carbsPer100G.toStringAsFixed(1),
     );
     final fatsController = TextEditingController(
-      text: existing == null ? '' : existing.food.fatsPer100G.toStringAsFixed(1),
+      text: existing == null
+          ? ''
+          : existing.food.fatsPer100G.toStringAsFixed(1),
     );
     final weightController = TextEditingController(
       text: existing == null ? '' : _fmt(existing.grams),
@@ -308,7 +314,10 @@ class _MealEditorScreenState extends State<_MealEditorScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (context, setLocalState) {
           return AlertDialog(
-            insetPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            insetPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 12,
+            ),
             title: null,
             scrollable: true,
             content: Column(
@@ -333,7 +342,9 @@ class _MealEditorScreenState extends State<_MealEditorScreen> {
                         .listFoods(query: q)
                         .then((results) {
                           if (!ctx.mounted || mySeq != searchSeq) return;
-                          setLocalState(() => matches = results.take(4).toList());
+                          setLocalState(
+                            () => matches = results.take(4).toList(),
+                          );
                         })
                         .catchError((_) {});
                   },
@@ -341,9 +352,14 @@ class _MealEditorScreenState extends State<_MealEditorScreen> {
                 if (query.isNotEmpty && matches.isNotEmpty)
                   Container(
                     margin: const EdgeInsets.only(top: 6, bottom: 4),
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 6,
+                    ),
                     decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.surfaceContainerHighest,
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Column(
@@ -357,7 +373,9 @@ class _MealEditorScreenState extends State<_MealEditorScreen> {
                               setLocalState(() {
                                 nameController.text = saved.name;
                                 query = saved.name;
-                                proteinController.text = _fmt(saved.proteinPer100G);
+                                proteinController.text = _fmt(
+                                  saved.proteinPer100G,
+                                );
                                 carbsController.text = _fmt(saved.carbsPer100G);
                                 fatsController.text = _fmt(saved.fatsPer100G);
                                 weightController.text = _fmt(saved.lastWeightG);
@@ -386,7 +404,9 @@ class _MealEditorScreenState extends State<_MealEditorScreen> {
                           if (i != matches.length - 1)
                             Divider(
                               height: 1,
-                              color: Theme.of(context).colorScheme.outlineVariant,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.outlineVariant,
                             ),
                         ],
                       ],
@@ -397,31 +417,45 @@ class _MealEditorScreenState extends State<_MealEditorScreen> {
                   decoration: const InputDecoration(
                     labelText: 'Protein per 100g (g)',
                   ),
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
                 ),
                 TextField(
                   controller: carbsController,
                   decoration: const InputDecoration(
                     labelText: 'Carbs per 100g (g)',
                   ),
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
                 ),
                 TextField(
                   controller: fatsController,
-                  decoration: const InputDecoration(labelText: 'Fats per 100g (g)'),
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(
+                    labelText: 'Fats per 100g (g)',
+                  ),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
                 ),
                 TextField(
                   controller: weightController,
-                  decoration: const InputDecoration(labelText: 'Total weight (g)'),
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(
+                    labelText: 'Total weight (g)',
+                  ),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
                 ),
                 if (error != null)
                   Padding(
                     padding: const EdgeInsets.only(top: 8),
                     child: Text(
                       error!,
-                      style: TextStyle(color: Theme.of(context).colorScheme.error),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
                     ),
                   ),
               ],
@@ -429,9 +463,9 @@ class _MealEditorScreenState extends State<_MealEditorScreen> {
             actions: [
               if (allowRemove)
                 TextButton(
-                  onPressed: () => Navigator.of(ctx).pop(
-                    const _FoodModalResult(remove: true),
-                  ),
+                  onPressed: () => Navigator.of(
+                    ctx,
+                  ).pop(const _FoodModalResult(remove: true)),
                   child: const Text(
                     'Remove ingredient',
                     style: TextStyle(color: Colors.red),
@@ -444,7 +478,9 @@ class _MealEditorScreenState extends State<_MealEditorScreen> {
               FilledButton(
                 onPressed: () async {
                   final name = nameController.text.trim();
-                  final protein = double.tryParse(proteinController.text.trim());
+                  final protein = double.tryParse(
+                    proteinController.text.trim(),
+                  );
                   final carbs = double.tryParse(carbsController.text.trim());
                   final fats = double.tryParse(fatsController.text.trim());
                   final weight = double.tryParse(weightController.text.trim());
@@ -473,7 +509,10 @@ class _MealEditorScreenState extends State<_MealEditorScreen> {
                     if (ctx.mounted) {
                       Navigator.of(ctx).pop(
                         _FoodModalResult(
-                          ingredient: _EditableIngredient(food: food, grams: weight),
+                          ingredient: _EditableIngredient(
+                            food: food,
+                            grams: weight,
+                          ),
                         ),
                       );
                     }
@@ -501,7 +540,10 @@ class _MealEditorScreenState extends State<_MealEditorScreen> {
 
   Future<void> _addIngredient() async {
     final result = await _showTrackerFoodModal();
-    if (result == null || result.remove || result.ingredient == null || !mounted) {
+    if (result == null ||
+        result.remove ||
+        result.ingredient == null ||
+        !mounted) {
       return;
     }
     setState(() => _ingredients.add(result.ingredient!));
@@ -584,14 +626,15 @@ class _MealEditorScreenState extends State<_MealEditorScreen> {
     (sum, ing) => sum + (ing.food.carbsPer100G * ing.grams / 100),
   );
 
-  double get _fatsTotal =>
-      _ingredients.fold(0, (sum, ing) => sum + (ing.food.fatsPer100G * ing.grams / 100));
+  double get _fatsTotal => _ingredients.fold(
+    0,
+    (sum, ing) => sum + (ing.food.fatsPer100G * ing.grams / 100),
+  );
 
   int get _kcalTotal =>
       (_proteinTotal * 4 + _carbsTotal * 4 + _fatsTotal * 9).round();
 
-  double get _gramsTotal =>
-      _ingredients.fold(0, (sum, ing) => sum + ing.grams);
+  double get _gramsTotal => _ingredients.fold(0, (sum, ing) => sum + ing.grams);
 
   Widget _buildHeaderCell(
     String label, {
@@ -607,7 +650,10 @@ class _MealEditorScreenState extends State<_MealEditorScreen> {
         alignment: textAlign == TextAlign.center
             ? Alignment.center
             : Alignment.centerLeft,
-        padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 2),
+        padding: EdgeInsets.symmetric(
+          horizontal: horizontalPadding,
+          vertical: 2,
+        ),
         decoration: BoxDecoration(
           border: showDivider
               ? Border(
@@ -647,7 +693,10 @@ class _MealEditorScreenState extends State<_MealEditorScreen> {
         alignment: textAlign == TextAlign.center
             ? Alignment.center
             : Alignment.centerLeft,
-        padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 2),
+        padding: EdgeInsets.symmetric(
+          horizontal: horizontalPadding,
+          vertical: 2,
+        ),
         decoration: BoxDecoration(
           border: showDivider
               ? Border(
@@ -743,7 +792,9 @@ class _MealEditorScreenState extends State<_MealEditorScreen> {
                             vertical: 10,
                           ),
                           decoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.surfaceContainerHigh,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.surfaceContainerHigh,
                             borderRadius: BorderRadius.circular(10),
                           ),
                           child: Row(
@@ -804,14 +855,20 @@ class _MealEditorScreenState extends State<_MealEditorScreen> {
                                     final ing = _ingredients[index];
                                     return Container(
                                       color: index.isEven
-                                          ? Theme.of(
-                                              context,
-                                            ).colorScheme.surface.withValues(alpha: 0.3)
+                                          ? Theme.of(context)
+                                                .colorScheme
+                                                .surface
+                                                .withValues(alpha: 0.3)
                                           : null,
-                                      padding: const EdgeInsets.symmetric(vertical: 6),
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 6,
+                                      ),
                                       child: Row(
                                         children: [
-                                          _buildValueCell(ing.food.name, flex: 4),
+                                          _buildValueCell(
+                                            ing.food.name,
+                                            flex: 4,
+                                          ),
                                           _buildValueCell(
                                             '${_ingredientProtein(ing)}',
                                             flex: 2,
@@ -836,7 +893,9 @@ class _MealEditorScreenState extends State<_MealEditorScreen> {
                                           _buildValueCell(
                                             '${_ingredientKcal(ing)}',
                                             flex: 2,
-                                            color: Theme.of(context).colorScheme.primary,
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.primary,
                                             textAlign: TextAlign.center,
                                             fit: true,
                                           ),
@@ -854,8 +913,12 @@ class _MealEditorScreenState extends State<_MealEditorScreen> {
                                                 tooltip: 'Edit ingredient',
                                                 onPressed: busy
                                                     ? null
-                                                    : () => _editIngredient(index),
-                                                icon: const Icon(Icons.edit_outlined),
+                                                    : () => _editIngredient(
+                                                        index,
+                                                      ),
+                                                icon: const Icon(
+                                                  Icons.edit_outlined,
+                                                ),
                                               ),
                                             ),
                                           ),
@@ -872,9 +935,10 @@ class _MealEditorScreenState extends State<_MealEditorScreen> {
                             vertical: 8,
                           ),
                           decoration: BoxDecoration(
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.55),
+                            color: Theme.of(context)
+                                .colorScheme
+                                .surfaceContainerHighest
+                                .withValues(alpha: 0.55),
                             borderRadius: BorderRadius.circular(10),
                           ),
                           child: Row(
