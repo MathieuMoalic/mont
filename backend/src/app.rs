@@ -1,6 +1,6 @@
 use crate::rate_limit::{RateLimitState, rate_limit_middleware};
 use crate::routes::{
-    auth, ble, calories, exercises, health, hyrox, issues, meals, runs, weight, workouts,
+    auth, ble, calories, exercises, health, hyrox, issues, maps, meals, runs, weight, workouts,
 };
 use crate::{
     auth_middleware::require_auth,
@@ -184,6 +184,10 @@ pub fn build_app(state: AppState) -> Router {
         .route("/runs/prs", get(runs::personal_records))
         .route("/runs/import", post(runs::import_run))
         .route("/runs/heatmap", get(runs::heatmap))
+        .route("/maps/ready", get(maps::ready))
+        .route("/maps/jobs", post(maps::create_job))
+        .route("/maps/jobs/{id}", get(maps::job_status))
+        .route("/maps/jobs/{id}/download", get(maps::job_download))
         .route(
             "/runs/{id}",
             get(runs::get_run)

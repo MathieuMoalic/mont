@@ -1,0 +1,24 @@
+#
+# This file contains information about the style.
+# It is completely optional.
+# 
+
+
+# A short one line description of the style
+#
+summary: CheetahTopo - hiking/topo style for Amazfit Cheetah Pro
+
+# Version of the style itself
+#
+version=1.0
+
+# A longer description of the style.
+description {
+CheetahTopo is a hiking/topographic style for the Amazfit Cheetah Pro
+(Zepp OS tiled Garmin IMG maps). Based on the mkgmap default style,
+but promotes hiking-relevant features to earlier zoom levels:
+paths, footways, tracks, steps and bridleways become visible from
+resolution 20 instead of 22/23, buildings from 22, hiking POIs
+(peaks, viewpoints, shelters, huts, springs, drinking water) from
+18-22. Designed to be readable rather than exhaustive.
+}

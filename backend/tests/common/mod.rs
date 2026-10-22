@@ -74,6 +74,8 @@ impl TestApp {
             ble_fetch_lookback_days: 30,
             ble_sessions_dir: None,
             ble_session_timeout_secs: 300,
+            mkgmap_jar: None,
+            osm_cache_dir: None,
         };
         if let Some(customize) = customize {
             customize(&mut config);
@@ -86,6 +88,7 @@ impl TestApp {
             jwt_encoding: EncodingKey::from_secret(TEST_JWT_SECRET.as_bytes()),
             config,
             http: reqwest::Client::new(),
+            maps_jobs: mont::maps::Jobs::new(),
         };
 
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");

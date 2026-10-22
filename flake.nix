@@ -43,6 +43,7 @@
         cargo-watch
         sqlite
         sqlx-cli
+        osmium-tool
         watchexec
         tmux
         git
@@ -274,6 +275,12 @@
           default = "deepseek/deepseek-v4-flash";
           description = "LLM model name to use";
         };
+
+        mkgmapJar = lib.mkOption {
+          type = lib.types.nullOr lib.types.path;
+          default = null;
+          description = "Path to mkgmap.jar enabling the watch map-tile builder (/maps/*). Requires jdk and osmium-tool on the service PATH, which this module adds automatically when set.";
+        };
       };
 
       config = lib.mkIf cfg.enable {
@@ -317,6 +324,7 @@
         systemd.services.mont = {
           description = "Mont workout tracker backend";
           after = ["network.target"];
+          path = lib.optionals (cfg.mkgmapJar != null) [pkgs.jdk pkgs.osmium-tool];
           wantedBy = ["multi-user.target"];
 
           environment =
@@ -333,7 +341,8 @@
             // lib.optionalAttrs (cfg.jwtSecret != null) {MONT_JWT_SECRET = cfg.jwtSecret;}
             // lib.optionalAttrs (cfg.bleWatchMac != null) {MONT_BLE_WATCH_MAC = cfg.bleWatchMac;}
             // lib.optionalAttrs (cfg.usdaApiKey != null) {MONT_USDA_API_KEY = cfg.usdaApiKey;}
-            // lib.optionalAttrs (cfg.llmApiKey != null) {MONT_LLM_API_KEY = cfg.llmApiKey;};
+            // lib.optionalAttrs (cfg.llmApiKey != null) {MONT_LLM_API_KEY = cfg.llmApiKey;}
+            // lib.optionalAttrs (cfg.mkgmapJar != null) {MONT_MKGMAP_JAR = "${cfg.mkgmapJar}";};
 
           script = let
             passwordHashLoader =

@@ -15,6 +15,8 @@ pub mod db;
 pub mod embedded_web;
 pub mod error;
 pub mod logging;
+pub mod map_styles;
+pub mod maps;
 pub mod models;
 pub mod pagination;
 pub mod rate_limit;

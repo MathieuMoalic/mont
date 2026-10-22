@@ -100,6 +100,17 @@ pub struct Config {
     /// Maximum duration of a BLE relay session in seconds.
     #[arg(long, env = "MONT_BLE_SESSION_TIMEOUT_SECS", default_value_t = 300)]
     pub ble_session_timeout_secs: u64,
+
+    /// Path to `mkgmap.jar` used to compile watch map tiles (`/maps/*`).
+    /// A `lib/` directory next to the jar is picked up as classpath. When
+    /// unset, the map-tile endpoints report themselves unavailable.
+    #[arg(long, env = "MONT_MKGMAP_JAR")]
+    pub mkgmap_jar: Option<PathBuf>,
+
+    /// Directory for the Geofabrik OSM download cache
+    /// (defaults to `<db dir>/osm-cache`).
+    #[arg(long, env = "MONT_OSM_CACHE_DIR")]
+    pub osm_cache_dir: Option<PathBuf>,
 }
 
 impl Config {
@@ -130,6 +141,17 @@ impl Config {
                 .map(std::path::Path::to_path_buf)
                 .unwrap_or_default()
                 .join("ble_sessions")
+        })
+    }
+
+    #[must_use]
+    pub fn osm_cache_dir(&self) -> PathBuf {
+        self.osm_cache_dir.clone().unwrap_or_else(|| {
+            PathBuf::from(&self.database_path)
+                .parent()
+                .map(std::path::Path::to_path_buf)
+                .unwrap_or_default()
+                .join("osm-cache")
         })
     }
 

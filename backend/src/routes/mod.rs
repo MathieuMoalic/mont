@@ -5,6 +5,7 @@ pub mod exercises;
 pub mod health;
 pub mod hyrox;
 pub mod issues;
+pub mod maps;
 pub mod meals;
 pub mod runs;
 pub mod weight;

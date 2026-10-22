@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'package:flutter/foundation.dart' show kIsWeb, kDebugMode;
+import 'package:flutter/foundation.dart' show Uint8List, kDebugMode, kIsWeb;
 import 'package:http/http.dart' as http;
 
 import './platform/kv_store.dart' as kv;
@@ -1266,13 +1266,81 @@ Future<Map<String, dynamic>> getMorning(String date) async {
 }
 
 /// BLE sync history: what recent sync sessions imported, newest first.
-Future<List<dynamic>> getBleSyncLog() async {
+Future<List<dynamic>> getBleSyncLog({int limit = 100}) async {
   final res = await _handleUnauthorized(
-    () => http.get(_u('/ble/sync-log'), headers: _headers()),
+    () => http.get(_u('/ble/sync-log?limit=$limit'), headers: _headers()),
   );
   if (res.statusCode != 200) {
     throw Exception('HTTP ${res.statusCode}');
   }
   return (jsonDecode(res.body) as Map<String, dynamic>)['entries'] as List? ??
       [];
+}
+
+// ── Watch maps ────────────────────────────────────────────────────────────────
+
+/// Whether the server can build watch map tiles (mkgmap + osmium set up).
+Future<bool> mapsReady() async {
+  final res = await _handleUnauthorized(
+    () => http.get(_u('/maps/ready'), headers: _headers()),
+  );
+  if (res.statusCode != 200) {
+    throw Exception('HTTP ${res.statusCode}');
+  }
+  return (jsonDecode(res.body) as Map<String, dynamic>)['ready'] as bool;
+}
+
+/// Queue a watch-map build for an uploaded GPX. Returns the job id to poll.
+Future<String> startMapJob(
+  List<int> bytes,
+  String filename, {
+  String style = 'cheetah-topo',
+  double bufferKm = 1.0,
+  double overlapDegrees = 0.002,
+  bool refreshOsm = false,
+}) async {
+  final token = _authToken;
+  if (token == null) throw Exception('Not authenticated');
+  final req = http.MultipartRequest('POST', _u('/maps/jobs'))
+    ..headers['Authorization'] = 'Bearer $token'
+    ..files.add(http.MultipartFile.fromBytes('file', bytes, filename: filename))
+    ..fields['style'] = style
+    ..fields['buffer_km'] = bufferKm.toString()
+    ..fields['overlap_degrees'] = overlapDegrees.toString()
+    ..fields['refresh_osm'] = refreshOsm ? 'true' : 'false';
+  final streamed = await req.send();
+  final body = await streamed.stream.bytesToString();
+  if (streamed.statusCode != 200) {
+    throw Exception(body.isNotEmpty ? body : 'HTTP ${streamed.statusCode}');
+  }
+  return (jsonDecode(body) as Map<String, dynamic>)['job_id'] as String;
+}
+
+/// Status of a map-build job: `status` (queued/running/done/error), `logs`,
+/// `error` and `ready`.
+Future<Map<String, dynamic>> getMapJob(String jobId) async {
+  final res = await _handleUnauthorized(
+    () => http.get(_u('/maps/jobs/$jobId'), headers: _headers()),
+  );
+  if (res.statusCode != 200) {
+    throw Exception('HTTP ${res.statusCode}');
+  }
+  return jsonDecode(res.body) as Map<String, dynamic>;
+}
+
+/// Download the finished `11.zip` of a map-build job. Single-use on the
+/// server: the job is consumed by this call.
+Future<Uint8List> downloadMapZip(String jobId) async {
+  final token = _authToken;
+  if (token == null) throw Exception('Not authenticated');
+  final res = await _handleUnauthorized(
+    () => http.get(
+      _u('/maps/jobs/$jobId/download'),
+      headers: {'Authorization': 'Bearer $token'},
+    ),
+  );
+  if (res.statusCode != 200) {
+    throw Exception('HTTP ${res.statusCode}');
+  }
+  return res.bodyBytes;
 }

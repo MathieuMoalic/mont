@@ -23,3 +23,5 @@ gadgetbridge_export/
 
 .agent/
 .zcodeignore
+/.zcode/
+/gpx2img/

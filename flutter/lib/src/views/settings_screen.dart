@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../api.dart' as api;
 import '../auth.dart';
 import 'login_page.dart';
+import 'watch_maps_screen.dart';
 
 const String kSmoothingKey = 'chart_smoothing';
 const int kSmoothingDefault = 5;
@@ -24,12 +25,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String? _serverVersion;
   List<Map<String, dynamic>>? _bleLog;
   bool _bleLogLoading = false;
+  bool? _mapsReady;
 
   @override
   void initState() {
     super.initState();
     _load();
     _loadBleLog();
+    _loadMapsReady();
+  }
+
+  Future<void> _loadMapsReady() async {
+    try {
+      final ready = await api.mapsReady();
+      if (!mounted) return;
+      setState(() => _mapsReady = ready);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _mapsReady = false);
+    }
   }
 
   Future<void> _load() async {
@@ -57,7 +71,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _loadBleLog() async {
     setState(() => _bleLogLoading = true);
     try {
-      final entries = await api.getBleSyncLog();
+      final entries = await api.getBleSyncLog(limit: 20);
       if (!mounted) return;
       setState(() => _bleLog = entries.cast<Map<String, dynamic>>());
     } catch (_) {
@@ -335,6 +349,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          if (_mapsReady == true) ...[
+            const Text(
+              'Watch maps',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            const SizedBox(height: 16),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.map_outlined),
+              title: const Text('Watch map tiles'),
+              subtitle: const Text(
+                'Build Zepp OS map tiles (11/x/y.img) from a GPX route',
+              ),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const WatchMapsScreen()),
+              ),
+            ),
+            const SizedBox(height: 32),
+          ],
           const Text(
             'Charts',
             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
