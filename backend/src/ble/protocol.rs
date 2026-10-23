@@ -65,6 +65,17 @@ pub enum RelayEvent {
         platform: Option<String>,
         #[serde(default)]
         app_version: Option<String>,
+        /// Non-empty for watch-control sessions (Wi-Fi hotspot / FTP): the
+        /// actions to run after connecting, in order. The session skips the
+        /// health-fetch pipeline entirely.
+        #[serde(default)]
+        controls: Vec<crate::ble::controls::ControlAction>,
+        /// With `controls`: keep the BLE connection alive after the actions
+        /// complete (the watch drops the hotspot when the link goes down).
+        /// The client later sends `run_controls` with the stop actions and
+        /// `release: true`.
+        #[serde(default)]
+        hold: bool,
     },
     /// A device seen during scanning.
     ScanResult {
@@ -99,6 +110,13 @@ pub enum RelayEvent {
     },
     /// Free-form client diagnostic.
     Log { msg: String },
+    /// Run more watch-control actions on the live session (hold mode).
+    /// With `release`, the watch is released once they complete.
+    ControlsRun {
+        actions: Vec<crate::ble::controls::ControlAction>,
+        #[serde(default)]
+        release: bool,
+    },
 }
 
 /// Commands sent by the backend to the relay client.
@@ -131,6 +149,10 @@ pub enum RelayCommand {
     /// End the session; the client should clean up and close the socket.
     Shutdown {
         reason: String,
+    },
+    /// Final outcome of a watch-control session (one entry per action).
+    ControlsResult {
+        results: Vec<serde_json::Value>,
     },
 }
 

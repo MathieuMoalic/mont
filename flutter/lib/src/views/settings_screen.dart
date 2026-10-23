@@ -8,6 +8,7 @@ import '../api.dart' as api;
 import '../auth.dart';
 import 'login_page.dart';
 import 'watch_maps_screen.dart';
+import 'watch_transfer_section.dart';
 
 const String kSmoothingKey = 'chart_smoothing';
 const int kSmoothingDefault = 5;
@@ -366,6 +367,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 MaterialPageRoute(builder: (_) => const WatchMapsScreen()),
               ),
             ),
+            const SizedBox(height: 32),
+          ],
+          if (_bleLog != null) ...[
+            const Text(
+              'Watch transfer',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            const SizedBox(height: 16),
+            const WatchTransferSection(),
             const SizedBox(height: 32),
           ],
           const Text(

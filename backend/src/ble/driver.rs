@@ -15,6 +15,9 @@ use serde_json::json;
 
 use crate::ble::auth::{AuthOutcome, AuthSession};
 use crate::ble::codec::{ChunkedDecoder, ChunkedEncoder, chunked_ack};
+use crate::ble::controls::{
+    AuthStep as ControlAuthStep, ControlAction, ControlsAuth, FTP_ENDPOINT, WIFI_ENDPOINT,
+};
 use crate::ble::fetch::{FetchEvent, FetchTracker, FetchType};
 use crate::ble::parsers::{
     parse_activity_samples, parse_hr_marks, parse_hrv_samples, parse_sleep_sessions,
@@ -39,6 +42,13 @@ const FETCH_DATA_TIMEOUT: Duration = Duration::from_secs(30);
 const FETCH_ACK_TIMEOUT: Duration = Duration::from_secs(20);
 /// Max activity re-request rounds per session (GB uses 10).
 const FETCH_MAX_ROUNDS: u32 = 20;
+/// Waiting for a Wi-Fi/FTP control reply on `0x0003`/`0x0006`.
+const CONTROLS_REPLY_TIMEOUT: Duration = Duration::from_secs(30);
+/// Settle after a controls session completes (short — no data to flush).
+const CONTROLS_SETTLE: Duration = Duration::from_secs(3);
+/// How long a held transfer session keeps the watch connected before
+/// force-releasing it.
+const CONTROLS_HOLD_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 /// The only ack byte we ever send: "keep data on the watch" (0x01 would
 /// delete it and advance the watch's transfer pointer).
 const ACK_KEEP_DATA: u8 = 0x09;
@@ -60,6 +70,8 @@ enum Phase {
     Connected,
     Subscribed,
     Authenticating,
+    /// Watch-control session: ECDH session-key exchange + Wi-Fi/FTP actions.
+    Controls,
     Ready,
     Fetching,
 }
@@ -113,6 +125,30 @@ struct Session {
     finished: bool,
     /// Where this session was triggered from (app open, manual button, adb).
     source: String,
+    /// Watch-control session: actions still to run, in order.
+    control_actions: Vec<ControlAction>,
+    /// With `hold_controls`: release the watch after the queued actions.
+    release_after: bool,
+    /// In-flight action and its reply deadline.
+    pending_control: Option<(ControlAction, Instant)>,
+    /// Reply deadline for the in-flight handshake/action step.
+    control_deadline: Option<Instant>,
+    /// The MTU the watch granted (restored after the controls handshake).
+    negotiated_mtu: u16,
+    /// Per-action outcome for the final `controls_result` event.
+    control_results: Vec<serde_json::Value>,
+    /// ECDH handshake state for the controls session.
+    controls_auth: Option<ControlsAuth>,
+    /// Watch-advertised per-endpoint encryption (service list on `0x0000`).
+    service_encrypted: std::collections::HashMap<u16, bool>,
+    /// Hold mode: keep the BLE link alive while the user transfers files
+    /// (the watch drops the hotspot when the link goes down).
+    hold_controls: bool,
+    /// Set once the held session's start actions completed; release happens
+    /// on a client `run_controls` with `release: true`, or at the timeout.
+    controls_held: bool,
+    /// When the held session must be force-released.
+    hold_deadline: Option<Instant>,
 }
 
 /// Entry point for one relay session; runs until the socket closes or the
@@ -175,6 +211,17 @@ pub async fn run_session(socket: WebSocket, state: AppState, source: String) {
         started: Instant::now(),
         finished: false,
         source,
+        control_actions: Vec::new(),
+        release_after: false,
+        pending_control: None,
+        control_deadline: None,
+        negotiated_mtu: 23,
+        control_results: Vec::new(),
+        controls_auth: None,
+        service_encrypted: std::collections::HashMap::new(),
+        hold_controls: false,
+        controls_held: false,
+        hold_deadline: None,
     };
 
     let mut tick = tokio::time::interval(Duration::from_secs(1));
@@ -235,10 +282,21 @@ impl Session {
     }
 
     /// Handle one relay event. Returns `false` when the session should end.
+    #[allow(clippy::too_many_lines)] // one dispatcher, branches kept inline
     async fn handle_event(&mut self, event: RelayEvent) -> bool {
         match event {
-            RelayEvent::Hello { platform, .. } => {
-                tracing::info!("BLE session: client hello (platform {platform:?})");
+            RelayEvent::Hello {
+                platform,
+                controls,
+                hold,
+                ..
+            } => {
+                tracing::info!(
+                    "BLE session: client hello (platform {platform:?}, {} control actions, hold {hold})",
+                    controls.len()
+                );
+                self.control_actions = controls;
+                self.hold_controls = hold;
                 if let Some(mac) = self.state.config.ble_watch_mac.clone() {
                     tracing::info!("BLE session: direct connect to configured MAC {mac}");
                     self.device_mac = Some(mac.clone());
@@ -282,10 +340,25 @@ impl Session {
             }
             RelayEvent::Mtu { mtu } => {
                 tracing::info!("BLE session: negotiated mtu {mtu}");
+                self.negotiated_mtu = mtu;
                 self.encoder.set_mtu(mtu);
             }
             RelayEvent::Services { services } => {
-                let targets = subscribable_fee0_characteristics(&services);
+                // Control sessions subscribe like Gadgetbridge during init:
+                // only the chunked READ characteristic (+ the auth char for
+                // the legacy step); everything else is enabled post-auth.
+                let targets: Vec<String> = if self.control_actions.is_empty() {
+                    subscribable_fee0_characteristics(&services)
+                } else {
+                    subscribable_fee0_characteristics(&services)
+                        .into_iter()
+                        .filter(|uuid| {
+                            uuid.eq_ignore_ascii_case(CHUNKED_READ_CHAR)
+                                || uuid.eq_ignore_ascii_case(CHUNKED_WRITE_CHAR)
+                                || uuid.eq_ignore_ascii_case(AUTH_CHAR)
+                        })
+                        .collect()
+                };
                 if targets.is_empty() {
                     tracing::warn!("BLE session: no subscribable FEE0 characteristics found");
                 }
@@ -332,6 +405,19 @@ impl Session {
             RelayEvent::Log { msg } => {
                 tracing::debug!("BLE session client: {msg}");
             }
+            RelayEvent::ControlsRun { actions, release } => {
+                if !self.controls_held {
+                    tracing::warn!("BLE session: run_controls outside a held session, ignoring");
+                    return true;
+                }
+                tracing::info!(
+                    "BLE session: run_controls ({} actions, release {release})",
+                    actions.len()
+                );
+                self.release_after = release;
+                self.control_actions = actions;
+                Box::pin(self.run_next_control_action()).await;
+            }
         }
         true
     }
@@ -368,12 +454,19 @@ impl Session {
         match auth.on_response(data, &key) {
             AuthOutcome::Authenticated => {
                 self.authenticated = Some(true);
-                self.phase = Phase::Ready;
                 self.recorder.log(
                     FrameDir::Sys,
                     &json!({"event": "authenticated", "variant": format!("{:?}", auth_variant(data))}),
                 );
                 tracing::info!("BLE session: AUTHENTICATED (variant {data:02x?})");
+                if !self.control_actions.is_empty() {
+                    // This firmware wants the legacy char auth *before* the
+                    // ZeppOS session-key exchange — now run the ECDH step.
+                    tracing::info!("BLE session: controls mode — starting session-key handshake");
+                    self.start_controls_handshake().await;
+                    return true;
+                }
+                self.phase = Phase::Ready;
                 self.request_service_list().await;
                 self.start_fetch_phase().await;
             }
@@ -447,7 +540,19 @@ impl Session {
                                 .collect::<Vec<_>>()
                                 .join(", ")
                         );
+                        if !self.control_actions.is_empty() {
+                            // Controls mode: follow the watch's per-endpoint
+                            // encryption advertisement (GB `setEncrypted`).
+                            for (ep, enc) in &services {
+                                self.service_encrypted.insert(*ep, *enc == 1);
+                            }
+                            self.start_control_actions().await;
+                        }
                     }
+                } else if msg.endpoint == crate::ble::controls::AUTH_ENDPOINT {
+                    return self.handle_controls_auth_payload(&msg.payload).await;
+                } else if msg.endpoint == WIFI_ENDPOINT || msg.endpoint == FTP_ENDPOINT {
+                    return self.handle_control_reply(msg.endpoint, &msg.payload).await;
                 } else if msg.endpoint == 0x004b {
                     return self.handle_fetch_control(&msg.payload).await;
                 } else {
@@ -516,8 +621,15 @@ impl Session {
 
     /// Called once all subscribe commands have been acknowledged: start the
     /// auth handshake when possible, otherwise settle as a transport-only run.
+    /// Control sessions run the legacy char auth first (this firmware rejects
+    /// the session-key exchange without it), then the ECDH handshake.
     async fn after_subscribed(&mut self) {
         if self.phase != Phase::Subscribed {
+            return;
+        }
+        if !self.control_actions.is_empty() && self.auth_key.is_none() {
+            tracing::error!("BLE session: control actions need MONT_BLE_AUTH_KEY — aborting");
+            self.initiate_shutdown("auth_key_required").await;
             return;
         }
         if self.auth_key.is_some() && self.auth_char_subscribed {
@@ -528,11 +640,256 @@ impl Session {
                 .await;
             return;
         }
+        if !self.control_actions.is_empty() {
+            tracing::error!("BLE session: auth char unsubscribed — cannot run controls handshake");
+            self.initiate_shutdown("auth_unavailable").await;
+            return;
+        }
         tracing::info!(
             "BLE session: no auth key configured (or auth char unsubscribed) — transport-only run"
         );
         self.phase = Phase::Ready;
         self.settled_at = Some(Instant::now());
+    }
+
+    /// Kick off the `0x0082` ECDH session-key handshake (controls sessions).
+    ///
+    /// The handshake runs at MTU 23 (Gadgetbridge #3219: "Reset the MTU
+    /// before re-initializing the device, otherwise initialization will
+    /// sometimes fail") — the watch's auth path mishandles large frames.
+    async fn start_controls_handshake(&mut self) {
+        self.encoder.set_mtu(23);
+        match ControlsAuth::new() {
+            Ok((auth, start_payload)) => {
+                self.controls_auth = Some(auth);
+                self.phase = Phase::Controls;
+                self.control_deadline_set();
+                tracing::info!("BLE session: starting ZeppOS session-key handshake (0x0082)");
+                for frame in self
+                    .encoder
+                    .encode(crate::ble::controls::AUTH_ENDPOINT, &start_payload)
+                {
+                    self.send_write(CHUNKED_WRITE_CHAR, frame, true).await;
+                }
+            }
+            Err(e) => {
+                tracing::error!("BLE session: controls setup failed: {e}");
+                self.initiate_shutdown("controls_setup_failed").await;
+            }
+        }
+    }
+
+    // ── watch controls (Wi-Fi hotspot / FTP) ──────────────────────────────────
+
+    fn control_deadline_set(&mut self) {
+        self.control_deadline = Some(Instant::now() + CONTROLS_REPLY_TIMEOUT);
+    }
+
+    /// Feed one `0x0082` payload (ECDH session-key handshake).
+    /// Returns `false` when the session should end.
+    async fn handle_controls_auth_payload(&mut self, payload: &[u8]) -> bool {
+        let Some(auth_key) = self.auth_key else {
+            return true;
+        };
+        let Some(auth) = self.controls_auth.as_mut() else {
+            return true;
+        };
+        match auth.on_payload(payload, &auth_key) {
+            Ok(ControlAuthStep::Reply(reply)) => {
+                // Session key is derived — activate the codec cipher now so
+                // the confirmation and everything after it is protected.
+                let session_key = *auth.session_key();
+                let seq_nr = auth.initial_seq_nr();
+                self.encoder.set_encryption_parameters(seq_nr, session_key);
+                self.decoder.set_session_key(session_key);
+                tracing::info!(
+                    "BLE session: session key derived (seq {seq_nr}), sending confirmation"
+                );
+                for frame in self
+                    .encoder
+                    .encode(crate::ble::controls::AUTH_ENDPOINT, &reply)
+                {
+                    self.send_write(CHUNKED_WRITE_CHAR, frame, true).await;
+                }
+                true
+            }
+            Ok(ControlAuthStep::Authenticated) => {
+                self.control_deadline = None;
+                self.encoder.set_mtu(self.negotiated_mtu);
+                self.recorder
+                    .log(FrameDir::Sys, &json!({"event": "controls_authenticated"}));
+                tracing::info!("BLE session: watch controls AUTHENTICATED");
+                self.request_service_list().await;
+                true
+            }
+            Ok(ControlAuthStep::Failure(msg)) => {
+                tracing::error!("BLE session: controls auth failed: {msg}");
+                self.initiate_shutdown("controls_auth_failed").await;
+                false
+            }
+            Err(e) => {
+                tracing::error!("BLE session: controls auth protocol error: {e}");
+                self.initiate_shutdown("controls_auth_error").await;
+                false
+            }
+        }
+    }
+
+    /// Run the queued control actions (after the service list arrived).
+    async fn start_control_actions(&mut self) {
+        for endpoint in [WIFI_ENDPOINT, FTP_ENDPOINT] {
+            self.service_encrypted.entry(endpoint).or_insert(true);
+        }
+        self.run_next_control_action().await;
+    }
+
+    /// Pop the next action and send it (or finish the session).
+    async fn run_next_control_action(&mut self) {
+        self.control_deadline = None;
+        let Some(action) = self.control_actions.first().cloned() else {
+            self.controls_complete().await;
+            return;
+        };
+        self.control_actions.remove(0);
+        let Ok(payload) = action.payload() else {
+            let e = action.payload().err().unwrap_or_default();
+            tracing::error!("BLE session: invalid control action {}: {e}", action.name());
+            self.control_results.push(json!({
+                "action": action.name(),
+                "status": "invalid",
+                "error": e,
+            }));
+            Box::pin(self.run_next_control_action()).await;
+            return;
+        };
+        let endpoint = action.endpoint();
+        if !self.service_encrypted.contains_key(&endpoint) {
+            tracing::error!(
+                "BLE session: watch does not advertise endpoint 0x{endpoint:04x} — skipping {}",
+                action.name()
+            );
+            self.control_results.push(json!({
+                "action": action.name(),
+                "status": "unsupported",
+                "error": format!("endpoint 0x{endpoint:04x} not advertised by the watch"),
+            }));
+            Box::pin(self.run_next_control_action()).await;
+            return;
+        }
+        let encrypted = self
+            .service_encrypted
+            .get(&endpoint)
+            .copied()
+            .unwrap_or(true);
+        let frames = if encrypted && self.encoder.has_session_key() {
+            self.encoder.encode_encrypted(endpoint, &payload)
+        } else {
+            Ok(self.encoder.encode(endpoint, &payload))
+        };
+        match frames {
+            Ok(frames) => {
+                tracing::info!(
+                    "BLE session: control action {} (endpoint 0x{endpoint:04x}, encrypted {encrypted})",
+                    action.name()
+                );
+                self.pending_control = Some((action, Instant::now() + CONTROLS_REPLY_TIMEOUT));
+                for frame in frames {
+                    self.send_write(CHUNKED_WRITE_CHAR, frame, true).await;
+                }
+            }
+            Err(e) => {
+                tracing::error!("BLE session: control encode failed: {e}");
+                self.control_results.push(json!({
+                    "action": action.name(),
+                    "status": "error",
+                    "error": e,
+                }));
+                Box::pin(self.run_next_control_action()).await;
+            }
+        }
+    }
+
+    /// Handle a Wi-Fi (`0x13`) or FTP (`0x03`) reply.
+    async fn handle_control_reply(&mut self, endpoint: u16, payload: &[u8]) -> bool {
+        let Some((action, _)) = self.pending_control.take() else {
+            tracing::debug!(
+                "BLE session: control reply on 0x{endpoint:04x} with no pending action"
+            );
+            return true;
+        };
+        self.control_deadline = None;
+        let mut result = json!({"action": action.name(), "status": "ok"});
+        if endpoint == WIFI_ENDPOINT {
+            match super::controls::parse_hotspot_reply(payload) {
+                Ok(state) => {
+                    result["state"] = json!(match state {
+                        super::controls::HotspotState::Started => "started",
+                        super::controls::HotspotState::Stopped => "stopped",
+                    });
+                    tracing::info!("BLE session: hotspot {} → {state:?}", action.name());
+                }
+                Err(e) => {
+                    result["status"] = json!("error");
+                    result["error"] = json!(e);
+                }
+            }
+        } else {
+            match super::controls::parse_ftp_reply(payload) {
+                Ok(reply) => {
+                    result["state"] = json!(if reply.state == 0x02 {
+                        "started"
+                    } else {
+                        "stopped"
+                    });
+                    if let Some(address) = &reply.address {
+                        result["address"] = json!(address);
+                    }
+                    if let Some(username) = &reply.username {
+                        result["username"] = json!(username);
+                    }
+                    tracing::info!(
+                        "BLE session: ftp {} → state {:02x} address {:?} user {:?}",
+                        action.name(),
+                        reply.state,
+                        reply.address,
+                        reply.username
+                    );
+                }
+                Err(e) => {
+                    result["status"] = json!("error");
+                    result["error"] = json!(e);
+                }
+            }
+        }
+        self.control_results.push(result);
+        self.run_next_control_action().await;
+        true
+    }
+
+    /// All actions done: report to the client. Held sessions stay connected
+    /// (the watch drops the hotspot when the BLE link goes down) until the
+    /// client releases them or the hold timeout hits.
+    async fn controls_complete(&mut self) {
+        let results = self.control_results.clone();
+        tracing::info!(
+            "BLE session: control actions complete ({} results)",
+            results.len()
+        );
+        self.send(RelayCommand::ControlsResult { results }).await;
+        self.recorder.log(
+            FrameDir::Sys,
+            &json!({"event": "controls_result", "results": self.control_results}),
+        );
+        if self.hold_controls && !self.release_after {
+            self.controls_held = true;
+            self.hold_deadline = Some(Instant::now() + CONTROLS_HOLD_TIMEOUT);
+            tracing::info!(
+                "BLE session: holding the watch for the transfer ({} min cap)",
+                CONTROLS_HOLD_TIMEOUT.as_secs() / 60
+            );
+        } else {
+            self.settled_at = Some(Instant::now());
+        }
     }
 
     // ── health fetch engine ───────────────────────────────────────────────────
@@ -1116,6 +1473,27 @@ impl Session {
         if self.finished {
             return None;
         }
+        if let Some(deadline) = self.control_deadline
+            && Instant::now() >= deadline
+        {
+            self.control_deadline = None;
+            if let Some((action, _)) = self.pending_control.take() {
+                tracing::error!("BLE session: control action {} timed out", action.name());
+                self.control_results.push(json!({
+                    "action": action.name(),
+                    "status": "timeout",
+                }));
+                self.run_next_control_action().await;
+            }
+        }
+        if let Some(deadline) = self.hold_deadline
+            && Instant::now() >= deadline
+        {
+            tracing::warn!("BLE session: controls hold timeout — releasing the watch");
+            self.hold_deadline = None;
+            self.initiate_shutdown("hold_timeout").await;
+            return Some(Instant::now() + SHUTDOWN_GRACE);
+        }
         if self.fetch_deadline.is_some_and(|d| Instant::now() >= d) {
             self.fetch_deadline_hit().await;
         }
@@ -1125,7 +1503,11 @@ impl Session {
             self.initiate_shutdown("session_timeout").await;
             return Some(Instant::now() + SHUTDOWN_GRACE);
         }
-        let settle = Duration::from_secs(self.state.config.ble_settle_secs);
+        let settle = if self.is_controls_session() {
+            CONTROLS_SETTLE
+        } else {
+            Duration::from_secs(self.state.config.ble_settle_secs)
+        };
         if self.settled_at.is_some_and(|t| t.elapsed() > settle) {
             tracing::info!("BLE session: settle period complete, releasing device");
             if !self.finished {
@@ -1135,6 +1517,15 @@ impl Session {
             return Some(Instant::now() + SHUTDOWN_GRACE);
         }
         None
+    }
+
+    /// Whether this session is a watch-control session (not a health sync).
+    #[must_use]
+    const fn is_controls_session(&self) -> bool {
+        !self.control_actions.is_empty()
+            || self.pending_control.is_some()
+            || self.controls_auth.is_some()
+            || !self.control_results.is_empty()
     }
 
     fn name_matches(&self, name: &str) -> bool {
@@ -1214,9 +1605,41 @@ impl Session {
     /// Persist the sync history: one `ble_sync_log` row per meaningful fetch
     /// result (imports and failures; "no data" / duplicates are noise), plus a
     /// session-level failure row when a sync never got far enough to fetch.
+    #[allow(clippy::too_many_lines)] // row-mapping kept in one place
     async fn persist_sync_log(&self) {
         let now = store::rfc3339_utc(chrono::Utc::now().timestamp());
         let mut entries: Vec<store::SyncLogEntry> = Vec::new();
+        for r in &self.control_results {
+            let status = r["status"].as_str().unwrap_or("unknown");
+            let detail = match status {
+                "ok" => {
+                    let mut parts = vec![r["action"].as_str().unwrap_or("").to_string()];
+                    if let Some(address) = r["address"].as_str() {
+                        parts.push(format!("ftp {address}"));
+                    }
+                    if let Some(username) = r["username"].as_str() {
+                        parts.push(format!("user {username}"));
+                    }
+                    if let Some(state) = r["state"].as_str() {
+                        parts.push(state.to_string());
+                    }
+                    parts.join(" · ")
+                }
+                other => format!(
+                    "{}: {}",
+                    r["action"].as_str().unwrap_or(""),
+                    r["error"].as_str().unwrap_or(other)
+                ),
+            };
+            entries.push(store::SyncLogEntry {
+                ts: now.clone(),
+                source: self.source.clone(),
+                kind: "watch_transfer".to_string(),
+                status: status.to_string(),
+                stored: 0,
+                detail,
+            });
+        }
         for r in &self.fetch_results {
             let status = r["status"].as_str().unwrap_or("unknown");
             let kind =

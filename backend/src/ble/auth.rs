@@ -13,7 +13,7 @@
 //!    status byte `0x02` (or `0x25`) at index 2 = wrong key.
 
 use aes::Aes128;
-use aes::cipher::{BlockEncrypt, KeyInit, generic_array::GenericArray};
+use aes::cipher::{BlockDecrypt, BlockEncrypt, KeyInit, generic_array::GenericArray};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AuthState {
@@ -39,6 +39,15 @@ pub fn aes_ecb_block(key: &[u8; 16], block: &[u8; 16]) -> [u8; 16] {
     let cipher = Aes128::new(GenericArray::from_slice(key));
     let mut out = *GenericArray::from_slice(block);
     cipher.encrypt_block(&mut out);
+    out.into()
+}
+
+/// Decrypt one 16-byte block with AES-128-ECB/NoPadding.
+#[must_use]
+pub fn aes_ecb_decrypt(key: &[u8; 16], block: &[u8; 16]) -> [u8; 16] {
+    let cipher = Aes128::new(GenericArray::from_slice(key));
+    let mut out = *GenericArray::from_slice(block);
+    cipher.decrypt_block(&mut out);
     out.into()
 }
 

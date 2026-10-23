@@ -6,7 +6,9 @@
 
 pub mod auth;
 pub mod codec;
+pub mod controls;
 pub mod driver;
+pub mod ecdh_b163;
 pub mod fetch;
 pub mod parsers;
 pub mod protocol;

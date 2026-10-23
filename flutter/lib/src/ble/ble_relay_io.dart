@@ -33,17 +33,40 @@ Future<void> autoSyncIfTriggered() async {
     await trigger.delete();
 
     final timeoutSecs = (cfg['timeout_s'] as num?)?.toInt() ?? 240;
-    final outcome = await runRelaySession(
-      timeout: Duration(seconds: timeoutSecs),
-      source: 'adb',
-    );
+    final controls = (cfg['controls'] as List?)
+        ?.whereType<Map<String, dynamic>>()
+        .toList();
+    Map<String, dynamic> outcome;
+    if (controls != null && controls.isNotEmpty) {
+      // Watch-control session (Wi-Fi hotspot / FTP) instead of a sync.
+      if (cfg['hold'] == true) {
+        outcome = await startHeldWatchTransfer(
+          actions: controls,
+          timeout: Duration(seconds: timeoutSecs),
+        );
+      } else {
+        outcome = await runTransferSession(
+          actions: controls,
+          timeout: Duration(seconds: timeoutSecs),
+        );
+      }
+    } else {
+      outcome = await runRelaySession(
+        timeout: Duration(seconds: timeoutSecs),
+        source: 'adb',
+      );
+    }
 
     await File(
       '${dir.path}/ble_last_result.json',
     ).writeAsString(jsonEncode(outcome));
-    // Grep target for the adb debug loop.
+    // Grep targets for the adb debug loop.
     // ignore: avoid_print
     print('BLE_SYNC_RESULT: ${outcome['status']} reason=${outcome['reason']}');
+    if (outcome['controls_results'] != null) {
+      // ignore: avoid_print
+      print('BLE_CONTROLS_RESULT: ${jsonEncode(outcome['controls_results'])}');
+    }
   } catch (e) {
     // ignore: avoid_print
     print('BLE_SYNC_RESULT: fail reason=exception error=$e');
@@ -122,9 +145,82 @@ Future<Map<String, dynamic>> runRelaySession({
   return session.run();
 }
 
+/// Runs a watch-control session: connects to the watch and executes the
+/// given actions (Wi-Fi hotspot / FTP server toggles) via the backend. The
+/// returned outcome carries `controls_results` — one entry per action, with
+/// the FTP `address`/`username` on a successful FTP start.
+///
+/// With `hold: true` the session stays connected afterwards (the watch drops
+/// the hotspot when the BLE link goes down); call [releaseWatchTransfer] on
+/// the returned handle to run the stop actions and release the watch.
+Future<Map<String, dynamic>> runTransferSession({
+  required List<Map<String, dynamic>> actions,
+  Duration timeout = const Duration(seconds: 150),
+}) async {
+  final refreshed = await auth.Auth.tryRefresh();
+  if (!refreshed || auth.Auth.token == null) {
+    return {'status': 'fail', 'reason': 'no_auth'};
+  }
+  final wsBase = api.baseUrl.replaceFirst('http', 'ws');
+  final wsUrl = '$wsBase/ble/ws?token=${auth.Auth.token}&source=transfer';
+  final session = _RelaySession(wsUrl, timeout, controls: actions);
+  return session.run();
+}
+
+/// A live held transfer session (hotspot + FTP running on the watch).
+/// [release] runs the given stop actions on the same link and releases the
+/// watch. The handle dies if the session times out or the socket drops.
+class ActiveWatchTransfer {
+  final _RelaySession _session;
+
+  ActiveWatchTransfer._(this._session);
+
+  /// Whether the underlying session is still alive.
+  bool get isAlive => !_session.finished;
+
+  Future<Map<String, dynamic>> release(List<Map<String, dynamic>> actions) {
+    return _session.runMore(actions, release: true);
+  }
+}
+
+/// Starts a held transfer session: runs `actions` (typically hotspot_start +
+/// ftp_start) and keeps the watch connected so the hotspot stays up — the
+/// watch tears the hotspot down when the BLE link drops, so the session is
+/// held open (max 15 min) until [ActiveWatchTransfer.release] is called.
+///
+/// Resolves with the outcome of the start actions (carrying the FTP
+/// `address`/`username`) as soon as the watch confirms them.
+Future<Map<String, dynamic>> startHeldWatchTransfer({
+  required List<Map<String, dynamic>> actions,
+  Duration timeout = const Duration(minutes: 15),
+}) async {
+  final refreshed = await auth.Auth.tryRefresh();
+  if (!refreshed || auth.Auth.token == null) {
+    return {'status': 'fail', 'reason': 'no_auth'};
+  }
+  final wsBase = api.baseUrl.replaceFirst('http', 'ws');
+  final wsUrl = '$wsBase/ble/ws?token=${auth.Auth.token}&source=transfer';
+  final session = _RelaySession(wsUrl, timeout, controls: actions, hold: true);
+  activeWatchTransfer = ActiveWatchTransfer._(session);
+  unawaited(
+    session.run().catchError(
+      (Object _) => <String, dynamic>{'status': 'fail', 'reason': 'exception'},
+    ),
+  );
+  return session.firstResult.future;
+}
+
+/// The live held transfer session, if any (survives screen navigation).
+ActiveWatchTransfer? activeWatchTransfer;
+
 class _RelaySession {
   final String wsUrl;
   final Duration timeout;
+
+  /// Non-empty: watch-control session — actions run by the backend after
+  /// connecting; with [hold] the session stays open for further runs.
+  final List<Map<String, dynamic>> controls;
+  final bool hold;
 
   WebSocketChannel? _ws;
   BluetoothDevice? _device;
@@ -133,6 +229,8 @@ class _RelaySession {
   Timer? _deadline;
   Timer? _flushTimer;
   Completer<Map<String, dynamic>>? _done;
+  List<Map<String, dynamic>>? _controlsResults;
+  Completer<Map<String, dynamic>>? _runMoreDone;
 
   final List<Map<String, dynamic>> _pendingNotify = [];
   Future<void> _handling = Future.value();
@@ -145,7 +243,20 @@ class _RelaySession {
   int _notifyBytes = 0;
   int _framesSent = 0;
 
-  _RelaySession(this.wsUrl, this.timeout);
+  _RelaySession(
+    this.wsUrl,
+    this.timeout, {
+    this.controls = const [],
+    this.hold = false,
+  });
+
+  /// Held sessions: resolves with the first `controls_result` while the
+  /// session keeps running.
+  final Completer<Map<String, dynamic>> firstResult =
+      Completer<Map<String, dynamic>>();
+
+  /// Whether the session has ended (timeout, socket loss, release).
+  bool get finished => _finished;
 
   Future<Map<String, dynamic>> run() async {
     _done = Completer<Map<String, dynamic>>();
@@ -166,7 +277,11 @@ class _RelaySession {
         onError: (Object e) => _finish(ok: false, reason: 'ws_error:$e'),
       );
 
-      _sendEvent({'k': 'hello', 'platform': Platform.operatingSystem});
+      _sendEvent({
+        'k': 'hello',
+        'platform': Platform.operatingSystem,
+        if (controls.isNotEmpty) ...{'controls': controls, 'hold': hold},
+      });
 
       _subs.add(FlutterBluePlus.scanResults.listen(_onScanResults));
       _deadline = Timer(timeout, () => _finish(ok: false, reason: 'timeout'));
@@ -243,6 +358,26 @@ class _RelaySession {
             withoutResponse: cmd['without_response'] == true,
           );
           _ack(id, true);
+        case 'controls_result':
+          _controlsResults = (cmd['results'] as List? ?? const [])
+              .whereType<Map<String, dynamic>>()
+              .toList();
+          final result = {
+            'status': 'ok',
+            'reason': 'controls_done',
+            'controls_results': _controlsResults,
+          };
+          if (hold) {
+            // Held session: the watch stays connected. The first result
+            // resolves the caller; later ones resolve `runMore` calls.
+            if (!firstResult.isCompleted) {
+              firstResult.complete(result);
+            } else if (_runMoreDone != null && !_runMoreDone!.isCompleted) {
+              _runMoreDone!.complete(result);
+            }
+          } else {
+            _finish(ok: true, reason: 'controls_done');
+          }
         case 'shutdown':
           _finish(ok: true, reason: 'shutdown:${cmd['reason'] ?? ''}');
         default:
@@ -445,7 +580,7 @@ class _RelaySession {
   void _finish({required bool ok, required String reason}) {
     if (_finished || _done == null || _done!.isCompleted) return;
     _finished = true;
-    _done!.complete({
+    final outcome = {
       'status': ok ? 'ok' : 'fail',
       'reason': reason,
       'phase': _phase,
@@ -453,8 +588,29 @@ class _RelaySession {
       'notify_frames': _notifyFrames,
       'notify_bytes': _notifyBytes,
       'frames_sent': _framesSent,
+      if (_controlsResults != null) 'controls_results': _controlsResults,
       'finished_at': DateTime.now().toUtc().toIso8601String(),
-    });
+    };
+    if (hold && !firstResult.isCompleted) {
+      // The session died before the actions finished — still resolve the
+      // caller so the UI does not hang.
+      firstResult.complete(outcome);
+    }
+    _done!.complete(outcome);
+  }
+
+  /// Held sessions: run more control actions on the live connection.
+  /// With `release: true` the watch is released once they complete.
+  Future<Map<String, dynamic>> runMore(
+    List<Map<String, dynamic>> actions, {
+    bool release = false,
+  }) {
+    if (_finished) {
+      return Future.value({'status': 'fail', 'reason': 'session_ended'});
+    }
+    _runMoreDone = Completer<Map<String, dynamic>>();
+    _sendEvent({'k': 'run_controls', 'actions': actions, 'release': release});
+    return _runMoreDone!.future;
   }
 
   Future<void> _cleanup() async {
