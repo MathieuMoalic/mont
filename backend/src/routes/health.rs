@@ -4,7 +4,7 @@ use axum::{
     http::StatusCode,
 };
 use base64::Engine;
-use chrono::NaiveDate;
+use chrono::{NaiveDate, TimeZone};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -312,6 +312,16 @@ pub async fn morning(
         .ok()
         .and_then(|d| d.and_hms_opt(0, 0, 0))
         .map_or(0, |d| d.and_utc().timestamp());
+    // True local midnight for the sleep-session window: `sleep_sessions
+    // .midnight_ts` is a real epoch (the parser applies the watch's tz
+    // byte), unlike the local-as-UTC sample tables the rest of this
+    // handler queries — `and_utc()` here leaked the next day's session
+    // into the window by the UTC offset.
+    let local_day_start = chrono::NaiveDate::parse_from_str(&date, "%Y-%m-%d")
+        .ok()
+        .and_then(|d| d.and_hms_opt(0, 0, 0))
+        .and_then(|d| chrono::Local.from_local_datetime(&d).single())
+        .map_or(0, |d| d.timestamp());
 
     // ── sleep: the watch's own session for this wake-up date (naps share the
     // same midnight; keep the session with the most asleep minutes). The
@@ -325,8 +335,8 @@ pub async fn morning(
          WHERE midnight_ts >= ? - 172800 AND midnight_ts < ? + 86400 \
          ORDER BY midnight_ts DESC, ts DESC",
     )
-    .bind(day_start)
-    .bind(day_start)
+    .bind(local_day_start)
+    .bind(local_day_start)
     .fetch_all(pool)
     .await
     .unwrap_or_default();
