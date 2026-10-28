@@ -311,6 +311,22 @@ class _MorningScreenState extends State<MorningScreen> {
     return '${h.toString().padLeft(2, '0')}:00';
   }
 
+  /// Precise clock label ("23:41") for tooltips — keeps minutes.
+  String _clockPrecise(double hours) {
+    final mins = ((hours * 60).round() % 1440 + 1440) % 1440;
+    final h = (mins ~/ 60).toString().padLeft(2, '0');
+    final m = (mins % 60).toString().padLeft(2, '0');
+    return '$h:$m';
+  }
+
+  /// Largest whole-hour step that still gives ~5 ticks for `span` hours.
+  double _xInterval(double span) {
+    for (final step in [1.0, 2.0, 3.0, 4.0, 6.0, 8.0, 12.0]) {
+      if (step >= span / 5) return step;
+    }
+    return 12.0;
+  }
+
   /// Largest round step that still gives ~4 grid lines for `span`.
   double _niceInterval(double span) {
     for (final step in [
@@ -380,14 +396,15 @@ class _MorningScreenState extends State<MorningScreen> {
   bool _onGrid(double v, double interval) =>
       ((v / interval).roundToDouble() * interval - v).abs() < 0.01;
 
-  /// Touch feedback for the charts: a tooltip with the clock time and value.
+  /// Touch feedback for the charts: a tooltip with the precise clock time
+  /// and value.
   LineTouchData _touch() => LineTouchData(
     enabled: true,
     touchTooltipData: LineTouchTooltipData(
       getTooltipItems: (spots) => spots
           .map(
             (s) => LineTooltipItem(
-              '${_clockLabel(s.x)} · ${s.y.round()}',
+              '${_clockPrecise(s.x)} · ${s.y.round()}',
               Theme.of(context).textTheme.bodySmall ?? const TextStyle(),
             ),
           )
@@ -435,7 +452,6 @@ class _MorningScreenState extends State<MorningScreen> {
     var plotted = spots.where((s) => s.x >= 0 && s.x <= 8.25).toList();
     var xMin = 0.0;
     var xMax = 8.25;
-    var xInterval = 2.0;
     if (useSleepWindow) {
       final inWindow = spots
           .where((s) => s.x >= sleepStartHours && s.x <= sleepEndHours)
@@ -446,6 +462,7 @@ class _MorningScreenState extends State<MorningScreen> {
         xMax = sleepEndHours;
       }
     }
+    final xInterval = _xInterval(xMax - xMin);
     final visibleValues = plotted.map((s) => s.y).toList();
     final yMin = visibleValues.isEmpty
         ? 0.0
@@ -547,9 +564,21 @@ class _MorningScreenState extends State<MorningScreen> {
         .clamp(30.0, 60.0)
         .toDouble();
     final yMax = (((dataMax + 15) / 10).ceil() * 10)
-        .clamp(100.0, 220.0)
+        .clamp(60.0, 220.0)
         .toDouble();
     final yInterval = _niceInterval(yMax - yMin);
+
+    // X axis hugs the data: whole-hour bounds around the first/last sample
+    // instead of a fixed 0–24 h span that is mostly empty during the day.
+    final xs = spots.map((s) => s.x).toList();
+    final xMin = xs.isEmpty
+        ? 0.0
+        : xs.reduce((a, b) => a < b ? a : b).floorToDouble();
+    var xMax = xs.isEmpty
+        ? 24.0
+        : xs.reduce((a, b) => a > b ? a : b).ceilToDouble();
+    if (xMax - xMin < 1) xMax = xMin + 1;
+    final xInterval = _xInterval(xMax - xMin);
 
     return _card(
       child: Column(
@@ -560,19 +589,19 @@ class _MorningScreenState extends State<MorningScreen> {
               height: 180,
               child: LineChart(
                 LineChartData(
-                  minX: 0,
-                  maxX: 24,
+                  minX: xMin,
+                  maxX: xMax,
                   minY: yMin,
                   maxY: yMax,
                   titlesData: _titles(
-                    xInterval: 6,
+                    xInterval: xInterval,
                     yInterval: yInterval,
                     unit: '',
-                    hideLabelAtX: 24,
+                    hideLabelAtX: xMax,
                   ),
                   gridData: FlGridData(
                     show: true,
-                    verticalInterval: 6,
+                    verticalInterval: xInterval,
                     horizontalInterval: yInterval,
                     getDrawingHorizontalLine: (v) =>
                         const FlLine(color: Colors.white12, strokeWidth: 1),
