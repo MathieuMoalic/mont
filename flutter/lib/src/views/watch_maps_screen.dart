@@ -52,6 +52,7 @@ class _WatchMapsScreenState extends State<WatchMapsScreen> {
   bool _downloading = false;
   bool _uploading = false;
   bool _sending = false;
+  bool _autoUpload = false; // build-then-upload ("with tiles" button)
   Uint8List? _zipBytes;
   Timer? _pollTimer;
 
@@ -137,6 +138,27 @@ class _WatchMapsScreenState extends State<WatchMapsScreen> {
 
   bool get _jobActive => _status == 'queued' || _status == 'running';
 
+  /// "With map tiles" — builds the tile set, then auto-installs it on the
+  /// watch (hotspot + FTP). Needs the hotspot credentials from Settings.
+  Future<void> _buildAndUpload() async {
+    if (_gpx == null || _jobActive || _uploading || _sending) return;
+    final prefs = await SharedPreferences.getInstance();
+    final ssid = (prefs.getString(kHotspotSsidKey) ?? '').trim();
+    final password = prefs.getString(kHotspotPasswordKey) ?? '';
+    if (ssid.isEmpty || password.length < 8) {
+      setState(() {
+        _sendError =
+            'Set the hotspot name and password first (Advanced → Watch Wi-Fi)';
+      });
+      return;
+    }
+    setState(() {
+      _sendError = null;
+      _autoUpload = true;
+    });
+    await _startJob();
+  }
+
   Future<void> _startJob() async {
     final gpx = _gpx;
     if (gpx == null || _jobActive) return;
@@ -199,6 +221,10 @@ class _WatchMapsScreenState extends State<WatchMapsScreen> {
       if (status == 'done' || status == 'error') {
         _pollTimer?.cancel();
       }
+      if (status == 'done' && _autoUpload) {
+        _autoUpload = false;
+        unawaited(_uploadToWatch());
+      }
     } catch (_) {
       // Transient network hiccup: keep polling until the job resolves.
     }
@@ -245,6 +271,10 @@ class _WatchMapsScreenState extends State<WatchMapsScreen> {
     final ssid = (prefs.getString(kHotspotSsidKey) ?? '').trim();
     final password = prefs.getString(kHotspotPasswordKey) ?? '';
     if (ssid.isEmpty || password.length < 8) {
+      setState(() {
+        _sendError =
+            'Set the hotspot name and password first (Advanced → Watch Wi-Fi)';
+      });
       _log(
         'Set the hotspot name and password in Settings → Watch transfer first',
       );
@@ -293,113 +323,80 @@ class _WatchMapsScreenState extends State<WatchMapsScreen> {
   @override
   Widget build(BuildContext context) {
     final ready = _serverReady;
+    final idle = !_jobActive && !_uploading && !_sending;
+    Widget spinner() => const SizedBox(
+      width: 16,
+      height: 16,
+      child: CircularProgressIndicator(strokeWidth: 2),
+    );
     return Scaffold(
-      appBar: AppBar(title: const Text('Watch map tiles')),
+      appBar: AppBar(title: const Text('Watch maps')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           if (ready == null)
             const Center(child: CircularProgressIndicator())
-          else if (!ready)
-            const Card(
-              child: Padding(
-                padding: EdgeInsets.all(16),
-                child: Text(
-                  'This server is not configured for map builds: it needs '
-                  'MONT_MKGMAP_JAR plus the java and osmium binaries.',
-                ),
-              ),
-            )
           else ...[
             ListTile(
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.route_outlined),
               title: Text(_gpx?.name ?? 'No GPX selected'),
-              subtitle: const Text('Pick the route to cover with map tiles'),
+              subtitle: const Text('Pick a GPX route to upload'),
               trailing: TextButton(
                 onPressed: _pickGpx,
                 child: const Text('Pick'),
               ),
             ),
-            DropdownButtonFormField<String>(
-              initialValue: _style,
-              decoration: const InputDecoration(labelText: 'Map style'),
-              items: _styles
-                  .map(
-                    (s) =>
-                        DropdownMenuItem(value: s.value, child: Text(s.label)),
-                  )
-                  .toList(),
-              onChanged: (v) {
-                if (v != null) setState(() => _style = v);
-              },
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: TextFormField(
-                    controller: _bufferCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Buffer km',
-                      hintText: 'Padding around the route',
-                    ),
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                    ),
-                    enabled: !_jobActive,
-                  ),
+            if (ready == false)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  'Map tile builds are not available on this server '
+                  '(needs MONT_MKGMAP_JAR + java/osmium) — route-only '
+                  'upload still works.',
+                  style: const TextStyle(color: Colors.grey),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextFormField(
-                    controller: _overlapCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Overlap degrees',
-                      hintText: 'Per-tile extraction padding',
-                    ),
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                    ),
-                    enabled: !_jobActive,
-                  ),
-                ),
-              ],
-            ),
-            CheckboxListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Refresh OSM cache'),
-              subtitle: const Text(
-                'Re-download Geofabrik data instead of using the cache',
               ),
-              value: _refreshOsm,
-              onChanged: _jobActive
-                  ? null
-                  : (v) => setState(() => _refreshOsm = v ?? false),
-            ),
-            const SizedBox(height: 8),
-            FilledButton.icon(
-              onPressed: (_gpx != null && !_jobActive) ? _startJob : null,
-              icon: const Icon(Icons.build_outlined),
-              label: Text(_jobActive ? 'Building...' : 'Generate tiles'),
-            ),
-            const SizedBox(height: 8),
-            // Route-only BLE transfer: no map build, no hotspot — sends the
-            // GPX route file to the watch's route list directly.
-            OutlinedButton.icon(
-              onPressed:
-                  (_gpx != null && !_sending && !_jobActive && _bleSupported)
-                  ? _sendRoute
-                  : null,
-              icon: _sending
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.navigation_outlined),
-              label: const Text('Send route to watch (BLE)'),
-            ),
+            const SizedBox(height: 4),
+            if (WatchMapInstaller.isSupported) ...[
+              FilledButton.icon(
+                onPressed: (_gpx != null && idle && ready == true)
+                    ? _buildAndUpload
+                    : null,
+                icon: (_jobActive || _uploading)
+                    ? spinner()
+                    : const Icon(Icons.map_outlined),
+                label: Text(
+                  _jobActive
+                      ? 'Building tiles…'
+                      : _uploading
+                      ? 'Uploading tiles…'
+                      : 'Upload with map tiles',
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+            if (_bleSupported) ...[
+              FilledButton.tonalIcon(
+                onPressed: (_gpx != null && idle) ? _sendRoute : null,
+                icon: _sending
+                    ? spinner()
+                    : const Icon(Icons.navigation_outlined),
+                label: Text(
+                  _sending ? 'Sending route…' : 'Upload route only (no tiles)',
+                ),
+              ),
+              const SizedBox(height: 4),
+            ],
+            if (!WatchMapInstaller.isSupported && !_bleSupported)
+              const Padding(
+                padding: EdgeInsets.only(top: 8),
+                child: Text(
+                  'Route upload needs an Android or iOS device. On the web you '
+                  'can still build tiles and download the ZIP (Advanced).',
+                  style: TextStyle(color: Colors.grey),
+                ),
+              ),
             if (_sendError != null)
               Padding(
                 padding: const EdgeInsets.only(top: 6),
@@ -408,39 +405,101 @@ class _WatchMapsScreenState extends State<WatchMapsScreen> {
                   style: const TextStyle(color: Colors.redAccent),
                 ),
               ),
-            const SizedBox(height: 16),
-            _logPanel(),
-            if (_status == 'done') ...[
-              const SizedBox(height: 16),
-              if (WatchMapInstaller.isSupported) ...[
-                FilledButton.icon(
-                  onPressed: (_downloading || _uploading || _zipBytes != null)
-                      ? null
-                      : _uploadToWatch,
-                  icon: _uploading
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.upload_outlined),
-                  label: const Text('Upload to watch'),
+            const SizedBox(height: 8),
+            ExpansionTile(
+              initiallyExpanded: false,
+              childrenPadding: const EdgeInsets.fromLTRB(0, 0, 0, 8),
+              title: const Text('Advanced'),
+              subtitle: const Text(
+                'Tile settings, manual transfer, Wi-Fi, logs',
+              ),
+              children: [
+                DropdownButtonFormField<String>(
+                  initialValue: _style,
+                  decoration: const InputDecoration(labelText: 'Map style'),
+                  items: _styles
+                      .map(
+                        (s) => DropdownMenuItem(
+                          value: s.value,
+                          child: Text(s.label),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (v) {
+                    if (v != null) setState(() => _style = v);
+                  },
                 ),
                 const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: _bufferCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Buffer km',
+                          hintText: 'Padding around the route',
+                        ),
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        enabled: !_jobActive,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextFormField(
+                        controller: _overlapCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Overlap degrees',
+                          hintText: 'Per-tile extraction padding',
+                        ),
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        enabled: !_jobActive,
+                      ),
+                    ),
+                  ],
+                ),
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Refresh OSM cache'),
+                  subtitle: const Text(
+                    'Re-download Geofabrik data instead of using the cache',
+                  ),
+                  value: _refreshOsm,
+                  onChanged: _jobActive
+                      ? null
+                      : (v) => setState(() => _refreshOsm = v ?? false),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: (_gpx != null && !_jobActive) ? _startJob : null,
+                  icon: const Icon(Icons.build_outlined),
+                  label: Text(
+                    _jobActive ? 'Building...' : 'Generate tiles only',
+                  ),
+                ),
+                if (_status == 'done') ...[
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: (_downloading || _uploading || _zipBytes != null)
+                        ? null
+                        : _download,
+                    icon: const Icon(Icons.download_outlined),
+                    label: const Text('Download 11.zip'),
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'The built ZIP is single-use — start a new build to '
+                    'transfer or download again.',
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                ],
+                const SizedBox(height: 12),
+                _logPanel(),
               ],
-              OutlinedButton.icon(
-                onPressed: (_downloading || _uploading || _zipBytes != null)
-                    ? null
-                    : _download,
-                icon: const Icon(Icons.download_outlined),
-                label: const Text('Download 11.zip'),
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                'The built ZIP is single-use — start a new build to transfer or download again.',
-                style: TextStyle(fontSize: 12, color: Colors.grey),
-              ),
-            ],
+            ),
           ],
         ],
       ),

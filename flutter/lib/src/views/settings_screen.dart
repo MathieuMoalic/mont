@@ -359,9 +359,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ListTile(
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.map_outlined),
-              title: const Text('Watch map tiles'),
+              title: const Text('Watch maps'),
               subtitle: const Text(
-                'Build Zepp OS map tiles (11/x/y.img) from a GPX route',
+                'Upload a GPX route to the watch — with or without map tiles',
               ),
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const WatchMapsScreen()),
@@ -370,13 +370,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: 32),
           ],
           if (_bleLog != null) ...[
-            const Text(
-              'Watch transfer',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            const SizedBox(height: 8),
+            ExpansionTile(
+              leading: const Icon(Icons.wifi_tethering_outlined),
+              title: const Text('Watch Wi-Fi / FTP'),
+              subtitle: const Text('Manual hotspot & transfer controls'),
+              children: const [WatchTransferSection()],
             ),
-            const SizedBox(height: 16),
-            const WatchTransferSection(),
-            const SizedBox(height: 32),
+            const SizedBox(height: 24),
           ],
           const Text(
             'Charts',

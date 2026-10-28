@@ -49,12 +49,17 @@ Future<void> autoSyncIfTriggered() async {
     Map<String, dynamic> outcome;
     if (controls != null && controls.isNotEmpty) {
       // Watch-control session (Wi-Fi hotspot / FTP) instead of a sync.
+      // Block app-open syncs for the whole session: the GATT link serves
+      // one session at a time, and a held session outlives its actions
+      // (the flag clears in the relay session's _finish).
+      _watchBusy = true;
       if (cfg['hold'] == true) {
         outcome = await startHeldWatchTransfer(
           actions: controls,
           timeout: Duration(seconds: timeoutSecs),
         );
       } else {
+        _watchBusy = false;
         outcome = await runTransferSession(
           actions: controls,
           timeout: Duration(seconds: timeoutSecs),
@@ -100,7 +105,7 @@ Future<String> startManualSync() async {
 /// less than 10 minutes ago, on non-BLE platforms, or when not logged in.
 Future<void> autoSyncOnAppOpen() async {
   if (!kDebugMode && !Platform.isAndroid && !Platform.isIOS) return;
-  if (_mapInstallRunning) return; // watch is busy with the map install
+  if (_mapInstallRunning || _watchBusy) return; // watch is busy
   if (auth.Auth.refreshToken == null || auth.Auth.refreshToken!.isEmpty) {
     return;
   }
@@ -296,6 +301,10 @@ ActiveWatchTransfer? activeWatchTransfer;
 
 /// Set while the adb-triggered map install runs (blocks app-open syncs).
 bool _mapInstallRunning = false;
+
+/// Set while any adb-triggered watch session (controls/transfer) runs —
+/// the GATT link serves one session at a time.
+bool _watchBusy = false;
 
 class _RelaySession {
   final String wsUrl;
@@ -664,6 +673,9 @@ class _RelaySession {
   void _finish({required bool ok, required String reason}) {
     if (_finished || _done == null || _done!.isCompleted) return;
     _finished = true;
+    // A held session outlives its actions — release the watch-busy block
+    // only when the BLE link itself is gone.
+    _watchBusy = false;
     final outcome = {
       'status': ok ? 'ok' : 'fail',
       'reason': reason,
