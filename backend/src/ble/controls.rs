@@ -11,6 +11,7 @@
 
 use super::auth::aes_ecb_block;
 use super::ecdh_b163;
+use super::file_transfer::FILE_TRANSFER_ENDPOINT;
 
 pub const WIFI_ENDPOINT: u16 = 0x0003;
 pub const FTP_ENDPOINT: u16 = 0x0006;
@@ -36,6 +37,14 @@ pub enum ControlAction {
     FtpStart { root_dir: String },
     /// Stop the FTP server.
     FtpStop,
+    /// Send a GPX route file to the watch over the BLE file-transfer
+    /// service; it appears in the watch's route/navigation list. `name` is
+    /// the track name shown on the watch; `data` is the raw GPX.
+    FileSend {
+        name: String,
+        #[serde(with = "crate::ble::protocol::serde_b64")]
+        data: Vec<u8>,
+    },
 }
 
 impl ControlAction {
@@ -45,6 +54,8 @@ impl ControlAction {
         match self {
             Self::HotspotStart { .. } | Self::HotspotStop => WIFI_ENDPOINT,
             Self::FtpStart { .. } | Self::FtpStop => FTP_ENDPOINT,
+            // Capabilities/request frames; V3 data chunks use char 0x23.
+            Self::FileSend { .. } => FILE_TRANSFER_ENDPOINT,
         }
     }
 
@@ -56,13 +67,17 @@ impl ControlAction {
             Self::HotspotStop => "hotspot_stop".to_string(),
             Self::FtpStart { root_dir } => format!("ftp_start({root_dir})"),
             Self::FtpStop => "ftp_stop".to_string(),
+            Self::FileSend { name, .. } => format!("file_send({name})"),
         }
     }
 
     /// Build the request payload (`[cmd]` + arguments, NUL-terminated).
+    /// Only used for single-frame actions — `FileSend` runs the multi-step
+    /// file-transfer protocol instead.
     ///
     /// # Errors
-    /// The action arguments are invalid (empty SSID, short password).
+    /// The action arguments are invalid (empty SSID, short password), or
+    /// the action is multi-step.
     pub fn payload(&self) -> Result<Vec<u8>, String> {
         match self {
             Self::HotspotStart { ssid, password } => {
@@ -91,6 +106,9 @@ impl ControlAction {
                 Ok(payload)
             }
             Self::FtpStop => Ok(vec![0x02]),
+            Self::FileSend { .. } => {
+                Err("file transfers use the multi-step file-transfer protocol".to_string())
+            }
         }
     }
 }

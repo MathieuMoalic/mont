@@ -53,3 +53,8 @@ android {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    // FTP client for the watch Wi-Fi map upload (bound to the watch network).
+    implementation("commons-net:commons-net:3.11.0")
+}

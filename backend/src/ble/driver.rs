@@ -19,6 +19,7 @@ use crate::ble::controls::{
     AuthStep as ControlAuthStep, ControlAction, ControlsAuth, FTP_ENDPOINT, WIFI_ENDPOINT,
 };
 use crate::ble::fetch::{FetchEvent, FetchTracker, FetchType};
+use crate::ble::file_transfer::{FILE_TRANSFER_ENDPOINT, FileSendStep, FileTransfer};
 use crate::ble::parsers::{
     parse_activity_samples, parse_hr_marks, parse_hrv_samples, parse_sleep_sessions,
     parse_stress_samples,
@@ -49,6 +50,8 @@ const CONTROLS_SETTLE: Duration = Duration::from_secs(3);
 /// How long a held transfer session keeps the watch connected before
 /// force-releasing it.
 const CONTROLS_HOLD_TIMEOUT: Duration = Duration::from_secs(15 * 60);
+/// FT transfer steps can be slow: the watch preps its flash first.
+const FT_REPLY_TIMEOUT: Duration = Duration::from_secs(120);
 /// The only ack byte we ever send: "keep data on the watch" (0x01 would
 /// delete it and advance the watch's transfer pointer).
 const ACK_KEEP_DATA: u8 = 0x09;
@@ -61,7 +64,9 @@ pub const AUTH_CHAR: &str = "00000001-0000-3512-2118-0009af100700";
 pub const CHUNKED_WRITE_CHAR: &str = "00000016-0000-3512-2118-0009af100700";
 pub const CHUNKED_READ_CHAR: &str = "00000017-0000-3512-2118-0009af100700";
 pub const DATA_CHAR: &str = "00000005-0000-3512-2118-0009af100700";
-
+/// `ZeppOS` file-transfer V3: the watch notifies chunk acks here and the app
+/// writes data chunks here (Gadgetbridge `UUID_CHARACTERISTIC_..._V3_SEND`).
+pub const FT_V3_CHAR: &str = "00000023-0000-3512-2118-0009af100700";
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Phase {
     AwaitingHello,
@@ -149,11 +154,16 @@ struct Session {
     controls_held: bool,
     /// When the held session must be force-released.
     hold_deadline: Option<Instant>,
+    /// In-flight BLE file transfer (`FileSend` control action).
+    file_transfer: Option<FileTransfer>,
+    /// Track name of the in-flight file send (for logs/results).
+    file_send_name: Option<String>,
 }
 
 /// Entry point for one relay session; runs until the socket closes or the
 /// session times out. `source` records what triggered the sync (app open,
 /// manual button, adb debug trigger) for the sync history.
+#[allow(clippy::too_many_lines)] // session bootstrap; the loop body carries the rest
 pub async fn run_session(socket: WebSocket, state: AppState, source: String) {
     let recorder = match SessionRecorder::create(&state.config.ble_sessions_dir()) {
         Ok(r) => r,
@@ -222,6 +232,8 @@ pub async fn run_session(socket: WebSocket, state: AppState, source: String) {
         hold_controls: false,
         controls_held: false,
         hold_deadline: None,
+        file_transfer: None,
+        file_send_name: None,
     };
 
     let mut tick = tokio::time::interval(Duration::from_secs(1));
@@ -346,8 +358,9 @@ impl Session {
             RelayEvent::Services { services } => {
                 // Control sessions subscribe like Gadgetbridge during init:
                 // only the chunked READ characteristic (+ the auth char for
-                // the legacy step); everything else is enabled post-auth.
-                let targets: Vec<String> = if self.control_actions.is_empty() {
+                // the legacy step and the FT V3 char for route uploads);
+                // everything else is enabled post-auth.
+                let mut targets: Vec<String> = if self.control_actions.is_empty() {
                     subscribable_fee0_characteristics(&services)
                 } else {
                     subscribable_fee0_characteristics(&services)
@@ -356,9 +369,22 @@ impl Session {
                             uuid.eq_ignore_ascii_case(CHUNKED_READ_CHAR)
                                 || uuid.eq_ignore_ascii_case(CHUNKED_WRITE_CHAR)
                                 || uuid.eq_ignore_ascii_case(AUTH_CHAR)
+                                || uuid.eq_ignore_ascii_case(FT_V3_CHAR)
                         })
                         .collect()
                 };
+                // The file-transfer characteristics live in their own GATT
+                // service (00001530-…), not under fee0 — pick them up by
+                // explicit UUID so V3 chunk acks on 0x23 reach us.
+                if self
+                    .control_actions
+                    .iter()
+                    .any(|a| matches!(a, ControlAction::FileSend { .. }))
+                    && has_subscribable_characteristic(&services, FT_V3_CHAR)
+                    && !targets.iter().any(|t| t.eq_ignore_ascii_case(FT_V3_CHAR))
+                {
+                    targets.push(FT_V3_CHAR.to_string());
+                }
                 if targets.is_empty() {
                     tracing::warn!("BLE session: no subscribable FEE0 characteristics found");
                 }
@@ -432,6 +458,10 @@ impl Session {
         if char_uuid.eq_ignore_ascii_case(DATA_CHAR) {
             return self.handle_data_packet(data).await;
         }
+        // File-transfer V3 chunk acks arrive raw on the FT SEND char.
+        if char_uuid.eq_ignore_ascii_case(FT_V3_CHAR) {
+            return self.handle_ft_v3_ack(data).await;
+        }
         // The watch sends chunked frames and acks on both the write and the
         // notify characteristic (Gadgetbridge handles both the same way).
         if char_uuid.eq_ignore_ascii_case(CHUNKED_READ_CHAR)
@@ -440,6 +470,64 @@ impl Session {
             return self.handle_chunked_notification(data).await;
         }
         true
+    }
+
+    /// Handles a file-transfer V3 chunk ack notification
+    /// (`13 ‖ status ‖ chunkIndex ‖ unk`) on char `0x23`.
+    /// Returns `false` when the session should end.
+    async fn handle_ft_v3_ack(&mut self, data: &[u8]) -> bool {
+        let Some(ft) = self.file_transfer.as_mut() else {
+            tracing::debug!("BLE session: FT v3 ack but no transfer in flight, ignoring");
+            return true;
+        };
+        let mtu = self.negotiated_mtu;
+        match ft.on_data_ack(data, mtu) {
+            Ok(FileSendStep::Write {
+                frames,
+                char_0x23: true,
+                ..
+            }) => {
+                self.control_deadline_set_ft();
+                for frame in frames {
+                    self.send_write(FT_V3_CHAR, frame, false).await;
+                }
+                true
+            }
+            Ok(FileSendStep::Write { .. }) => {
+                tracing::error!("BLE session: FT v3 produced non-v3 frames");
+                self.fail_file_send("internal: non-v3 frames").await;
+                true
+            }
+            Ok(FileSendStep::Done) => {
+                self.file_transfer_done().await;
+                true
+            }
+            Err(e) => {
+                tracing::error!("BLE session: FT v3 ack error: {e}");
+                self.fail_file_send(&e).await;
+                true
+            }
+        }
+    }
+
+    /// Marks the in-flight file send failed and continues the action queue.
+    async fn fail_file_send(&mut self, error: &str) {
+        tracing::error!("BLE session: file send failed: {error}");
+        self.file_transfer = None;
+        self.control_deadline = None;
+        self.control_results.push(json!({
+            "action": self.current_control_name(),
+            "status": "error",
+            "error": error,
+        }));
+        Box::pin(self.run_next_control_action()).await;
+    }
+
+    /// The name of the control action currently being executed.
+    fn current_control_name(&self) -> String {
+        self.file_send_name
+            .clone()
+            .unwrap_or_else(|| "file_send".to_string())
     }
 
     async fn handle_auth_notification(&mut self, data: &[u8]) -> bool {
@@ -551,6 +639,8 @@ impl Session {
                     }
                 } else if msg.endpoint == crate::ble::controls::AUTH_ENDPOINT {
                     return self.handle_controls_auth_payload(&msg.payload).await;
+                } else if msg.endpoint == FILE_TRANSFER_ENDPOINT && self.file_transfer.is_some() {
+                    return self.handle_ft_chunked(&msg.payload).await;
                 } else if msg.endpoint == WIFI_ENDPOINT || msg.endpoint == FTP_ENDPOINT {
                     return self.handle_control_reply(msg.endpoint, &msg.payload).await;
                 } else if msg.endpoint == 0x004b {
@@ -679,10 +769,136 @@ impl Session {
         }
     }
 
+    // ── watch file transfer (GPX route → `.dat` over endpoint 0x000d) ────────
+
+    /// Sends a chunked-codec message on the FT endpoint, encrypted when the
+    /// watch advertises the endpoint as encrypted.
+    async fn send_ft_chunked(&mut self, payload: &[u8]) -> Result<(), String> {
+        let encrypted = self
+            .service_encrypted
+            .get(&FILE_TRANSFER_ENDPOINT)
+            .copied()
+            .unwrap_or(false);
+        let frames = if encrypted && self.encoder.has_session_key() {
+            self.encoder
+                .encode_encrypted(FILE_TRANSFER_ENDPOINT, payload)?
+        } else {
+            self.encoder.encode(FILE_TRANSFER_ENDPOINT, payload)
+        };
+        for frame in frames {
+            self.send_write(CHUNKED_WRITE_CHAR, frame, true).await;
+        }
+        Ok(())
+    }
+
+    /// Sends raw V3 data-part frames to the FT v3 characteristic.
+    async fn send_ft_v3_parts(&mut self, parts: &[Vec<u8>]) {
+        for part in parts {
+            self.send_write(FT_V3_CHAR, part.clone(), false).await;
+        }
+    }
+
+    /// Handles an endpoint-`0x000d` chunked payload while a file send runs.
+    /// Returns `false` when the session should end.
+    async fn handle_ft_chunked(&mut self, payload: &[u8]) -> bool {
+        let mtu = self.negotiated_mtu;
+        if payload.first() == Some(&0x02) {
+            // Capabilities response.
+            let step = {
+                let Some(ft) = self.file_transfer.as_mut() else {
+                    return true;
+                };
+                ft.on_capabilities(payload)
+            };
+            match step {
+                Ok(()) => {
+                    let request = {
+                        let Some(ft) = self.file_transfer.as_mut() else {
+                            return true;
+                        };
+                        ft.transfer_request()
+                    };
+                    match request {
+                        Ok(frames) => {
+                            tracing::info!("BLE session: FT transfer request sent");
+                            self.control_deadline_set_ft();
+                            if let Err(e) = self.send_ft_chunked(&frames).await {
+                                self.fail_file_send(&e).await;
+                            }
+                        }
+                        Err(e) => {
+                            self.fail_file_send(&e).await;
+                        }
+                    }
+                }
+                Err(e) => {
+                    self.fail_file_send(&format!("FT capabilities: {e}")).await;
+                }
+            }
+            return true;
+        }
+        if payload.first() == Some(&0x04) {
+            // Transfer response — from here the session key must exist.
+            let step = {
+                let Some(ft) = self.file_transfer.as_mut() else {
+                    return true;
+                };
+                ft.on_transfer_response(payload, mtu)
+            };
+            match step {
+                Ok(FileSendStep::Write {
+                    frames, char_0x23, ..
+                }) => {
+                    self.control_deadline_set_ft();
+                    if char_0x23 {
+                        self.send_ft_v3_parts(&frames).await;
+                    } else {
+                        for frame in frames {
+                            self.send_write(CHUNKED_WRITE_CHAR, frame, true).await;
+                        }
+                    }
+                }
+                Ok(FileSendStep::Done) => {
+                    // Watch confirmed the whole file — complete the action.
+                    tracing::info!("BLE session: FT transfer complete ✓");
+                    self.file_transfer_done().await;
+                }
+                Err(e) => {
+                    self.fail_file_send(&format!("FT transfer response: {e}"))
+                        .await;
+                }
+            }
+        }
+        true
+    }
+
+    /// Completes a successful file send: records the result and continues
+    /// the action queue.
+    async fn file_transfer_done(&mut self) {
+        let name = self
+            .file_send_name
+            .clone()
+            .unwrap_or_else(|| "route".to_string());
+        tracing::info!("BLE session: file send {name} complete ✓");
+        self.file_transfer = None;
+        self.control_deadline = None;
+        self.control_results.push(json!({
+            "action": format!("file_send({name})"),
+            "status": "ok",
+            "state": "sent",
+        }));
+        self.run_next_control_action().await;
+    }
+
     // ── watch controls (Wi-Fi hotspot / FTP) ──────────────────────────────────
 
     fn control_deadline_set(&mut self) {
         self.control_deadline = Some(Instant::now() + CONTROLS_REPLY_TIMEOUT);
+    }
+
+    /// FT steps can be slow: the watch prepares its flash before replying.
+    fn control_deadline_set_ft(&mut self) {
+        self.control_deadline = Some(Instant::now() + FT_REPLY_TIMEOUT);
     }
 
     /// Feed one `0x0082` payload (ECDH session-key handshake).
@@ -740,10 +956,15 @@ impl Session {
         for endpoint in [WIFI_ENDPOINT, FTP_ENDPOINT] {
             self.service_encrypted.entry(endpoint).or_insert(true);
         }
+        // The file-transfer endpoint is plain on this firmware (GB default).
+        self.service_encrypted
+            .entry(FILE_TRANSFER_ENDPOINT)
+            .or_insert(false);
         self.run_next_control_action().await;
     }
 
     /// Pop the next action and send it (or finish the session).
+    #[allow(clippy::too_many_lines)] // action dispatch kept inline
     async fn run_next_control_action(&mut self) {
         self.control_deadline = None;
         let Some(action) = self.control_actions.first().cloned() else {
@@ -751,6 +972,54 @@ impl Session {
             return;
         };
         self.control_actions.remove(0);
+
+        // File send: multi-step transfer over the FT service; the .dat
+        // encoding happens here (backend side) from the raw GPX bytes.
+        if let ControlAction::FileSend { name, data } = &action {
+            self.file_send_name = Some(name.clone());
+            let ts = chrono::Utc::now().timestamp();
+            let route = match crate::ble::gpx_route::parse_gpx_route(data) {
+                Ok(route) => route,
+                Err(e) => {
+                    self.control_results.push(json!({
+                        "action": action.name(),
+                        "status": "invalid",
+                        "error": e.to_string(),
+                    }));
+                    Box::pin(self.run_next_control_action()).await;
+                    return;
+                }
+            };
+            let dat = crate::ble::gpx_route::encode_route_dat(&route, ts, name);
+            if !self.service_encrypted.contains_key(&FILE_TRANSFER_ENDPOINT) {
+                self.control_results.push(json!({
+                    "action": action.name(),
+                    "status": "unsupported",
+                    "error": "endpoint 0x000d not advertised by the watch",
+                }));
+                Box::pin(self.run_next_control_action()).await;
+                return;
+            }
+            let filename = format!("track_{ts}.dat");
+            tracing::info!(
+                "BLE session: file send {} ({} bytes .dat) as {filename}",
+                name,
+                dat.len()
+            );
+            self.file_transfer = Some(FileTransfer::new(
+                crate::ble::file_transfer::ROUTE_SEND_URL.to_string(),
+                filename,
+                dat,
+            ));
+            // Capabilities request next; encryption followed from the list.
+            let caps = crate::ble::file_transfer::capabilities_request();
+            if let Err(e) = self.send_ft_chunked(&caps).await {
+                self.fail_file_send(&e).await;
+            }
+            self.control_deadline_set_ft();
+            return;
+        }
+
         let Ok(payload) = action.payload() else {
             let e = action.payload().err().unwrap_or_default();
             tracing::error!("BLE session: invalid control action {}: {e}", action.name());
@@ -1477,6 +1746,12 @@ impl Session {
             && Instant::now() >= deadline
         {
             self.control_deadline = None;
+            if self.file_transfer.is_some() {
+                // In-flight file send step timed out.
+                tracing::error!("BLE session: file send step timed out");
+                self.fail_file_send("file transfer step timed out").await;
+                return None;
+            }
             if let Some((action, _)) = self.pending_control.take() {
                 tracing::error!("BLE session: control action {} timed out", action.name());
                 self.control_results.push(json!({
@@ -1742,6 +2017,15 @@ fn subscribable_fee0_characteristics(services: &[ServiceInfo]) -> Vec<String> {
         .filter(|c: &&CharacteristicInfo| c.notify || c.indicate)
         .map(|c| c.uuid.clone())
         .collect()
+}
+
+/// Whether any service exposes this characteristic with notify/indicate.
+fn has_subscribable_characteristic(services: &[ServiceInfo], uuid: &str) -> bool {
+    services.iter().any(|s| {
+        s.characteristics
+            .iter()
+            .any(|c| c.uuid.eq_ignore_ascii_case(uuid) && (c.notify || c.indicate))
+    })
 }
 
 /// Parse a service-list response: `{0x04, u16 LE count, per service: u16 LE endpoint, u8 encrypted}`.

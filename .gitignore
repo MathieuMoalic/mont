@@ -25,3 +25,5 @@ gadgetbridge_export/
 .zcodeignore
 /.zcode/
 /gpx2img/
+
+backend/osm-cache/

@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
-mod serde_b64 {
+pub(crate) mod serde_b64 {
     use base64::Engine as _;
     use serde::{Deserialize, Deserializer, Serializer};
 

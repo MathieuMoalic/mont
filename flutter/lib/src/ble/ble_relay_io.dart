@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show File, Platform;
+import 'dart:io' show File, FileMode, Platform;
 
 import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -10,6 +10,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../api.dart' as api;
 import '../auth.dart' as auth;
+import '../watch_map_install.dart' as watch_map_install;
 
 /// Runs a BLE relay session when the debug trigger file exists.
 ///
@@ -31,6 +32,15 @@ Future<void> autoSyncIfTriggered() async {
       // malformed trigger: run with defaults
     }
     await trigger.delete();
+
+    // Map install: build tiles on the backend from a GPX stored in the app
+    // documents dir, then auto-transfer them over the watch hotspot + FTP.
+    final mapInstall = cfg['map_install'] as Map<String, dynamic>?;
+    if (mapInstall != null) {
+      _mapInstallRunning = true;
+      unawaited(_triggeredMapInstall(mapInstall, dir.path));
+      return;
+    }
 
     final timeoutSecs = (cfg['timeout_s'] as num?)?.toInt() ?? 240;
     final controls = (cfg['controls'] as List?)
@@ -90,6 +100,7 @@ Future<String> startManualSync() async {
 /// less than 10 minutes ago, on non-BLE platforms, or when not logged in.
 Future<void> autoSyncOnAppOpen() async {
   if (!kDebugMode && !Platform.isAndroid && !Platform.isIOS) return;
+  if (_mapInstallRunning) return; // watch is busy with the map install
   if (auth.Auth.refreshToken == null || auth.Auth.refreshToken!.isEmpty) {
     return;
   }
@@ -116,6 +127,76 @@ Future<void> autoSyncOnAppOpen() async {
   } catch (e) {
     // ignore: avoid_print
     print('BLE_SYNC_RESULT: fail reason=exception error=$e');
+  }
+}
+
+/// Debug trigger for the fully automated map install: builds tiles on the
+/// backend from a GPX stored in the app documents dir, then transfers them
+/// over the watch hotspot + FTP (held BLE session, Wi-Fi join, upload).
+/// Trigger JSON: `{"map_install": {"gpx": "test.gpx", "ssid": "…",
+/// "password": "…", "style": "cheetah-topo"}}`.
+Future<void> _triggeredMapInstall(
+  Map<String, dynamic> cfg,
+  String docsPath,
+) async {
+  // Log to stdout (logcat) AND a file — the main logcat buffer rotates fast
+  // under BLE debug spam, so the file is the reliable record.
+  final logFile = File('$docsPath/map_install.log');
+  void log(String msg) {
+    // Grep target for the adb debug loop.
+    // ignore: avoid_print
+    print('MAP_INSTALL: $msg');
+    try {
+      logFile.writeAsStringSync(
+        '${DateTime.now().toIso8601String()} $msg\n',
+        mode: FileMode.append,
+      );
+    } catch (_) {}
+  }
+
+  try {
+    final gpxName = (cfg['gpx'] as String?) ?? 'test.gpx';
+    final ssid = (cfg['ssid'] as String?) ?? 'mont-hotspot';
+    final password = (cfg['password'] as String?) ?? 'transfer123';
+    final style = (cfg['style'] as String?) ?? 'cheetah-topo';
+
+    final gpxBytes = await File('$docsPath/$gpxName').readAsBytes();
+    log('GPX loaded (${gpxBytes.length} bytes), building tiles…');
+
+    final jobId = await api.startMapJob(gpxBytes, gpxName, style: style);
+    Map<String, dynamic> job;
+    while (true) {
+      await Future<void>.delayed(const Duration(seconds: 2));
+      job = await api.getMapJob(jobId);
+      for (final line in (job['logs'] as List? ?? const [])) {
+        log('build | $line');
+      }
+      final status = (job['status'] ?? '') as String;
+      if (status == 'done') {
+        log('Build done');
+        break;
+      }
+      if (status == 'error') {
+        throw Exception('Build failed: ${job['error'] ?? 'unknown'}');
+      }
+    }
+
+    final zipBytes = await api.downloadMapZip(jobId);
+    log('ZIP downloaded (${zipBytes.length} bytes)');
+
+    await watch_map_install.WatchMapInstaller.installFromZip(
+      zipBytes: zipBytes,
+      ssid: ssid,
+      password: password,
+      log: log,
+    );
+    // Grep target for the adb debug loop.
+    // ignore: avoid_print
+    print('MAP_RESULT: ok');
+  } catch (e) {
+    // Grep target for the adb debug loop.
+    // ignore: avoid_print
+    print('MAP_RESULT: fail error=$e');
   }
 }
 
@@ -212,6 +293,9 @@ Future<Map<String, dynamic>> startHeldWatchTransfer({
 
 /// The live held transfer session, if any (survives screen navigation).
 ActiveWatchTransfer? activeWatchTransfer;
+
+/// Set while the adb-triggered map install runs (blocks app-open syncs).
+bool _mapInstallRunning = false;
 
 class _RelaySession {
   final String wsUrl;
@@ -609,7 +693,7 @@ class _RelaySession {
       return Future.value({'status': 'fail', 'reason': 'session_ended'});
     }
     _runMoreDone = Completer<Map<String, dynamic>>();
-    _sendEvent({'k': 'run_controls', 'actions': actions, 'release': release});
+    _sendEvent({'k': 'controls_run', 'actions': actions, 'release': release});
     return _runMoreDone!.future;
   }
 

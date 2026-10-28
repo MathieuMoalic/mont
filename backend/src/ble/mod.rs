@@ -10,6 +10,8 @@ pub mod controls;
 pub mod driver;
 pub mod ecdh_b163;
 pub mod fetch;
+pub mod file_transfer;
+pub mod gpx_route;
 pub mod parsers;
 pub mod protocol;
 pub mod recorder;

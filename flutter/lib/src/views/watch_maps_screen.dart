@@ -1,10 +1,23 @@
 import 'dart:async';
+import 'dart:convert';
 
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, Uint8List, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api.dart' as api;
+import '../ble/ble_relay_io.dart' as ble_relay;
 import '../platform/gpx_picker.dart' show pickGpxFile;
 import '../platform/map_zip_saver.dart' show saveMapZip;
+import '../watch_map_install.dart' show WatchMapInstaller;
+import 'watch_transfer_section.dart' show kHotspotPasswordKey, kHotspotSsidKey;
+
+/// GPX route upload to the watch runs over BLE — Android/iOS only.
+bool get _bleSupported =>
+    !kIsWeb &&
+    (defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS);
 
 const List<({String value, String label})> _styles = [
   (value: 'cheetah-topo', label: 'CheetahTopo (Amazfit hiking)'),
@@ -31,12 +44,64 @@ class _WatchMapsScreenState extends State<WatchMapsScreen> {
   ({List<int> bytes, String name})? _gpx;
   String _style = 'cheetah-topo';
   bool _refreshOsm = false;
+  String? _sendError;
 
   String? _jobId;
   String _status = 'idle'; // idle | queued | running | done | error
   final List<String> _logs = [];
   bool _downloading = false;
+  bool _uploading = false;
+  bool _sending = false;
+  Uint8List? _zipBytes;
   Timer? _pollTimer;
+
+  /// Sends the picked GPX to the watch over BLE (file-transfer service).
+  /// The route appears in the watch's workout routes list.
+  Future<void> _sendRoute() async {
+    final gpx = _gpx;
+    if (gpx == null || _sending || _jobActive) return;
+    setState(() {
+      _sending = true;
+      _sendError = null;
+      _logs.add('Sending route to watch over BLE…');
+    });
+    try {
+      final name = gpx.name.replaceFirst(
+        RegExp(r'\.gpx$', caseSensitive: false),
+        '',
+      );
+      final outcome = await ble_relay.runTransferSession(
+        actions: [
+          {'k': 'file_send', 'name': name, 'data': base64Encode(gpx.bytes)},
+        ],
+      );
+      final results =
+          (outcome['controls_results'] as List?)
+              ?.whereType<Map<String, dynamic>>()
+              .toList() ??
+          const [];
+      for (final r in results) {
+        if (r['status'] != 'ok') {
+          throw Exception(r['error'] ?? r['status'] ?? 'failed');
+        }
+      }
+      if (!mounted) return;
+      setState(() => _sending = false);
+      _log('Route sent ✓ — check the watch routes list');
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _sending = false;
+        _sendError = 'Send failed: $e';
+      });
+    }
+  }
+
+  /// Appends a line to the on-screen progress log.
+  void _log(String line) {
+    setState(() => _logs.add(line));
+    _scrollLogToBottom();
+  }
 
   @override
   void initState() {
@@ -171,6 +236,41 @@ class _WatchMapsScreenState extends State<WatchMapsScreen> {
     }
   }
 
+  /// Downloads the built ZIP (consuming the job) and installs it onto the
+  /// watch: hotspot + FTP over BLE, join the watch Wi-Fi, FTP-upload.
+  Future<void> _uploadToWatch() async {
+    final jobId = _jobId;
+    if (jobId == null || _uploading || !WatchMapInstaller.isSupported) return;
+    final prefs = await SharedPreferences.getInstance();
+    final ssid = (prefs.getString(kHotspotSsidKey) ?? '').trim();
+    final password = prefs.getString(kHotspotPasswordKey) ?? '';
+    if (ssid.isEmpty || password.length < 8) {
+      _log(
+        'Set the hotspot name and password in Settings → Watch transfer first',
+      );
+      return;
+    }
+
+    setState(() => _uploading = true);
+    try {
+      _log('Downloading built tiles…');
+      _zipBytes = await api.downloadMapZip(jobId);
+      await WatchMapInstaller.installFromZip(
+        zipBytes: _zipBytes!,
+        ssid: ssid,
+        password: password,
+        log: _log,
+      );
+      _log('Map installed ✓ — check the watch map app');
+    } catch (e) {
+      _log('Upload failed: $e');
+      // The job's download was consumed; a new build is needed to retry.
+      setState(() => _status = 'error');
+    } finally {
+      if (mounted) setState(() => _uploading = false);
+    }
+  }
+
   Widget _logPanel() {
     return Container(
       width: double.infinity,
@@ -283,14 +383,62 @@ class _WatchMapsScreenState extends State<WatchMapsScreen> {
               icon: const Icon(Icons.build_outlined),
               label: Text(_jobActive ? 'Building...' : 'Generate tiles'),
             ),
+            const SizedBox(height: 8),
+            // Route-only BLE transfer: no map build, no hotspot — sends the
+            // GPX route file to the watch's route list directly.
+            OutlinedButton.icon(
+              onPressed:
+                  (_gpx != null && !_sending && !_jobActive && _bleSupported)
+                  ? _sendRoute
+                  : null,
+              icon: _sending
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.navigation_outlined),
+              label: const Text('Send route to watch (BLE)'),
+            ),
+            if (_sendError != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  _sendError!,
+                  style: const TextStyle(color: Colors.redAccent),
+                ),
+              ),
             const SizedBox(height: 16),
             _logPanel(),
             if (_status == 'done') ...[
               const SizedBox(height: 16),
-              FilledButton.icon(
-                onPressed: _downloading ? null : _download,
+              if (WatchMapInstaller.isSupported) ...[
+                FilledButton.icon(
+                  onPressed: (_downloading || _uploading || _zipBytes != null)
+                      ? null
+                      : _uploadToWatch,
+                  icon: _uploading
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.upload_outlined),
+                  label: const Text('Upload to watch'),
+                ),
+                const SizedBox(height: 8),
+              ],
+              OutlinedButton.icon(
+                onPressed: (_downloading || _uploading || _zipBytes != null)
+                    ? null
+                    : _download,
                 icon: const Icon(Icons.download_outlined),
                 label: const Text('Download 11.zip'),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'The built ZIP is single-use — start a new build to transfer or download again.',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
               ),
             ],
           ],

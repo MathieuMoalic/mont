@@ -3,8 +3,9 @@ import 'package:flutter/material.dart';
 import '../platform/kv_store.dart' as kv;
 import '../platform/ble_relay.dart' as ble_relay;
 
-const String _kHotspotSsid = 'watch_hotspot_ssid';
-const String _kHotspotPassword = 'watch_hotspot_password';
+// Shared with the maps screen (its upload flow reads the same credentials).
+const String kHotspotSsidKey = 'watch_hotspot_ssid';
+const String kHotspotPasswordKey = 'watch_hotspot_password';
 
 /// "Watch transfer" controls: toggles the watch's Wi-Fi hotspot and FTP
 /// server (what Gadgetbridge used to do before dropping the Cheetah Pro
@@ -41,8 +42,8 @@ class _WatchTransferSectionState extends State<WatchTransferSection> {
   }
 
   Future<void> _loadCredentials() async {
-    final ssid = await kv.getString(_kHotspotSsid);
-    final password = await kv.getString(_kHotspotPassword);
+    final ssid = await kv.getString(kHotspotSsidKey);
+    final password = await kv.getString(kHotspotPasswordKey);
     if (!mounted) return;
     setState(() {
       _ssidCtrl.text = ssid ?? '';
@@ -51,8 +52,8 @@ class _WatchTransferSectionState extends State<WatchTransferSection> {
   }
 
   Future<void> _saveCredentials() async {
-    await kv.setString(_kHotspotSsid, _ssidCtrl.text.trim());
-    await kv.setString(_kHotspotPassword, _passwordCtrl.text);
+    await kv.setString(kHotspotSsidKey, _ssidCtrl.text.trim());
+    await kv.setString(kHotspotPasswordKey, _passwordCtrl.text);
   }
 
   Future<void> _run(List<Map<String, dynamic>> actions) async {
