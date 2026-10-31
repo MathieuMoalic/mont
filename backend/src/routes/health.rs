@@ -11,6 +11,7 @@ use crate::{
     error::{AppError, AppResult},
     models::AppState,
     pagination::Pagination,
+    routes::weight::WeightEntry,
 };
 
 #[derive(Serialize, sqlx::FromRow)]
@@ -275,6 +276,10 @@ pub struct MorningGlance {
     steps: Option<i64>,
     stress_avg: Option<f64>,
     stress_max: Option<i64>,
+    /// Most recent body-mass entry overall, regardless of date — the Morning
+    /// tab offers a weigh-in when none was logged today and prefills the last
+    /// value.
+    latest_weight: Option<WeightEntry>,
 }
 
 /// One `sleep_sessions` row for the morning glance.
@@ -517,6 +522,13 @@ pub async fn morning(
     .await
     .unwrap_or((None, None));
 
+    let latest_weight: Option<WeightEntry> = sqlx::query_as(
+        "SELECT id, measured_at, weight_kg FROM weight_entries \
+         ORDER BY measured_at DESC LIMIT 1",
+    )
+    .fetch_optional(pool)
+    .await?;
+
     Ok(Json(MorningGlance {
         date,
         sleep,
@@ -525,6 +537,7 @@ pub async fn morning(
         steps,
         stress_avg,
         stress_max,
+        latest_weight,
     }))
 }
 

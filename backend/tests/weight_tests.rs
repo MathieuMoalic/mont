@@ -112,3 +112,38 @@ async fn create_weight_entry_missing_weight_returns_422() {
         .await;
     assert_eq!(res.status(), 422);
 }
+
+#[tokio::test]
+async fn morning_glance_reports_latest_weight() {
+    let app = common::TestApp::spawn().await;
+
+    // No weigh-ins yet: the field is null.
+    let body: serde_json::Value = app
+        .get("/health/morning?date=2026-01-15")
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(body["latest_weight"], serde_json::Value::Null);
+
+    app.post_json(
+        "/weight",
+        &serde_json::json!({ "weight_kg": 82.0, "measured_at": "2026-01-13T08:00:00Z" }),
+    )
+    .await;
+    app.post_json(
+        "/weight",
+        &serde_json::json!({ "weight_kg": 81.0, "measured_at": "2026-01-15T08:00:00Z" }),
+    )
+    .await;
+
+    // The most recent entry wins regardless of the requested glance date.
+    let body: serde_json::Value = app
+        .get("/health/morning?date=2026-01-14")
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(body["latest_weight"]["weight_kg"], 81.0);
+    assert_eq!(body["latest_weight"]["measured_at"], "2026-01-15T08:00:00Z");
+}

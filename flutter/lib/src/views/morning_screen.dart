@@ -2,20 +2,30 @@ import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 
 import '../api.dart' as api;
+import '../change_signals.dart';
+import '../day_math.dart';
 import '../platform/ble_relay.dart' as ble;
+import 'weight_input_dialog.dart';
 
 /// Morning glance: last night's sleep, HRV, the day's heart rate and steps —
 /// the stats previously checked in Gadgetbridge every morning.
 class MorningScreen extends StatefulWidget {
-  const MorningScreen({super.key});
+  final VoidCallback? onWeightSaved;
+
+  const MorningScreen({super.key, this.onWeightSaved});
 
   @override
   State<MorningScreen> createState() => _MorningScreenState();
 }
 
 class _MorningScreenState extends State<MorningScreen> {
-  DateTime _date = DateTime.now().subtract(const Duration(hours: 12));
+  /// Today — the backend attributes last night's sleep to the wake-up date and
+  /// falls back to the most recent known night while the session hasn't synced
+  /// yet, so today's key always shows the latest night plus today's HR/steps.
+  DateTime _date = DateTime.now();
   Map<String, dynamic>? _data;
+  double? _latestWeightKg;
+  String? _latestWeightAt;
   bool _syncing = false;
   String? _error;
 
@@ -51,7 +61,7 @@ class _MorningScreenState extends State<MorningScreen> {
   String get _dayTitle {
     if (_isToday) return 'Today';
     final now = DateTime.now();
-    if (_dateStr == _fmtDate(now.subtract(const Duration(days: 1)))) {
+    if (_dateStr == _fmtDate(dayOffset(now, -1))) {
       return 'Yesterday';
     }
     return _weekdays[_date.weekday - 1];
@@ -73,6 +83,21 @@ class _MorningScreenState extends State<MorningScreen> {
   @override
   void initState() {
     super.initState();
+    ble.lastSyncCompleted.addListener(_onBackgroundSync);
+    _load();
+  }
+
+  @override
+  void dispose() {
+    ble.lastSyncCompleted.removeListener(_onBackgroundSync);
+    super.dispose();
+  }
+
+  /// The app-open sync finished in the background — quietly refresh whatever
+  /// day is shown (its first fetch raced the sync and may predate the new
+  /// data). No spinner: the user didn't ask for anything.
+  void _onBackgroundSync() {
+    if (!mounted || _syncing) return;
     _load();
   }
 
@@ -80,8 +105,11 @@ class _MorningScreenState extends State<MorningScreen> {
     try {
       final data = await api.getMorning(_dateStr);
       if (!mounted) return;
+      final latest = data['latest_weight'] as Map<String, dynamic>?;
       setState(() {
         _data = data;
+        _latestWeightKg = (latest?['weight_kg'] as num?)?.toDouble();
+        _latestWeightAt = latest?['measured_at'] as String?;
         _error = null;
       });
       final sleep = data['sleep'] as Map<String, dynamic>?;
@@ -105,10 +133,41 @@ class _MorningScreenState extends State<MorningScreen> {
     if (manual) _navigated = true;
     if (manual && days > 0 && _isToday) return; // never into the future
     setState(() {
-      _date = _date.add(Duration(days: days));
+      _date = dayOffset(_date, days);
       _data = null;
     });
     _load();
+  }
+
+  /// Weigh-ins can't be back-dated, so the offer only exists on today —
+  /// until an entry with today's date exists. `measured_at` is compared in
+  /// the app's local-naive convention (see WeightEntry parsing).
+  bool get _needsWeighIn {
+    if (!_isToday) return false;
+    final at = _latestWeightAt;
+    if (at == null) return true;
+    final parsed = DateTime.parse(at);
+    final now = DateTime.now();
+    return parsed.year != now.year ||
+        parsed.month != now.month ||
+        parsed.day != now.day;
+  }
+
+  Future<void> _addWeight() async {
+    final entered = await showWeightInputDialog(
+      context,
+      initialKg: _latestWeightKg,
+    );
+    if (entered == null || !mounted) return;
+    try {
+      await api.createWeightEntry(weightKg: entered);
+      healthDataVersion.value++; // Health tab reloads its charts
+      await _load(); // hides the weigh-in offer
+      if (mounted) widget.onWeightSaved?.call();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = '$e');
+    }
   }
 
   @override
@@ -166,6 +225,17 @@ class _MorningScreenState extends State<MorningScreen> {
                       child: Center(child: CircularProgressIndicator()),
                     )
                   else ...[
+                    if (_needsWeighIn) ...[
+                      _section('Weigh-in'),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          onPressed: _addWeight,
+                          icon: const Icon(Icons.monitor_weight_outlined),
+                          label: const Text('Add weight'),
+                        ),
+                      ),
+                    ],
                     _section('Sleep'),
                     _sleepCard(data['sleep'] as Map<String, dynamic>?),
                     _section('Steps'),

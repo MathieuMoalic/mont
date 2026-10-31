@@ -5,8 +5,10 @@ import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../api.dart' as api;
+import '../change_signals.dart';
 import '../models.dart';
 import 'body_pictures_widget.dart';
+import 'weight_input_dialog.dart';
 
 class HealthJournalEntry {
   final int id;
@@ -89,14 +91,23 @@ class _HealthScreenState extends State<HealthScreen> {
   Map<DateTime, List<CaffeineDose>> _caffeineDoses = {};
   Map<DateTime, List<AlcoholDrink>> _alcoholDrinks = {};
 
-  double? _parseWeightKg(String raw) {
-    final v = raw.trim().replaceAll(',', '.');
-    return double.tryParse(v);
-  }
-
   @override
   void initState() {
     super.initState();
+    healthDataVersion.addListener(_onDataChanged);
+    _load();
+  }
+
+  @override
+  void dispose() {
+    healthDataVersion.removeListener(_onDataChanged);
+    super.dispose();
+  }
+
+  /// Another tab changed health data (e.g. the Morning tab weigh-in) —
+  /// refresh charts and lists.
+  void _onDataChanged() {
+    if (!mounted) return;
     _load();
   }
 
@@ -148,50 +159,17 @@ class _HealthScreenState extends State<HealthScreen> {
   }
 
   Future<void> _addWeight() async {
-    String raw = '';
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Log body mass'),
-        content: TextFormField(
-          autofocus: true,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: const InputDecoration(
-            labelText: 'Body mass (kg)',
-            suffixText: 'kg',
-          ),
-          onChanged: (v) => raw = v,
-          onFieldSubmitted: (_) => Navigator.pop(ctx, true),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-    final entered = _parseWeightKg(raw);
-    if (confirmed != true || entered == null || entered <= 0 || !mounted) {
-      if (confirmed == true && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Enter a valid body mass (kg)')),
-        );
-      }
-      return;
-    }
+    final entered = await showWeightInputDialog(context);
+    if (entered == null || !mounted) return;
     try {
       await api.createWeightEntry(weightKg: entered);
       await _load();
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(e.toString())));
+      }
     }
   }
 
@@ -302,7 +280,7 @@ class _HealthScreenState extends State<HealthScreen> {
                 labelText: 'Body mass (kg)',
                 suffixText: 'kg',
               ),
-              onChanged: (v) => newKg = _parseWeightKg(v),
+              onChanged: (v) => newKg = parseWeightKg(v),
             ),
             const SizedBox(height: 8),
             TextFormField(
@@ -325,7 +303,7 @@ class _HealthScreenState extends State<HealthScreen> {
         ],
       ),
     );
-    final parsedKg = _parseWeightKg(kgCtrl.text);
+    final parsedKg = parseWeightKg(kgCtrl.text);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       kgCtrl.dispose();
       dateCtrl.dispose();

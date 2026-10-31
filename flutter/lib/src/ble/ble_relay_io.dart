@@ -2,7 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show File, FileMode, Platform;
 
-import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
+import 'package:flutter/foundation.dart'
+    show ValueNotifier, debugPrint, kDebugMode;
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -18,6 +19,12 @@ import '../watch_map_install.dart' as watch_map_install;
 /// `adb shell run-as`, so this can only happen on debug builds and is the
 /// entry point for unattended, hardware-in-the-loop debugging. The file is
 /// consumed on launch; the app then continues to start normally.
+/// Fired when a background sync session completes (app-open sync) so
+/// listeners such as the Morning tab can reload.
+final ValueNotifier<DateTime> lastSyncCompleted = ValueNotifier(
+  DateTime.fromMillisecondsSinceEpoch(0),
+);
+
 Future<void> autoSyncIfTriggered() async {
   if (!kDebugMode) return;
   try {
@@ -126,6 +133,7 @@ Future<void> autoSyncOnAppOpen() async {
       source: 'app_open',
     );
     await _writeLastResult(outcome);
+    lastSyncCompleted.value = DateTime.now();
     // Grep target for the adb debug loop.
     // ignore: avoid_print
     print('BLE_SYNC_RESULT: ${outcome['status']} reason=${outcome['reason']}');

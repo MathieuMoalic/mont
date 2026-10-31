@@ -15,13 +15,7 @@ class HomeShell extends StatefulWidget {
 class _HomeShellState extends State<HomeShell> {
   int _tab = 0;
 
-  static const List<Widget> _screens = [
-    MorningScreen(),
-    WorkoutsScreen(),
-    CaloriesScreen(),
-    HealthScreen(),
-    SettingsScreen(),
-  ];
+  static const _healthTab = 3;
 
   static const List<NavigationDestination> _destinations = [
     NavigationDestination(
@@ -52,7 +46,16 @@ class _HomeShellState extends State<HomeShell> {
     // selected day) instead of rebuilding from scratch on each switch.
     return Scaffold(
       key: const ValueKey('e2e-home-screen'),
-      body: IndexedStack(index: _tab, children: _screens),
+      body: IndexedStack(
+        index: _tab,
+        children: [
+          MorningScreen(onWeightSaved: () => setState(() => _tab = _healthTab)),
+          const WorkoutsScreen(),
+          const CaloriesScreen(),
+          const HealthScreen(),
+          const SettingsScreen(),
+        ],
+      ),
       bottomNavigationBar: NavigationBar(
         key: const ValueKey('e2e-primary-navigation'),
         selectedIndex: _tab,
