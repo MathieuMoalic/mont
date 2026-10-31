@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api.dart' as api;
+import '../day_math.dart';
 import '../models.dart';
 import 'active_workout_screen.dart';
 import 'exercise_history_screen.dart';
@@ -104,7 +105,7 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
 
   DateTime _weekStart(DateTime d) {
     final day = _dayKey(d);
-    return day.subtract(Duration(days: day.weekday - 1)); // Monday
+    return dayOffset(day, 1 - day.weekday); // Monday
   }
 
   void _onCalendarScroll() {
@@ -120,9 +121,7 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
 
     final previousOffset = _calendarScrollController.offset;
     setState(() {
-      _calendarFirstWeek = firstWeek.subtract(
-        const Duration(days: _weeksToPrependPerBatch * 7),
-      );
+      _calendarFirstWeek = dayOffset(firstWeek, -_weeksToPrependPerBatch * 7);
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -644,7 +643,7 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
     final today = _dayKey(DateTime.now());
     final currentWeek = _weekStart(DateTime.now());
     final firstWeek = _calendarFirstWeek ?? currentWeek;
-    final totalWeeks = currentWeek.difference(firstWeek).inDays ~/ 7 + 1;
+    final totalWeeks = civilDaysBetween(firstWeek, currentWeek) ~/ 7 + 1;
 
     const weekdays = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
     const monthNames = [
@@ -719,16 +718,12 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
                 ) ...[
                   Builder(
                     builder: (context) {
-                      final start = firstWeek.add(
-                        Duration(days: weekIndex * 7),
-                      );
-                      final anchor = start.add(const Duration(days: 3));
+                      final start = dayOffset(firstWeek, weekIndex * 7);
+                      final anchor = dayOffset(start, 3);
                       final key = anchor.year * 12 + anchor.month;
                       final previousAnchor = weekIndex == 0
                           ? null
-                          : firstWeek.add(
-                              Duration(days: (weekIndex - 1) * 7 + 3),
-                            );
+                          : dayOffset(firstWeek, (weekIndex - 1) * 7 + 3);
                       final previousKey = previousAnchor == null
                           ? null
                           : previousAnchor.year * 12 + previousAnchor.month;
@@ -783,15 +778,16 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
                                     const SizedBox(width: _calendarSpacing),
                                   Expanded(
                                     child: _buildDayCell(
-                                      day: start.add(Duration(days: d)),
+                                      day: dayOffset(start, d),
                                       byDay: byDay,
                                       today: today,
                                       hasHyrox: _hyroxDays.contains(
-                                        start.add(Duration(days: d)),
+                                        dayOffset(start, d),
                                       ),
                                       runDistanceM:
-                                          _runDistanceMByDay[start.add(
-                                            Duration(days: d),
+                                          _runDistanceMByDay[dayOffset(
+                                            start,
+                                            d,
                                           )] ??
                                           0,
                                       minHeight: _calendarCellHeight,

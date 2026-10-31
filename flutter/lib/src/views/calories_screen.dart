@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api.dart' as api;
+import '../day_math.dart';
 import '../models.dart';
 import 'barcode_scan_screen.dart';
 import 'food_management_screen.dart';
@@ -83,8 +84,8 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
     ).day;
     final leadingBlanks = firstOfMonth.weekday - 1;
     final cellCount = ((leadingBlanks + daysInMonth + 6) ~/ 7) * 7;
-    final start = firstOfMonth.subtract(Duration(days: leadingBlanks));
-    final end = start.add(Duration(days: cellCount - 1));
+    final start = dayOffset(firstOfMonth, -leadingBlanks);
+    final end = dayOffset(start, cellCount - 1);
     return (start: start, end: end);
   }
 
@@ -2177,9 +2178,7 @@ class _CaloriesScreenState extends State<CaloriesScreen> {
                 ),
                 itemCount: cellCount,
                 itemBuilder: (ctx, index) {
-                  final day = firstOfMonth.subtract(
-                    Duration(days: leadingBlanks - index),
-                  );
+                  final day = dayOffset(firstOfMonth, index - leadingBlanks);
                   final entries = byDay[day] ?? const <CalorieEntry>[];
                   final exEntries =
                       exerciseByDay[day] ?? const <CalorieExerciseEntry>[];
