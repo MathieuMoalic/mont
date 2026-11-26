@@ -63,6 +63,7 @@ async fn main() -> anyhow::Result<()> {
         config: config.clone(),
         http: reqwest::Client::new(),
         maps_jobs: mont::maps::Jobs::new(),
+        ble_session_lock: std::sync::Arc::new(tokio::sync::Mutex::new(())),
     };
 
     let app = build_app(state.clone());

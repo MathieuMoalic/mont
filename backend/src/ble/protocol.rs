@@ -154,6 +154,17 @@ pub enum RelayCommand {
     ControlsResult {
         results: Vec<serde_json::Value>,
     },
+    /// Another relay session already holds the watch — sent to a second
+    /// connection before the server closes it, so the client can surface a
+    /// truthful "watch busy" result instead of an auth collision.
+    SessionBusy,
+    /// Sent just before the session ends so the client can report a truthful
+    /// outcome: a session that settles can still have failed every fetch
+    /// (watch not answering) — `ok`/`error` counts expose that.
+    SessionSummary {
+        fetch_ok: usize,
+        fetch_errors: usize,
+    },
 }
 
 /// Envelope for a backend → client command frame.

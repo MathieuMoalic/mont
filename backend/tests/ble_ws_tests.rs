@@ -394,6 +394,8 @@ async fn ble_relay_authenticates_and_discovers_services() {
 
     // settle (1s) -> release + shutdown
     let _disconnect = recv_cmd(&mut ws).await; // disconnect_device
+    let summary = recv_cmd(&mut ws).await;
+    assert_eq!(summary["k"], "session_summary");
     let shutdown = recv_cmd(&mut ws).await;
     assert_eq!(shutdown["k"], "shutdown");
     assert_eq!(shutdown["reason"], "session_complete");
@@ -663,7 +665,7 @@ async fn ble_relay_fetches_and_stores_health_data() {
             break;
         }
         assert!(
-            cmd["k"] == "disconnect_device" || cmd["k"] == "write",
+            cmd["k"] == "disconnect_device" || cmd["k"] == "write" || cmd["k"] == "session_summary",
             "unexpected frame before shutdown: {cmd}"
         );
     }
@@ -1093,7 +1095,7 @@ async fn ble_relay_imports_workout_with_route() {
             break;
         }
         assert!(
-            cmd["k"] == "disconnect_device" || cmd["k"] == "write",
+            cmd["k"] == "disconnect_device" || cmd["k"] == "write" || cmd["k"] == "session_summary",
             "unexpected frame before shutdown: {cmd}"
         );
     }

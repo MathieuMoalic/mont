@@ -95,16 +95,35 @@ Future<void> autoSyncIfTriggered() async {
   }
 }
 
+/// Set while a sync relay session is in flight — the watch serves one GATT
+/// conversation, so a second concurrent session breaks both (also enforced
+/// server-side; this guard just avoids the pointless attempt).
+bool _syncInFlight = false;
+
 /// Manual sync for the debug tab: connects to the watch through the backend
 /// and returns a one-line outcome.
 Future<String> startManualSync() async {
-  final outcome = await runRelaySession(
-    timeout: const Duration(minutes: 20),
-    source: 'manual',
-  );
-  await _writeLastResult(outcome);
-  return '${outcome['status']} (${outcome['reason']}, phase: ${outcome['phase']}, '
-      'notify frames: ${outcome['notify_frames']})';
+  if (_syncInFlight) {
+    return 'busy (a sync is already running — wait for it to finish)';
+  }
+  _syncInFlight = true;
+  try {
+    final outcome = await runRelaySession(
+      timeout: const Duration(minutes: 20),
+      source: 'manual',
+    );
+    await _writeLastResult(outcome);
+    final errors = (outcome['fetch_errors'] as num?)?.toInt() ?? 0;
+    final base =
+        '${outcome['status']} (${outcome['reason']}, phase: ${outcome['phase']}, '
+        'notify frames: ${outcome['notify_frames']})';
+    if (errors > 0) {
+      return '$base — $errors fetch(es) failed, watch did not answer';
+    }
+    return base;
+  } finally {
+    _syncInFlight = false;
+  }
 }
 
 /// Automatically syncs the watch when the app is opened. Runs in the
@@ -112,10 +131,11 @@ Future<String> startManualSync() async {
 /// less than 10 minutes ago, on non-BLE platforms, or when not logged in.
 Future<void> autoSyncOnAppOpen() async {
   if (!kDebugMode && !Platform.isAndroid && !Platform.isIOS) return;
-  if (_mapInstallRunning || _watchBusy) return; // watch is busy
+  if (_mapInstallRunning || _watchBusy || _syncInFlight) return; // watch busy
   if (auth.Auth.refreshToken == null || auth.Auth.refreshToken!.isEmpty) {
     return;
   }
+  _syncInFlight = true;
   try {
     final dir = await getApplicationDocumentsDirectory();
     final resultFile = File('${dir.path}/ble_last_result.json');
@@ -140,6 +160,8 @@ Future<void> autoSyncOnAppOpen() async {
   } catch (e) {
     // ignore: avoid_print
     print('BLE_SYNC_RESULT: fail reason=exception error=$e');
+  } finally {
+    _syncInFlight = false;
   }
 }
 
@@ -343,6 +365,8 @@ class _RelaySession {
   int _notifyFrames = 0;
   int _notifyBytes = 0;
   int _framesSent = 0;
+  int _fetchOk = 0;
+  int _fetchErrors = 0;
 
   _RelaySession(
     this.wsUrl,
@@ -481,6 +505,13 @@ class _RelaySession {
           }
         case 'shutdown':
           _finish(ok: true, reason: 'shutdown:${cmd['reason'] ?? ''}');
+        case 'session_busy':
+          _finish(ok: false, reason: 'watch_busy');
+        case 'session_summary':
+          // Server-side truth: a session can settle cleanly while every fetch
+          // failed (watch not answering) — carry the counts into the outcome.
+          _fetchOk = (cmd['fetch_ok'] as num?)?.toInt() ?? 0;
+          _fetchErrors = (cmd['fetch_errors'] as num?)?.toInt() ?? 0;
         default:
           _log('unknown command: $k');
           _ack(id, false, error: 'unknown command');
@@ -684,14 +715,22 @@ class _RelaySession {
     // A held session outlives its actions — release the watch-busy block
     // only when the BLE link itself is gone.
     _watchBusy = false;
+    final status = switch (ok) {
+      false => 'fail',
+      true => _fetchErrors > 0 ? 'degraded' : 'ok',
+    };
     final outcome = {
-      'status': ok ? 'ok' : 'fail',
+      'status': status,
       'reason': reason,
       'phase': _phase,
       'device': _deviceMac,
       'notify_frames': _notifyFrames,
       'notify_bytes': _notifyBytes,
       'frames_sent': _framesSent,
+      if (_fetchOk > 0 || _fetchErrors > 0) ...{
+        'fetch_ok': _fetchOk,
+        'fetch_errors': _fetchErrors,
+      },
       if (_controlsResults != null) 'controls_results': _controlsResults,
       'finished_at': DateTime.now().toUtc().toIso8601String(),
     };

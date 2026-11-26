@@ -164,7 +164,23 @@ struct Session {
 /// session times out. `source` records what triggered the sync (app open,
 /// manual button, adb debug trigger) for the sync history.
 #[allow(clippy::too_many_lines)] // session bootstrap; the loop body carries the rest
-pub async fn run_session(socket: WebSocket, state: AppState, source: String) {
+pub async fn run_session(mut socket: WebSocket, state: AppState, source: String) {
+    // The watch serves one GATT conversation at a time — a second concurrent
+    // session collides with the first (auth handshakes interleave, links get
+    // dropped). Reject it with an explicit busy result.
+    let lock = state.ble_session_lock.clone();
+    let Ok(_session_guard) = lock.try_lock() else {
+        tracing::warn!("BLE session: rejected ({source}) — another session is active");
+        let _ = socket
+            .send(Message::text(
+                serde_json::to_string(&command_frame(0, RelayCommand::SessionBusy))
+                    .unwrap_or_default(),
+            ))
+            .await;
+        let _ = socket.close().await;
+        return;
+    };
+
     let recorder = match SessionRecorder::create(&state.config.ble_sessions_dir()) {
         Ok(r) => r,
         Err(e) => {
@@ -1841,10 +1857,41 @@ impl Session {
             return;
         }
         self.finished = true;
+        // Truthful outcome for the client: a session can settle cleanly while
+        // every fetch failed (the watch not answering) — that is not "ok".
+        // Must precede the Shutdown command: the client completes its outcome
+        // on Shutdown.
+        let (fetch_ok, fetch_errors) = self.fetch_outcome_counts();
+        self.send(RelayCommand::SessionSummary {
+            fetch_ok,
+            fetch_errors,
+        })
+        .await;
         self.send(RelayCommand::Shutdown {
             reason: reason.to_string(),
         })
         .await;
+    }
+
+    /// (ok, error) counts over the fetch results — errors being the statuses
+    /// that mean the watch never delivered usable data.
+    fn fetch_outcome_counts(&self) -> (usize, usize) {
+        let ok = self
+            .fetch_results
+            .iter()
+            .filter(|r| r["status"] == "ok")
+            .count();
+        let errors = self
+            .fetch_results
+            .iter()
+            .filter(|r| {
+                matches!(
+                    r["status"].as_str(),
+                    Some("timeout" | "crc_error" | "store_error" | "data_error")
+                )
+            })
+            .count();
+        (ok, errors)
     }
 
     async fn finish(&mut self) {

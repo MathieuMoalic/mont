@@ -89,6 +89,7 @@ impl TestApp {
             config,
             http: reqwest::Client::new(),
             maps_jobs: mont::maps::Jobs::new(),
+            ble_session_lock: std::sync::Arc::new(tokio::sync::Mutex::new(())),
         };
 
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
