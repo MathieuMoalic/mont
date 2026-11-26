@@ -1159,14 +1159,6 @@ Future<void> markRunInvalid(int id, {required bool isInvalid}) async {
   if (res.statusCode != 204) throw Exception('HTTP ${res.statusCode}');
 }
 
-Future<Map<String, dynamic>> syncGadgetbridge() async {
-  final res = await _handleUnauthorized(
-    () => http.post(_u('/runs/sync'), headers: _headers()),
-  );
-  if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
-  return jsonDecode(res.body) as Map<String, dynamic>;
-}
-
 Future<List<ExerciseHistoryPoint>> getExerciseHistory(int exerciseId) async {
   final res = await _handleUnauthorized(
     () => http.get(_u('/exercises/$exerciseId/history'), headers: _headers()),

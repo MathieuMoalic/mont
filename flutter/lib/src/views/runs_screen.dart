@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../api.dart' as api;
 import '../models.dart';
+import '../platform/ble_relay.dart' as ble;
 import 'run_heatmap_screen.dart';
 import 'run_detail_screen.dart';
 import 'run_stats_screen.dart';
@@ -66,15 +67,12 @@ class _RunsScreenState extends State<RunsScreen> {
 
   Future<void> _syncGadgetbridge() async {
     try {
-      final result = await api.syncGadgetbridge();
+      final outcome = await ble.startManualSync();
       await _load();
       if (!mounted) return;
-      final imported = result['imported'] as int;
-      final errs = (result['errors'] as List?)?.length ?? 0;
-      final msg = errs > 0
-          ? 'Synced: $imported runs, $errs errors'
-          : 'Synced: $imported runs updated';
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Sync: $outcome')));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(

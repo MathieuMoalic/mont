@@ -7,6 +7,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../api.dart' as api;
 import '../change_signals.dart';
 import '../models.dart';
+import '../platform/ble_relay.dart' as ble;
 import 'body_pictures_widget.dart';
 import 'weight_input_dialog.dart';
 
@@ -132,20 +133,12 @@ class _HealthScreenState extends State<HealthScreen> {
   Future<void> _sync() async {
     setState(() => _syncing = true);
     try {
-      final result = await api.syncGadgetbridge();
-      final healthDays = result['health_days'] as int? ?? 0;
-      final imported = result['imported'] as int? ?? 0;
-      final errors = (result['errors'] as List?)?.cast<String>() ?? [];
+      final outcome = await ble.startManualSync();
       await _load();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Synced: $imported runs, $healthDays health days'
-              '${errors.isNotEmpty ? ', ${errors.length} errors' : ''}',
-            ),
-          ),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Sync: $outcome')));
       }
     } catch (e) {
       if (mounted) {

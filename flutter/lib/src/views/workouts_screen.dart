@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../api.dart' as api;
 import '../day_math.dart';
 import '../models.dart';
+import '../platform/ble_relay.dart' as ble;
 import 'active_workout_screen.dart';
 import 'exercise_history_screen.dart';
 import 'run_detail_screen.dart';
@@ -214,15 +215,12 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
 
   Future<void> _syncGadgetbridge() async {
     try {
-      final result = await api.syncGadgetbridge();
+      final outcome = await ble.startManualSync();
       await _load();
       if (!mounted) return;
-      final imported = result['imported'] as int? ?? 0;
-      final errs = (result['errors'] as List?)?.length ?? 0;
-      final msg = errs > 0
-          ? 'Synced: $imported runs, $errs errors'
-          : 'Synced: $imported runs updated';
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Sync: $outcome')));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
