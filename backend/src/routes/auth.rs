@@ -28,6 +28,9 @@ pub struct RefreshReq {
 #[derive(Serialize)]
 pub struct RefreshResp {
     pub token: String,
+    /// Fresh refresh token (rolling 30-day window). Without this the session
+    /// hard-expires 30 days after login no matter how often the app is used.
+    pub refresh_token: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -134,7 +137,9 @@ pub async fn refresh(
         return Err(StatusCode::UNAUTHORIZED.into());
     }
 
-    // Issue new access token
+    // Issue new access token AND a fresh refresh token: the rotation makes
+    // the 30-day window roll forward on every refresh, so an actively used
+    // session never expires.
     let access_token = encode(
         &Header::new(Algorithm::HS256),
         &Claims {
@@ -145,8 +150,19 @@ pub async fn refresh(
         &state.jwt_encoding,
     )
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let refresh_token = encode(
+        &Header::new(Algorithm::HS256),
+        &Claims {
+            sub: claims.sub,
+            exp: now_ts() + REFRESH_TOKEN_EXPIRY_SECS,
+            token_type: TokenType::Refresh,
+        },
+        &state.jwt_encoding,
+    )
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Json(RefreshResp {
         token: access_token,
+        refresh_token,
     }))
 }

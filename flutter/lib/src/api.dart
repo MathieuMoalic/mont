@@ -92,9 +92,15 @@ Future<bool> _tryRefreshToken() async {
   Future<bool> doRefresh() async {
     try {
       if (kDebugMode) print('Attempting token refresh...');
-      final newToken = await refreshAccessToken(_refreshToken!);
+      final (newToken, newRefreshToken) = await refreshAccessToken(
+        _refreshToken!,
+      );
       _authToken = newToken;
       await kv.setString('auth_token', newToken);
+      if (newRefreshToken != null && newRefreshToken.isNotEmpty) {
+        _refreshToken = newRefreshToken;
+        await kv.setString('refresh_token', newRefreshToken);
+      }
       if (kDebugMode) print('Token refresh successful');
       return true;
     } catch (e) {
@@ -194,7 +200,7 @@ Future<LoginResult> login({required String password}) async {
   );
 }
 
-Future<String> refreshAccessToken(String refreshToken) async {
+Future<(String, String?)> refreshAccessToken(String refreshToken) async {
   final res = await http
       .post(
         _u('/auth/refresh'),
@@ -208,7 +214,8 @@ Future<String> refreshAccessToken(String refreshToken) async {
     );
   }
   final data = jsonDecode(res.body) as Map<String, dynamic>;
-  return data['token'] as String;
+  // Older servers don't rotate refresh tokens; the current one stays valid.
+  return (data['token'] as String, data['refresh_token'] as String?);
 }
 
 // ── Exercises ────────────────────────────────────────────────────────────────

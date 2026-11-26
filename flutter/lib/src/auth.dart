@@ -58,7 +58,15 @@ class Auth {
       return false;
     }
     try {
-      final newToken = await api.refreshAccessToken(_refreshToken!);
+      final (newToken, newRefreshToken) = await api.refreshAccessToken(
+        _refreshToken!,
+      );
+      if (newRefreshToken != null && newRefreshToken.isNotEmpty) {
+        // Rolling session: persist the rotated refresh token so an actively
+        // used login never hits the 30-day cap.
+        _refreshToken = newRefreshToken;
+        await kv.setString(_kRefreshTokenKey, newRefreshToken);
+      }
       await saveAccessToken(newToken);
       return true;
     } catch (_) {

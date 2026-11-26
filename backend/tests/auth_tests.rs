@@ -102,6 +102,17 @@ async fn refresh_with_valid_refresh_token_returns_new_access_token() {
     assert_eq!(res.status(), 200);
     let body: serde_json::Value = res.json().await.unwrap();
     assert!(body["token"].as_str().is_some_and(|t| !t.is_empty()));
+
+    // The refresh token rotates: the response carries a fresh one that is
+    // itself accepted, so actively used sessions never hit the 30-day cap.
+    // (The token string may coincide when refresh happens within the same
+    // second as login — claims are identical — so only acceptance is asserted.)
+    let rotated = body["refresh_token"].as_str().unwrap();
+    assert!(!rotated.is_empty());
+    let res = app
+        .post_json_public("/auth/refresh", &json!({ "refresh_token": rotated }))
+        .await;
+    assert_eq!(res.status(), 200);
 }
 
 #[tokio::test]
