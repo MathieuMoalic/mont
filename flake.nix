@@ -75,7 +75,7 @@
 
     webBuild = pkgs.flutter.buildFlutterApplication {
       pname = "mont-web";
-      version = "0.15.4";
+      version = "0.15.5";
       src = pkgs.lib.cleanSource ./flutter;
       autoPubspecLock = ./flutter/pubspec.lock;
       targetFlutterPlatform = "web";
@@ -83,7 +83,7 @@
 
     package = pkgs.rustPlatform.buildRustPackage {
       pname = "mont";
-      version = "0.15.4";
+      version = "0.15.5";
       src = ./backend;
 
       cargoLock = {
@@ -116,11 +116,11 @@
 
     prebuilt = pkgs.stdenvNoCC.mkDerivation {
       pname = "mont";
-      version = "0.15.4";
+      version = "0.15.5";
 
       src = pkgs.fetchurl {
-        url = "https://github.com/MathieuMoalic/mont/releases/download/v0.15.4/mont-v0.15.4-x86_64-linux.tar.gz";
-        hash = "sha256-Od+nJSU9+HqFNQx1jKtyj7Inx6EpOY2uAAjeGWVnVxo=";
+        url = "https://github.com/MathieuMoalic/mont/releases/download/v0.15.5/mont-v0.15.5-x86_64-linux.tar.gz";
+        hash = "sha256-qijWFgLhMmtgrSubD/Br2jyQJg+g8+N5LndL1yY+MfE=";
       };
 
       sourceRoot = ".";
@@ -128,7 +128,7 @@
       nativeBuildInputs = [pkgs.patchelf];
 
       installPhase = ''
-        install -Dm755 mont-v0.15.4-x86_64-linux $out/bin/mont
+        install -Dm755 mont-v0.15.5-x86_64-linux $out/bin/mont
         patchelf \
           --set-interpreter ${pkgs.stdenv.cc.bintools.dynamicLinker} \
           --set-rpath ${lib.makeLibraryPath [pkgs.stdenv.cc.cc.lib pkgs.glibc]} \
