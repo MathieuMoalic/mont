@@ -120,6 +120,10 @@ struct Session {
     /// Set once the session milestone is reached; the session settles for
     /// `ble_settle_secs` after this, then releases the watch.
     settled_at: Option<Instant>,
+    /// True while the session-key (ECDH, 0x0082) handshake runs for the
+    /// connect-initialization path (not because control actions need it):
+    /// on completion the encrypted user-info is sent, then fetches start.
+    init_handshake: bool,
     authenticated: Option<bool>,
     device_mac: Option<String>,
     device_name: Option<String>,
@@ -228,6 +232,7 @@ pub async fn run_session(mut socket: WebSocket, state: AppState, source: String)
         workout_round_base: 0,
         last_workout_end: None,
         settled_at: None,
+        init_handshake: false,
         authenticated: None,
         device_mac: None,
         device_name: None,
@@ -571,8 +576,22 @@ impl Session {
                     return true;
                 }
                 self.phase = Phase::Ready;
-                self.request_service_list().await;
-                self.start_fetch_phase().await;
+                if self.state.config.ble_full_init {
+                    self.send_current_time().await;
+                    self.send_gadgetbridge_init().await;
+                    self.request_service_list().await;
+                    // A freshly-booted watch serves no data fetch (acks them
+                    // 0x08) until the phone has re-introduced its user via
+                    // the ENCRYPTED user-info endpoint (0x0017*, service
+                    // list). Negotiate the ZeppOS session key first; the
+                    // encrypted user-info and the fetch phase start when it
+                    // completes.
+                    self.init_handshake = true;
+                    self.start_controls_handshake().await;
+                } else {
+                    self.request_service_list().await;
+                    self.start_fetch_phase().await;
+                }
             }
             AuthOutcome::Reply(payload) => {
                 self.send_write(AUTH_CHAR, payload, false).await;
@@ -677,9 +696,106 @@ impl Session {
         true
     }
 
+    /// Write the phone's current time to the Current Time Service
+    /// (`0x2a2b`) — what Gadgetbridge does on every connect. The watch has no
+    /// other time source (no official app paired), and its fetch engine
+    /// behaves differently when the clock has never been confirmed.
+    async fn send_current_time(&mut self) {
+        use chrono::{Datelike, Timelike};
+        let now = chrono::Local::now();
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "calendar values fit the CTS wire format"
+        )]
+        let payload: [u8; 10] = [
+            (now.year() as u16).to_le_bytes()[0],
+            (now.year() as u16).to_le_bytes()[1],
+            now.month() as u8,
+            now.day() as u8,
+            now.hour() as u8,
+            now.minute() as u8,
+            now.second() as u8,
+            // 1 = Monday … 7 = Sunday (CTSM); chrono is already Monday-based.
+            now.weekday().number_from_monday() as u8,
+            0, // fractions 1/256s
+            0, // adjust reason: none
+        ];
+        tracing::info!(
+            "BLE session: setting watch time to {} (CTSM)",
+            now.format("%Y-%m-%d %H:%M:%S")
+        );
+        self.send_write(
+            "00002a2b-0000-1000-8000-00805f9b34fb",
+            payload.to_vec(),
+            false,
+        )
+        .await;
+    }
+
     async fn request_service_list(&mut self) {
         for frame in self.encoder.encode(0x0000, &[0x03]) {
             self.send_write(CHUNKED_WRITE_CHAR, frame, true).await;
+        }
+    }
+
+    /// Gadgetbridge's connect handshake (`ZeppOsSupport` phase2/3): the phone
+    /// introduces itself before app-layer endpoints answer.
+    ///
+    /// - connection `0x0015`: MTU request `[0x01, mtu]`
+    /// - battery `0x0029`: request `[0x03]`
+    /// - user-info `0x0017` is encrypted, sent by
+    ///   `send_user_info_encrypted`
+    async fn send_gadgetbridge_init(&mut self) {
+        let mtu = self.negotiated_mtu;
+        for frame in self
+            .encoder
+            .encode(0x0015, &[0x01, (mtu & 0xff) as u8, (mtu >> 8) as u8])
+        {
+            self.send_write(CHUNKED_WRITE_CHAR, frame, true).await;
+        }
+        for frame in self.encoder.encode(0x0029, &[0x03]) {
+            self.send_write(CHUNKED_WRITE_CHAR, frame, true).await;
+        }
+        tracing::info!("BLE session: sent Gadgetbridge connect init (MTU, battery)");
+    }
+
+    /// GB `setUserInfo`: [0x01, 0x4f, 0x07, 0x00, 0x00, birth-y u16, month,
+    /// day, gender, height u16, weight u16 (×200), uid u64 (alias.hashCode),
+    /// region NUL-terminated, 0x09, alias NUL-terminated]. The endpoint is
+    /// encrypted-mandatory — requires the negotiated session key.
+    async fn send_user_info_encrypted(&mut self) {
+        let alias = "mont";
+        // Java String.hashCode() of the alias
+        let mut uid: i32 = 0;
+        for b in alias.bytes() {
+            uid = uid.wrapping_mul(31).wrapping_add(i32::from(b));
+        }
+        let uid_bytes = u64::from(u32::try_from(uid).unwrap_or(0)).to_le_bytes();
+        let mut payload = vec![
+            0x01, 0x4f, 0x07, 0x00, 0x00, // USER_INFO_CMD_SET + fixed bytes
+            0xc6, 0x07, // birth year 1990
+            0x06, 0x01, // month, day
+            0x01, // gender
+            0xb0, 0x00, // height 176 cm
+            0x10, 0x27, // weight 50.0 kg × 200 = 10000
+        ];
+        payload.extend_from_slice(&uid_bytes);
+        payload.extend_from_slice(b"FR");
+        payload.push(0x00);
+        payload.push(0x09);
+        payload.extend_from_slice(alias.as_bytes());
+        payload.push(0x00);
+        match self.encoder.encode_encrypted(0x0017, &payload) {
+            Ok(frames) => {
+                tracing::info!("BLE session: sending encrypted user info (0x0017)");
+                for frame in frames {
+                    self.send_write(CHUNKED_WRITE_CHAR, frame, true).await;
+                }
+            }
+            Err(e) => {
+                tracing::error!("BLE session: user-info encrypt failed: {e}");
+            }
         }
     }
 
@@ -951,6 +1067,14 @@ impl Session {
                 self.recorder
                     .log(FrameDir::Sys, &json!({"event": "controls_authenticated"}));
                 tracing::info!("BLE session: watch controls AUTHENTICATED");
+                if self.init_handshake {
+                    // Connect-init path: the session key exists only to send
+                    // the encrypted user-info; then fetches proceed as usual.
+                    self.init_handshake = false;
+                    self.send_user_info_encrypted().await;
+                    self.start_fetch_phase().await;
+                    return true;
+                }
                 self.request_service_list().await;
                 true
             }

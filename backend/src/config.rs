@@ -89,6 +89,13 @@ pub struct Config {
     #[arg(long, env = "MONT_BLE_FETCH_ENABLED", default_value_t = true)]
     pub ble_fetch_enabled: bool,
 
+    /// Perform the full Gadgetbridge connect-init after legacy auth: phone
+    /// time, app-level MTU, battery, the `ZeppOS` session-key handshake and
+    /// the encrypted user-info. A freshly-rebooted watch serves no data
+    /// fetch until the user-info handshake ran.
+    #[arg(long, env = "MONT_BLE_FULL_INIT", default_value_t = true)]
+    pub ble_full_init: bool,
+
     /// How far back to fetch health data on first sync, in days.
     #[arg(long, env = "MONT_BLE_FETCH_LOOKBACK_DAYS", default_value_t = 30)]
     pub ble_fetch_lookback_days: i64,

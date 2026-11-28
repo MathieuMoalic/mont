@@ -71,6 +71,9 @@ impl TestApp {
             ble_auth_key: None,
             ble_settle_secs: 30,
             ble_fetch_enabled: false,
+            // Tests opt in per-test: the full connect-init adds the ECDH
+            // handshake, which only the dedicated test drives.
+            ble_full_init: false,
             ble_fetch_lookback_days: 30,
             ble_sessions_dir: None,
             ble_session_timeout_secs: 300,

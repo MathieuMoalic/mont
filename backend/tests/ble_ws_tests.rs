@@ -435,17 +435,25 @@ use mont::ble::codec::ChunkedDecoder;
 /// Read the next write command and decode it as a chunked frame.
 async fn recv_chunked_write(ws: &mut WebSocketStream<MaybeTlsStream<TcpStream>>) -> (u16, Vec<u8>) {
     use base64::Engine as _;
+    let mut dec = ChunkedDecoder::new();
     loop {
         let cmd = recv_cmd(ws).await;
         assert_eq!(cmd["k"], "write", "expected a write, got {cmd}");
         let char_uuid = cmd["char_uuid"].as_str().expect("char uuid").to_string();
+        // The connect-init writes the phone time to the Current Time Service
+        // before any chunked traffic — accept and ignore it, along with the
+        // end-of-session release command.
+        if char_uuid.starts_with("00002a2b-") {
+            continue;
+        }
         if !char_uuid.starts_with("00000016-") && !char_uuid.starts_with("00000017-") {
             panic!("write to unexpected characteristic {char_uuid}");
         }
         let data = base64::engine::general_purpose::STANDARD
             .decode(cmd["data"].as_str().expect("data"))
             .expect("base64 data");
-        let mut dec = ChunkedDecoder::new();
+        // One decoder per call: multi-chunk messages (MTU 23) reassemble
+        // across loop iterations; unrelated frames in between reset it.
         if let Ok(Some(msg)) = dec.decode(&data) {
             return (msg.endpoint, msg.payload);
         }
@@ -1127,4 +1135,248 @@ async fn ble_relay_imports_workout_with_route() {
             .unwrap();
     let points: Vec<serde_json::Value> = serde_json::from_str(&route).unwrap();
     assert!(points.len() >= 2, "route should have GPS points: {route}");
+}
+
+/// Full connect-init: after legacy auth the driver must send the phone time
+/// (CTSM), the app-level MTU + battery requests, run the ZeppOS session-key
+/// handshake (0x0082) and send the ENCRYPTED user-info (0x0017) before any
+/// fetch. A freshly-booted watch refuses data fetches (ack status 0x08)
+/// until that user-info handshake ran.
+#[tokio::test]
+async fn ble_relay_full_connect_init_before_fetch() {
+    let tmp = tempfile::tempdir().unwrap();
+    let sessions_dir = tmp.path().join("sessions");
+    let dir_for_config = sessions_dir.clone();
+    let app = TestApp::spawn_custom(move |c| {
+        c.ble_enabled = true;
+        c.ble_watch_name = "TestWatch".to_string();
+        c.ble_auth_key = Some("000102030405060708090a0b0c0d0e0f".to_string());
+        c.ble_settle_secs = 1;
+        c.ble_fetch_enabled = true;
+        c.ble_full_init = true;
+        c.ble_fetch_lookback_days = 30;
+        c.ble_sessions_dir = Some(dir_for_config);
+        c.ble_session_timeout_secs = 60;
+    })
+    .await;
+
+    let (mut ws, _resp) = connect_async(
+        format!("{}/ble/ws?token={}", app.base_url, app.token).replacen("http", "ws", 1),
+    )
+    .await
+    .expect("ws connect");
+
+    // connect flow (same as the phase-2 test, condensed)
+    send_evt(&mut ws, json!({"t":"evt","k":"hello"})).await;
+    let _scan = recv_cmd(&mut ws).await;
+    send_evt(
+        &mut ws,
+        json!({"t":"evt","k":"scan_result","mac":WATCH_MAC,"name":"TestWatch","rssi":-55}),
+    )
+    .await;
+    let connect = recv_cmd(&mut ws).await;
+    ack_cmd(&mut ws, &connect).await;
+    send_evt(&mut ws, json!({"t":"evt","k":"connected","mtu":23})).await;
+    let mtu_cmd = recv_cmd(&mut ws).await;
+    ack_cmd(&mut ws, &mtu_cmd).await;
+    send_evt(&mut ws, json!({"t":"evt","k":"mtu","mtu":247})).await;
+    send_evt(
+        &mut ws,
+        json!({"t":"evt","k":"services","services":[{"uuid":"0000fee0-0000-1000-8000-00805f9b34fb","characteristics":[
+            {"uuid":AUTH_CHAR,"indicate":true,"write":true},
+            {"uuid":CHUNKED_WRITE_CHAR,"write_without_response":true},
+            {"uuid":CHUNKED_READ_CHAR,"notify":true},
+            {"uuid":"00000005-0000-3512-2118-0009af100700","notify":true}
+        ]}]}),
+    )
+    .await;
+    for _ in 0..3 {
+        let sub = recv_cmd(&mut ws).await;
+        assert_eq!(sub["k"], "subscribe");
+        ack_cmd(&mut ws, &sub).await;
+    }
+
+    // legacy auth handshake
+    let auth_start = recv_write(&mut ws, "00000001-").await;
+    assert_eq!(auth_start, AuthSession::start_request());
+    send_evt(
+        &mut ws,
+        json!({"t":"evt","k":"notify_batch","items":[{"char_uuid":AUTH_CHAR,"data":base64_of(&[0x10, 0x01, 0x03, 0x05])}]}),
+    )
+    .await;
+    let _key_reply = recv_write(&mut ws, "00000001-").await;
+    send_evt(
+        &mut ws,
+        json!({"t":"evt","k":"notify_batch","items":[{"char_uuid":AUTH_CHAR,"data":base64_of(&[0x10, 0x03, 0x05])}]}),
+    )
+    .await;
+
+    // ── CTSM time write (10 bytes, year LE) ──
+    let time_write = recv_write(&mut ws, "00002a2b-").await;
+    assert_eq!(time_write.len(), 10);
+    let year = u16::from_le_bytes([time_write[0], time_write[1]]);
+    assert!(year >= 2026, "year should be current, got {year}");
+
+    // ── app-level init: MTU request (0x0015) then battery (0x0029) ──
+    let (ep, payload) = recv_chunked_write(&mut ws).await;
+    assert_eq!(ep, 0x0015);
+    assert_eq!(payload[0], 0x01);
+    let (ep, payload) = recv_chunked_write(&mut ws).await;
+    assert_eq!(ep, 0x0029);
+    assert_eq!(payload, vec![0x03]);
+
+    // service-list request (0x0000), answered with 0x0017 advertised
+    // encrypted and 0x004b plain. The ECDH init that follows spans multiple
+    // chunks at MTU 23 — recv_chunked_write assembles it; do NOT interleave
+    // other notifications until it returns.
+    let mut handle = 5u8;
+    let list_payload = [0x04u8, 0x02, 0x00, 0x17, 0x00, 0x01, 0x00, 0x4b, 0x00];
+    let (ep, payload) = recv_chunked_write(&mut ws).await;
+    assert_eq!((ep, payload.clone()), (0x0000, vec![0x03]));
+    handle += 1;
+    send_chunked_notify(&mut ws, 0x0000, &list_payload, handle).await;
+
+    // ── ZeppOS session-key handshake on 0x0082 ──
+    // (the chunk ack for the service list rides 0x00017 and is skipped by
+    // recv_chunked_write, which only decodes complete messages; the ECDH
+    // init itself spans several chunks at MTU 23)
+    let (ep, payload) = recv_chunked_write(&mut ws).await;
+    assert_eq!(ep, 0x0082);
+    assert_eq!(&payload[..4], &[0x04, 0x02, 0x00, 0x02], "ECDH init");
+
+    // Watch side: generate an ephemeral keypair, derive the shared secret,
+    // reply with [0x10, 0x04, 0x01, remote_random(16), remote_public(48)].
+    let watch_private = [0x42u8; 24];
+    let watch_public = mont::ble::ecdh_b163::generate_public(&watch_private).unwrap();
+    let mut remote_random = [0u8; 16];
+    for (i, b) in remote_random.iter_mut().enumerate() {
+        *b = (i as u8) + 1;
+    }
+    let mut remote_public = [0u8; 48];
+    remote_public.copy_from_slice(&payload[4..52]);
+    let shared = mont::ble::ecdh_b163::shared_secret(&watch_private, &remote_public).unwrap();
+    let mut session_key = [0u8; 16];
+    for (i, byte) in session_key.iter_mut().enumerate() {
+        *byte = shared[i + 8] ^ TEST_AUTH_KEY[i];
+    }
+    let mut reply = vec![0x10u8, 0x04, 0x01];
+    reply.extend_from_slice(&remote_random);
+    reply.extend_from_slice(&watch_public);
+    handle += 1;
+    send_chunked_notify(&mut ws, 0x0082, &reply, handle).await;
+
+    // Driver confirms with the double-encrypted random; we accept it and
+    // answer [0x10, 0x05, 0x01] = authenticated.
+    let (_ep, _confirm) = recv_chunked_write(&mut ws).await;
+    handle += 1;
+    send_chunked_notify(&mut ws, 0x0082, &[0x10, 0x05, 0x01], handle).await;
+
+    // ── encrypted user-info on 0x0017 arrives before any fetch ──
+    // (encrypted frames can't be decoded here; assert the raw write exists
+    // and starts a chunked 0x03 frame with the encrypted flag set; chunk
+    // acks for the handshake ride 0x00017 and are skipped)
+    let raw = loop {
+        let cmd = recv_cmd(&mut ws).await;
+        assert_eq!(cmd["k"], "write", "expected a write, got {cmd}");
+        let char_uuid = cmd["char_uuid"].as_str().expect("char uuid");
+        if !char_uuid.starts_with("00000016-") {
+            continue; // 0x00017 chunk acks
+        }
+        use base64::Engine as _;
+        break base64::engine::general_purpose::STANDARD
+            .decode(cmd["data"].as_str().expect("data"))
+            .expect("base64 data");
+    };
+    assert_eq!(raw[0], 0x03, "chunked frame");
+    assert_eq!(raw[1] & 0x08, 0x08, "encrypted flag on user-info frame");
+
+    // ── fetches proceed afterwards: first request is RestingHr (0x3a) ──
+    let rest_epoch: i32 = 1_700_000_000;
+    let (ep, payload) = recv_chunked_write(&mut ws).await;
+    assert_eq!(ep, 0x004b);
+    assert_eq!(payload[0], 0x01);
+    assert_eq!(payload[1], 0x3a);
+    handle += 1;
+    send_chunked_notify(
+        &mut ws,
+        0x004b,
+        &start_response_payload(0, rest_epoch),
+        handle,
+    )
+    .await;
+
+    // no data -> driver acks keep-data, then expects the ack reply. Every
+    // remaining fetch type gets the same no-data dance until the queue
+    // empties and the session settles.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+    let mut dec = ChunkedDecoder::new();
+    while tokio::time::Instant::now() < deadline {
+        let cmd = tokio::time::timeout(Duration::from_secs(5), ws.next()).await;
+        let Ok(Some(Ok(WsMessage::Text(text)))) = cmd else {
+            break; // session ended (server closed) or timed out
+        };
+        let cmd: Value = serde_json::from_str(text.as_str()).expect("valid json command");
+        if cmd["k"] != "write" {
+            continue; // disconnect_device / shutdown ride here later
+        }
+        let char_uuid = cmd["char_uuid"].as_str().expect("char uuid");
+        if !char_uuid.starts_with("00000016-") && !char_uuid.starts_with("00000017-") {
+            continue;
+        }
+        use base64::Engine as _;
+        let data = base64::engine::general_purpose::STANDARD
+            .decode(cmd["data"].as_str().expect("data"))
+            .expect("base64 data");
+        if let Ok(Some(msg)) = dec.decode(&data)
+            && msg.endpoint == 0x004b
+        {
+            match msg.payload.first() {
+                Some(0x01) => {
+                    // fetch request -> no data
+                    handle += 1;
+                    send_chunked_notify(
+                        &mut ws,
+                        0x004b,
+                        &start_response_payload(0, rest_epoch),
+                        handle,
+                    )
+                    .await;
+                }
+                Some(0x03) => {
+                    // keep-data ack -> ack reply
+                    handle += 1;
+                    send_chunked_notify(&mut ws, 0x004b, &[0x10, 0x03, 0x01], handle).await;
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // settle -> session ends. The shutdown frame (or the server closing the
+    // socket after it) is the expected outcome; anything else fails.
+    let ended = tokio::time::timeout(Duration::from_secs(15), async {
+        loop {
+            let msg = ws.next().await;
+            let Some(Ok(WsMessage::Text(text))) = msg else {
+                return false;
+            };
+            let cmd: Value = serde_json::from_str(text.as_str()).expect("valid json");
+            if cmd["k"] == "shutdown" {
+                assert_eq!(cmd["reason"], "session_complete");
+                return true;
+            }
+            assert!(
+                cmd["k"] == "disconnect_device"
+                    || cmd["k"] == "write"
+                    || cmd["k"] == "session_summary",
+                "unexpected frame before shutdown: {cmd}"
+            );
+        }
+    })
+    .await;
+    // Either the shutdown frame or the close after it is fine.
+    assert!(
+        ended.is_ok() || matches!(ended, Ok(false)),
+        "session should end after settle"
+    );
 }
