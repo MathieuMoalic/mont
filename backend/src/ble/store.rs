@@ -207,9 +207,33 @@ pub struct BleWorkout {
 
 /// Insert or update a BLE-imported run (dedupe key: `source_file`).
 ///
+/// Before inserting, checks for an existing run with the same distance and
+/// duration (±1%) — the same physical workout previously imported through
+/// another source (e.g. the retired Gadgetbridge zip import, whose
+/// `source_file` differs so the unique index cannot catch it). Returns
+/// `false` when such a run exists and nothing was inserted.
+///
 /// # Errors
 /// Propagates sqlx errors.
-pub async fn upsert_ble_run(pool: &SqlitePool, workout: &BleWorkout) -> Result<(), sqlx::Error> {
+pub async fn upsert_ble_run(pool: &SqlitePool, workout: &BleWorkout) -> Result<bool, sqlx::Error> {
+    let dupe: Option<i64> = sqlx::query_scalar(
+        "SELECT id FROM runs \
+         WHERE distance_m BETWEEN ? * 0.99 AND ? * 1.01 \
+           AND duration_s BETWEEN ? - 30 AND ? + 30 \
+         LIMIT 1",
+    )
+    .bind(workout.distance_m)
+    .bind(workout.distance_m)
+    .bind(workout.duration_s)
+    .bind(workout.duration_s)
+    .fetch_optional(pool)
+    .await?;
+    if let Some(id) = dupe {
+        tracing::info!(
+            "BLE session: run matches existing run {id} (same distance+duration) — skipping insert"
+        );
+        return Ok(false);
+    }
     sqlx::query(
         "INSERT INTO runs \
          (started_at, duration_s, distance_m, avg_hr, max_hr, avg_cadence, avg_stride_m, calories, source_file) \
@@ -235,7 +259,7 @@ pub async fn upsert_ble_run(pool: &SqlitePool, workout: &BleWorkout) -> Result<(
     .bind(&workout.source_file)
     .execute(pool)
     .await?;
-    Ok(())
+    Ok(true)
 }
 
 /// Attach the parsed GPS route (and weather) to a BLE-imported run. When the

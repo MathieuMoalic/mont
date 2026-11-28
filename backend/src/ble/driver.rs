@@ -1718,9 +1718,15 @@ impl Session {
             );
             return Ok(());
         };
-        let start = parsed.start_epoch.unwrap_or(self.fetch_start_epoch);
+        // The details TIMESTAMP TLV is the moment the watch WROTE the details
+        // record — the workout's end, not its start. GPS-track offsets run
+        // 0..last_t from the true start, so start = TLV − last_t. (Verified
+        // against Gadgetbridge imports of the same physical runs: the old
+        // convention recorded runs up to an hour "late".)
+        let tlv_ts = parsed.start_epoch.unwrap_or(self.fetch_start_epoch);
         let last_t = parsed.route.last().and_then(|p| p.t).unwrap_or(0);
-        let end = start + last_t;
+        let start = tlv_ts - last_t;
+        let end = tlv_ts;
         let source_file = format!("ble-{}", store::rfc3339_utc(start));
         tracing::info!(
             "BLE session: workout details: start={} points={} duration={last_t}s distance={:.0}m hr={:?}/{}",
@@ -1784,11 +1790,13 @@ impl Session {
                 parsed.avg_hr,
             ),
         };
-        store::upsert_ble_run(&self.state.pool, &workout)
+        let inserted = store::upsert_ble_run(&self.state.pool, &workout)
             .await
             .map_err(|e| e.to_string())?;
-        self.attach_route_and_weather(&source_file, start, &parsed)
-            .await?;
+        if inserted {
+            self.attach_route_and_weather(&source_file, start, &parsed)
+                .await?;
+        }
 
         // advance STRICTLY past this workout: the watch's filter is
         // end-inclusive, so requesting since=end re-returns the same workout.

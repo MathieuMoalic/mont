@@ -343,3 +343,57 @@ async fn mark_nonexistent_run_invalid_returns_404() {
         .await;
     assert_eq!(res.status(), 404);
 }
+
+#[tokio::test]
+async fn ble_run_import_skips_duplicate_of_existing_run() {
+    let app = common::TestApp::spawn().await;
+
+    // A run previously imported through another source (Gadgetbridge zip).
+    sqlx::query(
+        "INSERT INTO runs (started_at, duration_s, distance_m, route_json, source_file) \
+         VALUES ('2026-10-14T12:06:11Z', 4756, 12415.3, '[]', '2026-10-14T14_06_11+02_00.bin')",
+    )
+    .execute(&app.pool)
+    .await
+    .unwrap();
+
+    // The same physical workout coming in through the BLE importer with a
+    // different source_file: same distance and duration must NOT insert.
+    let workout = mont::ble::store::BleWorkout {
+        source_file: "ble-2026-10-14T12:06:11Z".to_string(),
+        started_at: "2026-10-14T12:06:11Z".to_string(),
+        duration_s: 4756,
+        distance_m: 12415.31,
+        avg_hr: Some(133),
+        max_hr: Some(159),
+        avg_cadence: None,
+        avg_stride_m: None,
+        calories: None,
+    };
+    let inserted = mont::ble::store::upsert_ble_run(&app.pool, &workout)
+        .await
+        .expect("upsert");
+    assert!(!inserted, "duplicate of an existing run must be skipped");
+
+    let runs: Vec<serde_json::Value> = app.get("/runs?limit=500").await.json().await.unwrap();
+    assert_eq!(runs.len(), 1, "no second copy should exist");
+
+    // A genuinely new run still inserts.
+    let fresh = mont::ble::store::BleWorkout {
+        source_file: "ble-2026-10-20T07:00:00Z".to_string(),
+        started_at: "2026-10-20T07:00:00Z".to_string(),
+        duration_s: 1800,
+        distance_m: 5000.0,
+        avg_hr: Some(140),
+        max_hr: Some(160),
+        avg_cadence: None,
+        avg_stride_m: None,
+        calories: None,
+    };
+    let inserted = mont::ble::store::upsert_ble_run(&app.pool, &fresh)
+        .await
+        .expect("upsert");
+    assert!(inserted, "a new run must insert");
+    let runs: Vec<serde_json::Value> = app.get("/runs?limit=500").await.json().await.unwrap();
+    assert_eq!(runs.len(), 2);
+}
